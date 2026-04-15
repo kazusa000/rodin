@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -93,33 +96,22 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md137">Usage Example</a></li>
+            <li><a href="#autotoc_md151">Usage Example</a></li>
             <li>
               Reference
               <ul>
-                <li><a href="#base-classes">Base classes</a></li>
                 <li><a href="#typeless-methods">Constructors, destructors, conversion operators</a></li>
                 <li><a href="#pub-methods">Public functions</a></li>
               </ul>
             </li>
           </ul>
         </nav>
-<p>Implements the complete printer for grid functions stored as <a href="namespace_rodin_1_1_math.html#a27cd225c75d47a2bd0cc5850164c2a6b" class="m-doc">Math::<wbr />Vector</a> objects.</p><section id="autotoc_md137"><h3><a href="#autotoc_md137">Usage Example</a></h3><pre class="m-code"><span class="n">P1</span><span class="o">&lt;</span><span class="n">Real</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Vh</span><span class="p">(</span><span class="n">mesh</span><span class="p">);</span>
+<p>Implements the complete printer for grid functions stored as <a href="namespace_rodin_1_1_math.html#a27cd225c75d47a2bd0cc5850164c2a6b" class="m-doc">Math::<wbr />Vector</a> objects.</p><section id="autotoc_md151"><h3><a href="#autotoc_md151">Usage Example</a></h3><pre class="m-code"><span class="n">P1</span><span class="o">&lt;</span><span class="n">Real</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Vh</span><span class="p">(</span><span class="n">mesh</span><span class="p">);</span>
 <span class="n">GridFunction</span><span class="o">&lt;</span><span class="n">P1</span><span class="o">&lt;</span><span class="n">Real</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">u</span><span class="p">(</span><span class="n">Vh</span><span class="p">);</span>
 <span class="c1">// ... compute solution ...</span>
 <span class="n">GridFunctionPrinter</span><span class="o">&lt;</span><span class="n">FileFormat</span><span class="o">::</span><span class="n">MFEM</span><span class="p">,</span><span class="w"> </span><span class="n">P1</span><span class="o">&lt;</span><span class="n">Real</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">Vector</span><span class="o">&lt;</span><span class="n">Real</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">printer</span><span class="p">(</span><span class="n">u</span><span class="p">);</span>
 <span class="n">std</span><span class="o">::</span><span class="n">ofstream</span><span class="w"> </span><span class="n">file</span><span class="p">(</span><span class="s">&quot;solution.gf&quot;</span><span class="p">);</span>
 <span class="n">printer</span><span class="p">.</span><span class="n">print</span><span class="p">(</span><span class="n">file</span><span class="p">);</span></pre></section>
-        <section id="base-classes">
-          <h2><a href="#base-classes">Base classes</a></h2>
-          <dl class="m-doc">
-            <dt>
-              <div class="m-doc-template">template&lt;<a href="namespace_rodin_1_1_i_o.html#a610845e6f56e545283af144cbbb99cfe" class="m-doc">FileFormat</a> Fmt, class FES, class Data&gt;</div>
-              class <a href="class_rodin_1_1_i_o_1_1_grid_function_printer_base.html" class="m-doc">GridFunctionPrinterBase&lt;FileFormat::MFEM, FES, Math::Vector&lt;Scalar&gt;&gt;</a>
-            </dt>
-            <dd>Forward declaration of base class for printing grid functions.</dd>
-          </dl>
-        </section>
         <section id="typeless-methods">
           <h2><a href="#typeless-methods">Constructors, destructors, conversion operators</a></h2>
           <dl class="m-doc">

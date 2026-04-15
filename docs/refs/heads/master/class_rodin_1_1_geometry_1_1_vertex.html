@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -202,6 +205,7 @@
                 </tr>
               </tfoot>
             </table>
+<aside class="m-note m-danger"><h4>Warning</h4><p>The mesh must have a space dimension of at least 2. Calling this on a 1D mesh vertex triggers an assertion failure.</p></aside>
           </div></section>
           <section class="m-doc-details" id="ad401d038a4eca871937708925ae57727"><div>
             <h3>
@@ -216,6 +220,7 @@
                 </tr>
               </tfoot>
             </table>
+<aside class="m-note m-danger"><h4>Warning</h4><p>The mesh must have a space dimension of at least 3. Calling this on a 1D or 2D mesh vertex triggers an assertion failure.</p></aside>
           </div></section>
           <section class="m-doc-details" id="a984b60ebb60699abe85cce103526338b"><div>
             <h3>
@@ -229,7 +234,7 @@
               <tbody>
                 <tr>
                   <td style="width: 1%">i&nbsp;<span class="m-label m-flat m-info">in</span></td>
-                  <td>Coordinate index</td>
+                  <td>Coordinate index (must be less than space dimension)</td>
                 </tr>
               </tbody>
               <tfoot>

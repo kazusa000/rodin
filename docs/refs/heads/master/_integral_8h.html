@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -77,10 +80,10 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md321">Mathematical Foundation</a></li>
-            <li><a href="#autotoc_md322">Bilinear Form Integrals</a></li>
-            <li><a href="#autotoc_md323">Linear Form Integrals</a></li>
-            <li><a href="#autotoc_md324">Usage Examples</a></li>
+            <li><a href="#autotoc_md388">Mathematical Foundation</a></li>
+            <li><a href="#autotoc_md389">Bilinear Form Integrals</a></li>
+            <li><a href="#autotoc_md390">Linear Form Integrals</a></li>
+            <li><a href="#autotoc_md391">Usage Examples</a></li>
             <li>
               Reference
               <ul>
@@ -90,7 +93,7 @@
             </li>
           </ul>
         </nav>
-<p>This file defines the Integral classes which represent domain integrals in finite element formulations. These integrals form the basis for defining bilinear and linear forms in the weak formulation.</p><section id="autotoc_md321"><h3><a href="#autotoc_md321">Mathematical Foundation</a></h3><p>Domain integrals compute:</p><div class="m-math"><svg style="width: 5.498em; height: 2.819em;" viewBox="167.882039 -27.065451 52.778905 27.065451">
+<p>This file defines the Integral classes which represent domain integrals in finite element formulations. These integrals form the basis for defining bilinear and linear forms in the weak formulation.</p><section id="autotoc_md388"><h3><a href="#autotoc_md388">Mathematical Foundation</a></h3><p>Domain integrals compute:</p><div class="m-math"><svg style="width: 5.498em; height: 2.819em;" viewBox="167.882039 -27.065451 52.778905 27.065451">
 <title>
 \[
   \int_\Omega f(x) \, dx
@@ -135,7 +138,7 @@ $ f $
 <g id='eq3-page1'>
 <use x='0' y='0' xlink:href='#eq3-g0-102'/>
 </g>
-</svg> is the integrand.</p></section><section id="autotoc_md322"><h3><a href="#autotoc_md322">Bilinear Form Integrals</a></h3><p>For bilinear forms <svg class="m-math" style="width: 3.463em; height: 1.245em; vertical-align: -0.312em;" viewBox="0 -8.966376 33.244413 11.955168">
+</svg> is the integrand.</p></section><section id="autotoc_md389"><h3><a href="#autotoc_md389">Bilinear Form Integrals</a></h3><p>For bilinear forms <svg class="m-math" style="width: 3.463em; height: 1.245em; vertical-align: -0.312em;" viewBox="0 -8.966376 33.244413 11.955168">
 <title>
 $ a(u,v) $
 </title>
@@ -219,7 +222,7 @@ $ B $
 <g id='eq7-page1'>
 <use x='0' y='0' xlink:href='#eq7-g0-66'/>
 </g>
-</svg> are operators on trial and test functions.</p></section><section id="autotoc_md323"><h3><a href="#autotoc_md323">Linear Form Integrals</a></h3><p>For linear forms <svg class="m-math" style="width: 1.973em; height: 1.245em; vertical-align: -0.312em;" viewBox="0 -8.966376 18.942679 11.955168">
+</svg> are operators on trial and test functions.</p></section><section id="autotoc_md390"><h3><a href="#autotoc_md390">Linear Form Integrals</a></h3><p>For linear forms <svg class="m-math" style="width: 1.973em; height: 1.245em; vertical-align: -0.312em;" viewBox="0 -8.966376 18.942679 11.955168">
 <title>
 $ l(v) $
 </title>
@@ -268,7 +271,7 @@ $ l(v) $
 <use x='224.753511' y='-10.793007' xlink:href='#eq9-g2-100'/>
 <use x='230.836204' y='-10.793007' xlink:href='#eq9-g2-120'/>
 </g>
-</svg></div></section><section id="autotoc_md324"><h3><a href="#autotoc_md324">Usage Examples</a></h3><pre class="m-code"><span class="c1">// Stiffness matrix: ∫ ∇u·∇v dx</span>
+</svg></div></section><section id="autotoc_md391"><h3><a href="#autotoc_md391">Usage Examples</a></h3><pre class="m-code"><span class="c1">// Stiffness matrix: ∫ ∇u·∇v dx</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">stiffness</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Integral</span><span class="p">(</span><span class="n">Grad</span><span class="p">(</span><span class="n">u</span><span class="p">),</span><span class="w"> </span><span class="n">Grad</span><span class="p">(</span><span class="n">v</span><span class="p">));</span>
 
 <span class="c1">// Mass matrix: ∫ u·v dx</span>
@@ -280,9 +283,9 @@ $ l(v) $
           <h2><a href="#namespaces">Namespaces</a></h2>
           <dl class="m-doc">
             <dt>namespace <a href="namespace_rodin.html" class="m-doc">Rodin</a></dt>
-            <dd>The <a href="namespace_rodin.html" class="m-doc">Rodin</a> library for Shape and Topology Optimization.</dd>
+            <dd>The <a href="namespace_rodin.html" class="m-doc">Rodin</a> library for finite element methods and shape optimization.</dd>
             <dt>namespace <a href="namespace_rodin_1_1_variational.html" class="m-doc">Rodin::Variational</a></dt>
-            <dd>Module which provides the necessary tools for constructing variational problems.</dd>
+            <dd>Module which provides the necessary tools for constructing and solving variational problems.</dd>
           </dl>
         </section>
         <section id="nested-classes">

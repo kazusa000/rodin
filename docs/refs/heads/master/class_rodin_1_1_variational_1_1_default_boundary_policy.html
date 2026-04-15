@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -86,14 +89,14 @@
             </li>
           </ul>
         </nav>
-<p>This policy does not enforce any special treatment at domain boundaries. <a href="class_rodin_1_1_variational_1_1_flow.html" class="m-doc">Flow</a> integration continues unmodified when approaching boundaries.</p>
+<p>This policy does not enforce any special treatment at domain boundaries. <a href="class_rodin_1_1_variational_1_1_flow.html" class="m-doc">Flow</a> integration stops when the traced trajectory reaches the boundary.</p>
         <section id="pub-methods">
           <h2><a href="#pub-methods">Public functions</a></h2>
           <dl class="m-doc">
             <dt>
               <span class="m-doc-wrap-bumper">auto <a href="#a9b5c682c4f8a0bc6c588aefa9fb81fd7" class="m-doc">operator()</a>(</span><span class="m-doc-wrap">const <a href="struct_rodin_1_1_variational_1_1_boundary_hit.html" class="m-doc">BoundaryHit</a>&amp;) const -&gt; bool <span class="m-label m-flat m-primary">constexpr</span></span>
             </dt>
-            <dd>Called when flow reaches a boundary.</dd>
+            <dd>Called when a traced trajectory reaches a boundary.</dd>
           </dl>
         </section>
         <section>
@@ -102,12 +105,12 @@
             <h3>
               <span class="m-doc-wrap-bumper">bool Rodin::<wbr />Variational::<wbr />DefaultBoundaryPolicy::<wbr /></span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#a9b5c682c4f8a0bc6c588aefa9fb81fd7" class="m-doc-self">operator()</a>(</span><span class="m-doc-wrap">const <a href="struct_rodin_1_1_variational_1_1_boundary_hit.html" class="m-doc">BoundaryHit</a>&amp;) const <span class="m-label m-primary">constexpr</span></span></span>
             </h3>
-            <p>Called when flow reaches a boundary.</p>
+            <p>Called when a traced trajectory reaches a boundary.</p>
             <table class="m-table m-fullwidth m-flat">
               <tfoot>
                 <tr>
                   <th style="width: 1%">Returns</th>
-                  <td>false (no special boundary treatment)</td>
+                  <td>false, indicating that the trace should stop.</td>
                 </tr>
               </tfoot>
             </table>

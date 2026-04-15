@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -77,12 +80,12 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md220">Algorithm</a></li>
-            <li><a href="#autotoc_md221">Applicability</a></li>
-            <li><a href="#autotoc_md222">Usage Example</a></li>
+            <li><a href="#autotoc_md272">Algorithm</a></li>
+            <li><a href="#autotoc_md273">Applicability</a></li>
+            <li><a href="#autotoc_md274">Usage Example</a></li>
           </ul>
         </nav>
-<p>This header provides a wrapper for SPQR (SuiteSparseQR) from SuiteSparse, a high-performance direct solver using multifrontal sparse QR factorization.</p><section id="autotoc_md220"><h3><a href="#autotoc_md220">Algorithm</a></h3><p>SPQR computes:</p><div class="m-math"><svg style="width: 5.414em; height: 1.093em;" viewBox="168.285236 -10.493961 51.972519 10.493973">
+<p>This header provides a wrapper for SPQR (SuiteSparseQR) from SuiteSparse, a high-performance direct solver using multifrontal sparse QR factorization.</p><section id="autotoc_md272"><h3><a href="#autotoc_md272">Algorithm</a></h3><p>SPQR computes:</p><div class="m-math"><svg style="width: 5.414em; height: 1.093em;" viewBox="168.285236 -10.493961 51.972519 10.493973">
 <title>
 \[
   AP = QR
@@ -132,7 +135,7 @@ $ R $
 <g id='eq4-page1'>
 <use x='0' y='0' xlink:href='#eq4-g0-82'/>
 </g>
-</svg> is upper triangular. The multifrontal method processes the matrix efficiently using an elimination tree.</p></section><section id="autotoc_md221"><h3><a href="#autotoc_md221">Applicability</a></h3><ul><li>General sparse matrices</li><li>Rank-deficient systems</li><li>Least-squares problems</li><li>Overdetermined systems</li><li>Problems requiring excellent numerical stability</li></ul></section><section id="autotoc_md222"><h3><a href="#autotoc_md222">Usage Example</a></h3><pre class="m-code"><span class="n">Problem</span><span class="w"> </span><span class="nf">problem</span><span class="p">(</span><span class="n">u</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
+</svg> is upper triangular. The multifrontal method processes the matrix efficiently using an elimination tree.</p></section><section id="autotoc_md273"><h3><a href="#autotoc_md273">Applicability</a></h3><ul><li>General sparse matrices</li><li>Rank-deficient systems</li><li>Least-squares problems</li><li>Overdetermined systems</li><li>Problems requiring excellent numerical stability</li></ul></section><section id="autotoc_md274"><h3><a href="#autotoc_md274">Usage Example</a></h3><pre class="m-code"><span class="n">Problem</span><span class="w"> </span><span class="nf">problem</span><span class="p">(</span><span class="n">u</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
 <span class="n">problem</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Integral</span><span class="p">(</span><span class="n">Grad</span><span class="p">(</span><span class="n">u</span><span class="p">),</span><span class="w"> </span><span class="n">Grad</span><span class="p">(</span><span class="n">v</span><span class="p">))</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">Integral</span><span class="p">(</span><span class="n">f</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
 
 <span class="n">Solver</span><span class="o">::</span><span class="n">SPQR</span><span class="w"> </span><span class="nf">solver</span><span class="p">(</span><span class="n">problem</span><span class="p">);</span>

@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -90,9 +93,9 @@
           <h2><a href="#namespaces">Namespaces</a></h2>
           <dl class="m-doc">
             <dt>namespace <a href="namespace_rodin.html" class="m-doc">Rodin</a></dt>
-            <dd>The <a href="namespace_rodin.html" class="m-doc">Rodin</a> library for Shape and Topology Optimization.</dd>
+            <dd>The <a href="namespace_rodin.html" class="m-doc">Rodin</a> library for finite element methods and shape optimization.</dd>
             <dt>namespace <a href="namespace_rodin_1_1_geometry.html" class="m-doc">Rodin::Geometry</a></dt>
-            <dd>Module for dealing with geometries.</dd>
+            <dd>Module for dealing with meshes, polytopes, and geometric operations.</dd>
           </dl>
         </section>
         <section id="nested-classes">
@@ -102,6 +105,18 @@
               class <a href="class_rodin_1_1_geometry_1_1_polytope.html" class="m-doc">Rodin::Geometry::Polytope</a>
             </dt>
             <dd>Base class for all geometric elements in finite element meshes.</dd>
+            <dt>
+              class <a href="class_rodin_1_1_geometry_1_1_polytope_1_1_key.html" class="m-doc">Rodin::Geometry::Polytope::Key</a>
+            </dt>
+            <dd><a href="class_rodin_1_1_geometry_1_1_vertex.html" class="m-doc">Vertex</a> index array identifying a polytope in the mesh.</dd>
+            <dt>
+              struct <a href="struct_rodin_1_1_geometry_1_1_polytope_1_1_key_1_1_symmetric_equality.html" class="m-doc">Rodin::Geometry::Polytope::Key::SymmetricEquality</a>
+            </dt>
+            <dd>Compares two keys for equality ignoring vertex ordering.</dd>
+            <dt>
+              struct <a href="struct_rodin_1_1_geometry_1_1_polytope_1_1_key_1_1_symmetric_hash.html" class="m-doc">Rodin::Geometry::Polytope::Key::SymmetricHash</a>
+            </dt>
+            <dd>Hash functor that produces the same hash for any permutation of the vertex indices.</dd>
             <dt>
               struct <a href="struct_rodin_1_1_geometry_1_1_polytope_1_1_project.html" class="m-doc">Rodin::Geometry::Polytope::Project</a>
             </dt>

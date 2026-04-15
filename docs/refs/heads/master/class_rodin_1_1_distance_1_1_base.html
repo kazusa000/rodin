@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -90,7 +93,7 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md22">Usage</a></li>
+            <li><a href="#autotoc_md21">Usage</a></li>
             <li>
               Reference
               <ul>
@@ -99,7 +102,7 @@
             </li>
           </ul>
         </nav>
-<p>This class provides common functionality for distance function models, specifically management of interior and interface regions. It uses the Curiously Recurring Template Pattern (CRTP) to enable static polymorphism.</p><section id="autotoc_md22"><h3><a href="#autotoc_md22">Usage</a></h3><p>Derived classes should inherit from this base class to automatically gain methods for setting and retrieving interior and interface regions:</p><pre class="m-code"><span class="k">class</span><span class="w"> </span><span class="nc">MyDistanceModel</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">Base</span><span class="o">&lt;</span><span class="n">MyDistanceModel</span><span class="o">&gt;</span>
+<p>This class provides common functionality for distance function models, specifically management of interior and interface regions. It uses the Curiously Recurring Template Pattern (CRTP) to enable static polymorphism.</p><section id="autotoc_md21"><h3><a href="#autotoc_md21">Usage</a></h3><p>Derived classes should inherit from this base class to automatically gain methods for setting and retrieving interior and interface regions:</p><pre class="m-code"><span class="k">class</span><span class="w"> </span><span class="nc">MyDistanceModel</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">Base</span><span class="o">&lt;</span><span class="n">MyDistanceModel</span><span class="o">&gt;</span>
 <span class="p">{</span>
 <span class="w">  </span><span class="c1">// Implementation</span>
 <span class="p">};</span></pre></section>

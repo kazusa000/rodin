@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -87,6 +90,46 @@
         <section id="func-members">
           <h2><a href="#func-members">Functions</a></h2>
           <dl class="m-doc">
+            <dt>
+              <div class="m-doc-template">template&lt;class Solution, class TrialFES, class TestFES&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#gadb6cc755fd112527cf92474e3e74ee24" class="m-doc">BilinearForm</a>(</span><span class="m-doc-wrap">const PETSc::Variational::TrialFunction&lt;Solution, TrialFES&gt;&amp; u,
+              const PETSc::Variational::TestFunction&lt;TestFES&gt;&amp; v) -&gt; BilinearForm&lt; Solution, TrialFES, TestFES, ::Mat &gt;</span>
+            </dt>
+            <dd>Deduction guide for PETSc-backed <a href="class_rodin_1_1_variational_1_1_bilinear_form.html" class="m-doc">BilinearForm</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class FES&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#ga9807c27acb86bf5b6761dc50b509215e" class="m-doc">GridFunction</a>(</span><span class="m-doc-wrap">const FES&amp;) -&gt; GridFunction&lt; FES &gt;</span>
+            </dt>
+            <dd>Deduction guide for <a href="class_rodin_1_1_p_e_t_sc_1_1_variational_1_1_grid_function.html" class="m-doc">PETSc::<wbr />Variational::<wbr />GridFunction</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class FES&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#ga428b3bbd91b26401394cc611f7ec36f5" class="m-doc">LinearForm</a>(</span><span class="m-doc-wrap">const PETSc::Variational::TestFunction&lt;FES&gt;&amp;) -&gt; LinearForm&lt; FES, ::Vec &gt;</span>
+            </dt>
+            <dd>Deduction guide for PETSc-backed <a href="class_rodin_1_1_variational_1_1_linear_form.html" class="m-doc">LinearForm</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class Solution, class TrialFES, class TestFES&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#ga4cc83b3477511b5e20c51118fc1ed187" class="m-doc">Problem</a>(</span><span class="m-doc-wrap">PETSc::Variational::TrialFunction&lt;Solution, TrialFES&gt;&amp;,
+              PETSc::Variational::TestFunction&lt;TestFES&gt;&amp;) -&gt; Problem&lt; PETSc::Math::LinearSystem, TrialFunction&lt; Solution, TrialFES &gt;, TestFunction&lt; TestFES &gt; &gt;</span>
+            </dt>
+            <dd>Deduction guide for two-field <a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> <a href="class_rodin_1_1_variational_1_1_problem.html" class="m-doc">Problem</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class U1, class U2, class U3, class... Us&gt;</div>
+              <span class="m-doc-wrap-bumper">auto <a href="#ga0ee1e267b822038221592b3679ff40f6" class="m-doc">Problem</a>(</span><span class="m-doc-wrap">U1&amp;,
+              U2&amp;,
+              U3&amp;,
+              Us&amp; ...) -&gt; Problem&lt; Rodin::PETSc::Math::LinearSystem, U1, U2, U3, Us... &gt; -&gt; ::value</span>
+            </dt>
+            <dd>Deduction guide for multi-field <a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> <a href="class_rodin_1_1_variational_1_1_problem.html" class="m-doc">Problem</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class FES&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#gafe807f2ceed03f1a8561c2f209b913fa" class="m-doc">TestFunction</a>(</span><span class="m-doc-wrap">const FES&amp; fes) -&gt; TestFunction&lt; FES &gt;</span>
+            </dt>
+            <dd>Deduction guide for <a href="class_rodin_1_1_p_e_t_sc_1_1_variational_1_1_test_function.html" class="m-doc">PETSc::<wbr />Variational::<wbr />TestFunction</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class FES&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#gae56796ae751b030661c55badce556516" class="m-doc">TrialFunction</a>(</span><span class="m-doc-wrap">const FES&amp; fes) -&gt; TrialFunction&lt; GridFunction&lt; FES &gt;, FES &gt;</span>
+            </dt>
+            <dd>Deduction guide for <a href="class_rodin_1_1_p_e_t_sc_1_1_variational_1_1_trial_function.html" class="m-doc">PETSc::<wbr />Variational::<wbr />TrialFunction</a>.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               <span class="m-doc-wrap-bumper"><a href="#ga4d53c9d30faf316057b99ad31bee1330" class="m-doc">BiCGSTAB</a>(</span><span class="m-doc-wrap">Variational::ProblemBase&lt;LinearSystem&gt;&amp;) -&gt; BiCGSTAB&lt; LinearSystem &gt;</span>
@@ -136,7 +179,12 @@
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               <span class="m-doc-wrap-bumper"><a href="#gac30491445370c67c57ba28133378f602" class="m-doc">MINRES</a>(</span><span class="m-doc-wrap">Variational::ProblemBase&lt;LinearSystem&gt;&amp;) -&gt; MINRES&lt; LinearSystem &gt;</span>
             </dt>
-            <dd>CTAD (Class Template Argument Deduction) guide for MINRES.</dd>
+            <dd>CTAD (Class Template Argument Deduction) guide for <a href="class_rodin_1_1_solver_1_1_m_i_n_r_e_s.html" class="m-doc">MINRES</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class LS&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#ga613faf81ffcc1e24f4fded42df7ca789" class="m-doc">NewtonSolver</a>(</span><span class="m-doc-wrap">LS&amp;) -&gt; NewtonSolver&lt; LS &gt;</span>
+            </dt>
+            <dd>CTAD (Class Template Argument Deduction) guide for <a href="class_rodin_1_1_solver_1_1_newton_solver.html" class="m-doc">NewtonSolver</a>.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystemType&gt;</div>
               <span class="m-doc-wrap-bumper"><a href="#gacc677f2e577625039f0ec3b2cbd8e875" class="m-doc">SimplicialLDLT</a>(</span><span class="m-doc-wrap">Variational::ProblemBase&lt;LinearSystemType&gt;&amp;) -&gt; SimplicialLDLT&lt; LinearSystemType &gt;</span>
@@ -173,6 +221,12 @@
               <span class="m-doc-wrap-bumper"><a href="#ga891e0a7ae2783f1b6536a482897c58fc" class="m-doc">Grad</a>(</span><span class="m-doc-wrap">const ShapeFunction&lt;NestedDerived, FES, Space&gt;&amp;) -&gt; Grad&lt; ShapeFunction&lt; NestedDerived, FES, Space &gt; &gt;</span>
             </dt>
             <dd>CTAD for <a href="class_rodin_1_1_variational_1_1_grad.html" class="m-doc">Grad</a> of a <a href="class_rodin_1_1_variational_1_1_shape_function.html" class="m-doc">ShapeFunction</a>.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;size_t K, class Scalar, class Data, class Mesh&gt;</div>
+              <span class="m-doc-wrap-bumper"><a href="#gab58db5635f98436e51eae9277677b347" class="m-doc">Derivative</a>(</span><span class="m-doc-wrap">size_t,
+              const GridFunction&lt;H1&lt;K, Scalar, Mesh&gt;, Data&gt;&amp;) -&gt; Derivative&lt; GridFunction&lt; H1&lt; K, Scalar, Mesh &gt;, Data &gt; &gt;</span>
+            </dt>
+            <dd>CTAD for <a href="class_rodin_1_1_variational_1_1_derivative.html" class="m-doc">Derivative</a> of an <a href="class_rodin_1_1_variational_1_1_h1.html" class="m-doc">H1</a> <a href="class_rodin_1_1_variational_1_1_grid_function.html" class="m-doc">GridFunction</a>.</dd>
             <dt>
               <div class="m-doc-template">template&lt;size_t K, class Scalar, class Data, class Mesh&gt;</div>
               <span class="m-doc-wrap-bumper"><a href="#gaf1996f416536c7c1cb88834919508648" class="m-doc">Div</a>(</span><span class="m-doc-wrap">const GridFunction&lt;H1&lt;K, Math::Vector&lt;Scalar&gt;, Mesh&gt;, Data&gt;&amp;) -&gt; Div&lt; GridFunction&lt; H1&lt; K, Math::Vector&lt; Scalar &gt;, Mesh &gt;, Data &gt; &gt;</span>
@@ -239,6 +293,81 @@
         </section>
         <section>
           <h2>Function documentation</h2>
+          <section class="m-doc-details" id="gadb6cc755fd112527cf92474e3e74ee24"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_bilinear_form_8h.html">&lt;Rodin/PETSc/Variational/BilinearForm.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class Solution, class TrialFES, class TestFES&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#gadb6cc755fd112527cf92474e3e74ee24" class="m-doc-self">BilinearForm</a>(</span><span class="m-doc-wrap">const PETSc::Variational::TrialFunction&lt;Solution, TrialFES&gt;&amp; u,
+              const PETSc::Variational::TestFunction&lt;TestFES&gt;&amp; v) -&gt; BilinearForm&lt; Solution, TrialFES, TestFES, ::Mat &gt;</span></span>
+            </h3>
+            <p>Deduction guide for PETSc-backed <a href="class_rodin_1_1_variational_1_1_bilinear_form.html" class="m-doc">BilinearForm</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="ga9807c27acb86bf5b6761dc50b509215e"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_grid_function_8h.html">&lt;Rodin/PETSc/Variational/GridFunction.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class FES&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#ga9807c27acb86bf5b6761dc50b509215e" class="m-doc-self">GridFunction</a>(</span><span class="m-doc-wrap">const FES&amp;) -&gt; GridFunction&lt; FES &gt;</span></span>
+            </h3>
+            <p>Deduction guide for <a href="class_rodin_1_1_p_e_t_sc_1_1_variational_1_1_grid_function.html" class="m-doc">PETSc::<wbr />Variational::<wbr />GridFunction</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="ga428b3bbd91b26401394cc611f7ec36f5"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_linear_form_8h.html">&lt;Rodin/PETSc/Variational/LinearForm.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class FES&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#ga428b3bbd91b26401394cc611f7ec36f5" class="m-doc-self">LinearForm</a>(</span><span class="m-doc-wrap">const PETSc::Variational::TestFunction&lt;FES&gt;&amp;) -&gt; LinearForm&lt; FES, ::Vec &gt;</span></span>
+            </h3>
+            <p>Deduction guide for PETSc-backed <a href="class_rodin_1_1_variational_1_1_linear_form.html" class="m-doc">LinearForm</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="ga4cc83b3477511b5e20c51118fc1ed187"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_problem_8h.html">&lt;Rodin/PETSc/Variational/Problem.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class Solution, class TrialFES, class TestFES&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#ga4cc83b3477511b5e20c51118fc1ed187" class="m-doc-self">Problem</a>(</span><span class="m-doc-wrap">PETSc::Variational::TrialFunction&lt;Solution, TrialFES&gt;&amp;,
+              PETSc::Variational::TestFunction&lt;TestFES&gt;&amp;) -&gt; Problem&lt; PETSc::Math::LinearSystem, TrialFunction&lt; Solution, TrialFES &gt;, TestFunction&lt; TestFES &gt; &gt;</span></span>
+            </h3>
+            <p>Deduction guide for two-field <a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> <a href="class_rodin_1_1_variational_1_1_problem.html" class="m-doc">Problem</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="ga0ee1e267b822038221592b3679ff40f6"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_problem_8h.html">&lt;Rodin/PETSc/Variational/Problem.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class U1, class U2, class U3, class... Us&gt;
+              </div>
+              <span class="m-doc-wrap-bumper">::value </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#ga0ee1e267b822038221592b3679ff40f6" class="m-doc-self">Problem</a>(</span><span class="m-doc-wrap">U1&amp;,
+              U2&amp;,
+              U3&amp;,
+              Us&amp; ...) -&gt; Problem&lt; Rodin::PETSc::Math::LinearSystem, U1, U2, U3, Us... &gt;</span></span>
+            </h3>
+            <p>Deduction guide for multi-field <a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> <a href="class_rodin_1_1_variational_1_1_problem.html" class="m-doc">Problem</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="gafe807f2ceed03f1a8561c2f209b913fa"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_test_function_8h.html">&lt;Rodin/PETSc/Variational/TestFunction.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class FES&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#gafe807f2ceed03f1a8561c2f209b913fa" class="m-doc-self">TestFunction</a>(</span><span class="m-doc-wrap">const FES&amp; fes) -&gt; TestFunction&lt; FES &gt;</span></span>
+            </h3>
+            <p>Deduction guide for <a href="class_rodin_1_1_p_e_t_sc_1_1_variational_1_1_test_function.html" class="m-doc">PETSc::<wbr />Variational::<wbr />TestFunction</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="gae56796ae751b030661c55badce556516"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_p_e_t_sc_2_variational_2_trial_function_8h.html">&lt;Rodin/PETSc/Variational/TrialFunction.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;class FES&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#gae56796ae751b030661c55badce556516" class="m-doc-self">TrialFunction</a>(</span><span class="m-doc-wrap">const FES&amp; fes) -&gt; TrialFunction&lt; GridFunction&lt; FES &gt;, FES &gt;</span></span>
+            </h3>
+            <p>Deduction guide for <a href="class_rodin_1_1_p_e_t_sc_1_1_variational_1_1_trial_function.html" class="m-doc">PETSc::<wbr />Variational::<wbr />TrialFunction</a>.</p>
+          </div></section>
           <section class="m-doc-details" id="ga4d53c9d30faf316057b99ad31bee1330"><div>
             <h3>
               <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_bi_c_g_s_t_a_b_8h.html">&lt;Rodin/Solver/BiCGSTAB.h&gt;</a></div>
@@ -337,7 +466,18 @@
               </div>
               <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#gac30491445370c67c57ba28133378f602" class="m-doc-self">MINRES</a>(</span><span class="m-doc-wrap">Variational::ProblemBase&lt;LinearSystem&gt;&amp;) -&gt; MINRES&lt; LinearSystem &gt;</span></span>
             </h3>
-            <p>CTAD (Class Template Argument Deduction) guide for MINRES.</p>
+            <p>CTAD (Class Template Argument Deduction) guide for <a href="class_rodin_1_1_solver_1_1_m_i_n_r_e_s.html" class="m-doc">MINRES</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="ga613faf81ffcc1e24f4fded42df7ca789"><div>
+            <h3>
+              <div class="m-doc-template">
+                template&lt;class LS&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#ga613faf81ffcc1e24f4fded42df7ca789" class="m-doc-self">NewtonSolver</a>(</span><span class="m-doc-wrap">LS&amp;) -&gt; NewtonSolver&lt; LS &gt;</span></span>
+            </h3>
+            <p>CTAD (Class Template Argument Deduction) guide for <a href="class_rodin_1_1_solver_1_1_newton_solver.html" class="m-doc">NewtonSolver</a>.</p>
+<p>Allows writing:</p><pre class="m-code"><span class="n">SparseLU</span><span class="w"> </span><span class="nf">solver</span><span class="p">(</span><span class="n">tangent</span><span class="p">);</span>
+<span class="n">NewtonSolver</span><span class="w"> </span><span class="nf">newton</span><span class="p">(</span><span class="n">solver</span><span class="p">);</span></pre>
           </div></section>
           <section class="m-doc-details" id="gacc677f2e577625039f0ec3b2cbd8e875"><div>
             <h3>
@@ -420,6 +560,17 @@
               <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#ga891e0a7ae2783f1b6536a482897c58fc" class="m-doc-self">Grad</a>(</span><span class="m-doc-wrap">const ShapeFunction&lt;NestedDerived, FES, Space&gt;&amp;) -&gt; Grad&lt; ShapeFunction&lt; NestedDerived, FES, Space &gt; &gt;</span></span>
             </h3>
             <p>CTAD for <a href="class_rodin_1_1_variational_1_1_grad.html" class="m-doc">Grad</a> of a <a href="class_rodin_1_1_variational_1_1_shape_function.html" class="m-doc">ShapeFunction</a>.</p>
+          </div></section>
+          <section class="m-doc-details" id="gab58db5635f98436e51eae9277677b347"><div>
+            <h3>
+              <div class="m-doc-include m-code m-inverted m-right-m m-text-right"><span class="cp">#include</span> <a class="cpf" href="_h1_2_derivative_8h.html">&lt;Rodin/Variational/H1/Derivative.h&gt;</a></div>
+              <div class="m-doc-template">
+                template&lt;size_t K, class Scalar, class Data, class Mesh&gt;
+              </div>
+              <span class="m-doc-wrap-bumper"> </span><span class="m-doc-wrap"><span class="m-doc-wrap-bumper"><a href="#gab58db5635f98436e51eae9277677b347" class="m-doc-self">Derivative</a>(</span><span class="m-doc-wrap">size_t,
+              const GridFunction&lt;H1&lt;K, Scalar, Mesh&gt;, Data&gt;&amp;) -&gt; Derivative&lt; GridFunction&lt; H1&lt; K, Scalar, Mesh &gt;, Data &gt; &gt;</span></span>
+            </h3>
+            <p>CTAD for <a href="class_rodin_1_1_variational_1_1_derivative.html" class="m-doc">Derivative</a> of an <a href="class_rodin_1_1_variational_1_1_h1.html" class="m-doc">H1</a> <a href="class_rodin_1_1_variational_1_1_grid_function.html" class="m-doc">GridFunction</a>.</p>
           </div></section>
           <section class="m-doc-details" id="gaf1996f416536c7c1cb88834919508648"><div>
             <h3>

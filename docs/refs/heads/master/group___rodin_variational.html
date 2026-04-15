@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -76,7 +79,7 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md401">Mathematical Foundation</a></li>
+            <li><a href="#autotoc_md468">Mathematical Foundation</a></li>
             <li>
               Reference
               <ul>
@@ -86,7 +89,7 @@
             </li>
           </ul>
         </nav>
-<p>The <a href="namespace_rodin_1_1_variational.html" class="m-doc">Variational</a> module provides the infrastructure for defining and solving variational problems in finite element analysis. It supports the formulation of linear and nonlinear problems, boundary conditions, and various finite element spaces.</p><section id="autotoc_md401"><h3><a href="#autotoc_md401">Mathematical Foundation</a></h3><p>The module implements the standard finite element methodology:</p><ul><li><strong>Bilinear Forms</strong>: <svg class="m-math" style="width: 10.816em; height: 1.245em; vertical-align: -0.312em;" viewBox="0 -8.966376 103.832088 11.955168">
+<p>The <a href="namespace_rodin_1_1_variational.html" class="m-doc">Variational</a> module provides the infrastructure for defining and solving variational problems in finite element analysis. It supports the formulation of linear and nonlinear problems, boundary conditions, and various finite element spaces.</p><section id="autotoc_md468"><h3><a href="#autotoc_md468">Mathematical Foundation</a></h3><p>The module implements the standard finite element methodology:</p><ul><li><strong>Bilinear Forms</strong>: <svg class="m-math" style="width: 10.816em; height: 1.245em; vertical-align: -0.312em;" viewBox="0 -8.966376 103.832088 11.955168">
 <title>
 $ a(u,v) : V \times V \to \mathbb{R} $
 </title>
@@ -270,11 +273,6 @@ $ b_i = l(\psi_i) $
           <h2><a href="#nested-classes">Classes</a></h2>
           <dl class="m-doc">
             <dt>
-              <div class="m-doc-template">template&lt;class FunctionDerived&gt;</div>
-              class <a href="class_rodin_1_1_variational_1_1_average_3_01_function_base_3_01_function_derived_01_4_01_4.html" class="m-doc">Rodin::Variational::Average&lt;FunctionBase&lt;FunctionDerived&gt;&gt;</a>
-            </dt>
-            <dd><a href="class_rodin_1_1_variational_1_1_average.html" class="m-doc">Average</a> operator for computing interface averages.</dd>
-            <dt>
               <div class="m-doc-template">template&lt;class Operator&gt;</div>
               class <a href="class_rodin_1_1_variational_1_1_bilinear_form_base.html" class="m-doc">Rodin::Variational::BilinearFormBase</a>
             </dt>
@@ -301,14 +299,14 @@ $ b_i = l(\psi_i) $
             <dt>
               class <a href="class_rodin_1_1_variational_1_1_face_normal.html" class="m-doc">Rodin::Variational::FaceNormal</a>
             </dt>
-            <dd>Unit normal vector on mesh faces.</dd>
+            <dd>Unit normal vector on codimension-one mesh entities.</dd>
             <dt>
               class <a href="class_rodin_1_1_variational_1_1_finite_element_space_base.html" class="m-doc">Rodin::Variational::FiniteElementSpaceBase</a>
             </dt>
             <dd>Base class for finite element spaces.</dd>
             <dt>
-              <div class="m-doc-template">template&lt;class Derived, class VectorField, class Step, class BoundaryPolicy, class TangentPolicy&gt;</div>
-              class <a href="class_rodin_1_1_variational_1_1_flow_3_01_function_base_3_01_derived_01_4_00_01_vector_field_00_dfb044b212cc5e4c3d85c3583a25df08.html" class="m-doc">Rodin::Variational::Flow&lt;FunctionBase&lt;Derived&gt;, VectorField, Step, BoundaryPolicy, TangentPolicy&gt;</a>
+              <div class="m-doc-template">template&lt;class Derived, class VectorField, class Step, class BoundaryPolicy&gt;</div>
+              class <a href="class_rodin_1_1_variational_1_1_flow_3_01_function_base_3_01_derived_01_4_00_01_vector_field_00_5d2fd22d75010fe7199e2c89726de56a.html" class="m-doc">Rodin::Variational::Flow&lt;FunctionBase&lt;Derived&gt;, VectorField, Step, BoundaryPolicy&gt;</a>
             </dt>
             <dd><a href="class_rodin_1_1_variational_1_1_flow.html" class="m-doc">Flow</a> map operator for functions.</dd>
             <dt>
@@ -317,7 +315,7 @@ $ b_i = l(\psi_i) $
             </dt>
             <dd>Base class for function objects which can be evaluated over a mesh.</dd>
             <dt>
-              <div class="m-doc-template">template&lt;class StrictType&gt;</div>
+              <div class="m-doc-template">template&lt;class Derived&gt;</div>
               class <a href="class_rodin_1_1_variational_1_1_grid_function_base_reference.html" class="m-doc">Rodin::Variational::GridFunctionBaseReference</a>
             </dt>
             <dd>Base class for discrete finite element functions.</dd>

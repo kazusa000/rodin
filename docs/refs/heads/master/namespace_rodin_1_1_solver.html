@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html" id="m-navbar-current">Rodin::Solver</a></li>
@@ -73,7 +76,7 @@
         <h1>
           <span class="m-breadcrumb"><a href="namespace_rodin.html">Rodin</a>::<wbr/></span>Solver <span class="m-thin">namespace</span>
         </h1>
-        <p>Module for linear algebra systems.</p>
+        <p>Module for solving linear and nonlinear systems.</p>
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
@@ -85,6 +88,11 @@
             </li>
           </ul>
         </nav>
+<p>The <a href="namespace_rodin_1_1_solver.html" class="m-doc">Solver</a> module provides linear solvers for the systems arising from finite element discretizations. Available solvers include:</p><ul><li><a href="class_rodin_1_1_solver_1_1_c_g.html" class="m-doc">CG</a> — Conjugate Gradient (for SPD systems)</li><li><a href="class_rodin_1_1_solver_1_1_g_m_r_e_s.html" class="m-doc">GMRES</a> — Generalized Minimum Residual</li><li><a href="class_rodin_1_1_solver_1_1_sparse_l_u.html" class="m-doc">SparseLU</a> — Direct sparse LU factorization</li><li>UMFPack — UMFPACK direct solver</li></ul><p>Usage:</p><pre class="m-code"><span class="c1">// Iterative solver</span>
+<span class="n">Solver</span><span class="o">::</span><span class="n">CG</span><span class="p">(</span><span class="n">problem</span><span class="p">).</span><span class="n">solve</span><span class="p">();</span>
+
+<span class="c1">// Direct solver</span>
+<span class="n">Solver</span><span class="o">::</span><span class="n">SparseLU</span><span class="p">(</span><span class="n">problem</span><span class="p">).</span><span class="n">solve</span><span class="p">();</span></pre><aside class="m-note m-default"><h4>See also</h4><p><a href="guides-variational.html" class="m-doc">Variational Formulations Guide</a></p></aside>
         <section id="nested-classes">
           <h2><a href="#nested-classes">Classes</a></h2>
           <dl class="m-doc">
@@ -117,7 +125,7 @@
               <div class="m-doc-template">template&lt;&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_c_g_3_01_p_e_t_sc_1_1_math_1_1_linear_system_01_4.html" class="m-doc">CG&lt;PETSc::Math::LinearSystem&gt;</a>
             </dt>
-            <dd>Conjugate gradient solver for self-adjoint problems, for use with PETSc::Matrix and PETSc::Vector.</dd>
+            <dd>Conjugate gradient solver for <a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> linear systems.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_d_g_m_r_e_s.html" class="m-doc">DGMRES</a>
@@ -157,7 +165,7 @@
               <div class="m-doc-template">template&lt;&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_g_m_r_e_s_3_01_p_e_t_sc_1_1_math_1_1_linear_system_01_4.html" class="m-doc">GMRES&lt;PETSc::Math::LinearSystem&gt;</a>
             </dt>
-            <dd>Conjugate gradient solver for self-adjoint problems, for use with PETSc::Matrix and PETSc::Vector.</dd>
+            <dd>Generalized minimal residual (<a href="class_rodin_1_1_solver_1_1_g_m_r_e_s.html" class="m-doc">GMRES</a>) solver for <a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> linear systems.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_householder_q_r.html" class="m-doc">HouseholderQR</a>
@@ -196,7 +204,7 @@
             <dt>
               class <a href="class_rodin_1_1_solver_1_1_k_s_p.html" class="m-doc">KSP</a>
             </dt>
-            <dd>PETSc <a href="class_rodin_1_1_solver_1_1_k_s_p.html" class="m-doc">KSP</a> (Krylov) linear solver wrapper.</dd>
+            <dd><a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> <a href="class_rodin_1_1_solver_1_1_k_s_p.html" class="m-doc">KSP</a> (Krylov subspace) linear solver wrapper.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_l_d_l_t.html" class="m-doc">LDLT</a>
@@ -223,15 +231,30 @@
             </dt>
             <dd>Least-squares conjugate gradient solver for sparse systems.</dd>
             <dt>
+              <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
+              class <a href="class_rodin_1_1_solver_1_1_linear_solver_base.html" class="m-doc">LinearSolverBase</a>
+            </dt>
+            <dd>Abstract base class for linear system solvers.</dd>
+            <dt>
               <div class="m-doc-template">template&lt;class Scalar&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_m_i_n_r_e_s_3_01_math_1_1_linear_system_3_01_math_1_1_matrix_3_01_scae6360e13a1df75f352930829c5698bb9.html" class="m-doc">MINRES&lt;Math::LinearSystem&lt;Math::Matrix&lt;Scalar&gt;, Math::Vector&lt;Scalar&gt;&gt;&gt;</a>
             </dt>
-            <dd>MINRES solver for symmetric dense systems.</dd>
+            <dd><a href="class_rodin_1_1_solver_1_1_m_i_n_r_e_s.html" class="m-doc">MINRES</a> solver for symmetric dense systems.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class Scalar&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_m_i_n_r_e_s_3_01_math_1_1_linear_system_3_01_math_1_1_sparse_matrix_3e99a3bb6569edadfe0405a4bafdc55c9.html" class="m-doc">MINRES&lt;Math::LinearSystem&lt;Math::SparseMatrix&lt;Scalar&gt;, Math::Vector&lt;Scalar&gt;&gt;&gt;</a>
             </dt>
-            <dd>MINRES solver for symmetric sparse systems.</dd>
+            <dd><a href="class_rodin_1_1_solver_1_1_m_i_n_r_e_s.html" class="m-doc">MINRES</a> solver for symmetric sparse systems.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class LinearSolver&gt;</div>
+              class <a href="class_rodin_1_1_solver_1_1_newton_solver.html" class="m-doc">NewtonSolver</a>
+            </dt>
+            <dd>Newton solver for state-dependent tangential problems.</dd>
+            <dt>
+              <div class="m-doc-template">template&lt;class LinearSolver&gt;</div>
+              class <a href="class_rodin_1_1_solver_1_1_newton_solver_base.html" class="m-doc">NewtonSolverBase</a>
+            </dt>
+            <dd>Abstract base class for Newton-type nonlinear solvers.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_simplicial_l_d_l_t.html" class="m-doc">SimplicialLDLT</a>
@@ -253,10 +276,9 @@
             </dt>
             <dd>Simplicial LLT Cholesky factorization for sparse SPD matrices.</dd>
             <dt>
-              <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
-              class <a href="class_rodin_1_1_solver_1_1_solver_base.html" class="m-doc">SolverBase</a>
+              class <a href="class_rodin_1_1_solver_1_1_s_n_e_s.html" class="m-doc">SNES</a>
             </dt>
-            <dd>Abstract base class for linear system solvers.</dd>
+            <dd><a href="namespace_rodin_1_1_p_e_t_sc.html" class="m-doc">PETSc</a> <a href="class_rodin_1_1_solver_1_1_s_n_e_s.html" class="m-doc">SNES</a> (Scalable Nonlinear Equations Solvers) wrapper.</dd>
             <dt>
               <div class="m-doc-template">template&lt;class LinearSystem&gt;</div>
               class <a href="class_rodin_1_1_solver_1_1_sparse_l_u.html" class="m-doc">SparseLU</a>

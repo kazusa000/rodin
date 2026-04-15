@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -78,8 +81,8 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md25">Mathematical Background</a></li>
-            <li><a href="#autotoc_md26">Usage Example</a></li>
+            <li><a href="#autotoc_md24">Mathematical Background</a></li>
+            <li><a href="#autotoc_md25">Usage Example</a></li>
             <li>
               Reference
               <ul>
@@ -148,7 +151,7 @@ $ u $
 <g id='eq3-page1'>
 <use x='0' y='0' xlink:href='#eq3-g0-117'/>
 </g>
-</svg> approximates the distance to the boundary.</p><section id="autotoc_md25"><h3><a href="#autotoc_md25">Mathematical Background</a></h3><p>Unlike the <a href="class_rodin_1_1_distance_1_1_eikonal.html" class="m-doc">Eikonal</a> equation which gives exact distances, the <a href="class_rodin_1_1_distance_1_1_poisson.html" class="m-doc">Poisson</a> approach provides a smooth approximation that can be computed more efficiently for certain applications.</p></section><section id="autotoc_md26"><h3><a href="#autotoc_md26">Usage Example</a></h3><pre class="m-code"><span class="n">P1</span><span class="w"> </span><span class="nf">fes</span><span class="p">(</span><span class="n">mesh</span><span class="p">);</span>
+</svg> approximates the distance to the boundary.</p><section id="autotoc_md24"><h3><a href="#autotoc_md24">Mathematical Background</a></h3><p>Unlike the <a href="class_rodin_1_1_distance_1_1_eikonal.html" class="m-doc">Eikonal</a> equation which gives exact distances, the <a href="class_rodin_1_1_distance_1_1_poisson.html" class="m-doc">Poisson</a> approach provides a smooth approximation that can be computed more efficiently for certain applications.</p></section><section id="autotoc_md25"><h3><a href="#autotoc_md25">Usage Example</a></h3><pre class="m-code"><span class="n">P1</span><span class="w"> </span><span class="nf">fes</span><span class="p">(</span><span class="n">mesh</span><span class="p">);</span>
 <span class="n">Poisson</span><span class="w"> </span><span class="n">poissonDist</span><span class="p">;</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">u</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">poissonDist</span><span class="p">(</span><span class="n">fes</span><span class="p">);</span></pre></section>
         <section id="pub-methods">

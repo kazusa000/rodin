@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -79,8 +82,8 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md1">Semi-Lagrangian Method</a></li>
-            <li><a href="#autotoc_md2">Advantages</a></li>
+            <li><a href="#autotoc_md0">Semi-Lagrangian Method</a></li>
+            <li><a href="#autotoc_md1">Advantages</a></li>
             <li>
               Reference
               <ul>
@@ -139,7 +142,7 @@ $ \mathbf{v} $
 <g id='eq3-page1'>
 <use x='0' y='0' xlink:href='#eq3-g0-118'/>
 </g>
-</svg> is the velocity field.</p><section id="autotoc_md1"><h3><a href="#autotoc_md1">Semi-Lagrangian Method</a></h3><p>At each time step, the method:</p><ol><li>Traces characteristics backwards: <svg class="m-math" style="width: 10.666em; height: 1.674em; vertical-align: -0.434em;" viewBox="0 -11.922013 102.39482 16.073179">
+</svg> is the velocity field.</p><section id="autotoc_md0"><h3><a href="#autotoc_md0">Semi-Lagrangian Method</a></h3><p>At each time step, the method:</p><ol><li>Traces characteristics backwards: <svg class="m-math" style="width: 10.666em; height: 1.674em; vertical-align: -0.434em;" viewBox="0 -11.922013 102.39482 16.073179">
 <title>
 $ \mathbf{X}(t) = \mathbf{x} - \int_0^{\Delta t} \mathbf{v} \, ds $
 </title>
@@ -218,7 +221,7 @@ $ \mathbf{X}(t) = \mathbf{x} - \int_0^{\Delta t} \mathbf{v} \, ds $
 <use x='252.813462' y='-10.793007' xlink:href='#eq5-g3-100'/>
 <use x='258.896155' y='-10.793007' xlink:href='#eq5-g3-120'/>
 </g>
-</svg></div></section><section id="autotoc_md2"><h3><a href="#autotoc_md2">Advantages</a></h3><ul><li>Unconditionally stable for large CFL numbers</li><li>Naturally handles complex geometries</li><li>Mass-conservative in variational form</li></ul></section>
+</svg></div></section><section id="autotoc_md1"><h3><a href="#autotoc_md1">Advantages</a></h3><ul><li>Unconditionally stable for large CFL numbers</li><li>Naturally handles complex geometries</li><li>Mass-conservative in variational form</li></ul></section>
       </div>
     </div>
   </div>

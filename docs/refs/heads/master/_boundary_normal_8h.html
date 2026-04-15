@@ -31,6 +31,8 @@
               <ol>
                 <li><a href="guides-index.html">General concepts</a></li>
                 <li><a href="examples-index.html">Examples and tutorials</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="guides-io.html">I/O in Rodin</a></li>
                 <li><a href="notation-index.html">Notation</a></li>
                 <li><a href="credits-index.html">Credits</a></li>
               </ol>
@@ -46,6 +48,7 @@
               <ol>
                 <li><a href="namespace_rodin_1_1_assembly.html">Rodin::Assembly</a></li>
                 <li><a href="namespace_rodin_1_1_geometry.html">Rodin::Geometry</a></li>
+                <li><a href="namespace_rodin_1_1_i_o.html">Rodin::IO</a></li>
                 <li><a href="namespace_rodin_1_1_math.html">Rodin::Math</a></li>
                 <li><a href="namespace_rodin_1_1_q_f.html">Rodin::QF</a></li>
                 <li><a href="namespace_rodin_1_1_solver.html">Rodin::Solver</a></li>
@@ -77,10 +80,10 @@
         <nav class="m-block m-default">
           <h3>Contents</h3>
           <ul>
-            <li><a href="#autotoc_md237">Mathematical Foundation</a></li>
-            <li><a href="#autotoc_md238">Applications</a></li>
-            <li><a href="#autotoc_md239">Properties</a></li>
-            <li><a href="#autotoc_md240">Usage Example</a></li>
+            <li><a href="#autotoc_md290">Mathematical Foundation</a></li>
+            <li><a href="#autotoc_md291">Applications</a></li>
+            <li><a href="#autotoc_md292">Properties</a></li>
+            <li><a href="#autotoc_md293">Usage Example</a></li>
             <li>
               Reference
               <ul>
@@ -90,7 +93,7 @@
             </li>
           </ul>
         </nav>
-<p>This file defines the BoundaryNormal class, which represents the outward unit normal vector field on the boundary of a domain. Boundary normals are essential for imposing natural boundary conditions and computing boundary integrals in finite element formulations.</p><section id="autotoc_md237"><h3><a href="#autotoc_md237">Mathematical Foundation</a></h3><p>For a domain <svg class="m-math" style="width: 3.894em; height: 1.077em; vertical-align: -0.049em;" viewBox="0 -9.873238 37.386104 10.340659">
+<p>This file defines the BoundaryNormal class, which represents the outward unit normal vector field on the boundary of a domain. Boundary normals are essential for imposing natural boundary conditions and computing boundary integrals in finite element formulations.</p><section id="autotoc_md290"><h3><a href="#autotoc_md290">Mathematical Foundation</a></h3><p>For a domain <svg class="m-math" style="width: 3.894em; height: 1.077em; vertical-align: -0.049em;" viewBox="0 -9.873238 37.386104 10.340659">
 <title>
 $ \Omega \subset \mathbb{R}^d $
 </title>
@@ -179,7 +182,7 @@ $ \partial\Omega $
 <use x='0' y='0' xlink:href='#eq6-g0-64'/>
 <use x='6.829868' y='0' xlink:href='#eq6-g1-10'/>
 </g>
-</svg>.</p></section><section id="autotoc_md238"><h3><a href="#autotoc_md238">Applications</a></h3><ul><li><strong>Neumann boundary conditions</strong>: <svg class="m-math" style="width: 5.678em; height: 1.093em; vertical-align: -0.243em;" viewBox="0 -8.169354 54.511878 10.493961">
+</svg>.</p></section><section id="autotoc_md291"><h3><a href="#autotoc_md291">Applications</a></h3><ul><li><strong>Neumann boundary conditions</strong>: <svg class="m-math" style="width: 5.678em; height: 1.093em; vertical-align: -0.243em;" viewBox="0 -8.169354 54.511878 10.493961">
 <title>
 $ \nabla u \cdot \mathbf{n} = g $
 </title>
@@ -254,7 +257,7 @@ $ \int_{\partial\Omega} (\mathbf{v} \cdot \mathbf{n}) \, ds $
 <use x='51.679767' y='0' xlink:href='#eq9-g4-100'/>
 <use x='57.76246' y='0' xlink:href='#eq9-g4-115'/>
 </g>
-</svg></li><li><strong>Integration by parts</strong>: Boundary terms involving normal derivatives</li><li><strong>DG methods</strong>: Numerical flux terms with normal components</li></ul></section><section id="autotoc_md239"><h3><a href="#autotoc_md239">Properties</a></h3><ul><li>Orientation: Points outward from the domain</li><li>Uniqueness: Well-defined except at corners/edges (where limits differ)</li><li>Computation: Derived from surface geometry and element transformations</li></ul></section><section id="autotoc_md240"><h3><a href="#autotoc_md240">Usage Example</a></h3><pre class="m-code"><span class="n">BoundaryNormal</span><span class="w"> </span><span class="nf">n</span><span class="p">(</span><span class="n">mesh</span><span class="p">);</span>
+</svg></li><li><strong>Integration by parts</strong>: Boundary terms involving normal derivatives</li><li><strong>DG methods</strong>: Numerical flux terms with normal components</li></ul></section><section id="autotoc_md292"><h3><a href="#autotoc_md292">Properties</a></h3><ul><li>Orientation: Points outward from the domain</li><li>Uniqueness: Well-defined except at corners/edges (where limits differ)</li><li>Computation: Derived from surface geometry and element transformations</li></ul></section><section id="autotoc_md293"><h3><a href="#autotoc_md293">Usage Example</a></h3><pre class="m-code"><span class="n">BoundaryNormal</span><span class="w"> </span><span class="nf">n</span><span class="p">(</span><span class="n">mesh</span><span class="p">);</span>
 
 <span class="c1">// Neumann BC: ∫_Γ g(n·∇u) v ds</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">neumann</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BoundaryIntegral</span><span class="p">(</span><span class="n">g</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">Dot</span><span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="n">Grad</span><span class="p">(</span><span class="n">u</span><span class="p">)),</span><span class="w"> </span><span class="n">v</span><span class="p">).</span><span class="n">on</span><span class="p">(</span><span class="n">boundary_attr</span><span class="p">);</span>
@@ -265,9 +268,9 @@ $ \int_{\partial\Omega} (\mathbf{v} \cdot \mathbf{n}) \, ds $
           <h2><a href="#namespaces">Namespaces</a></h2>
           <dl class="m-doc">
             <dt>namespace <a href="namespace_rodin.html" class="m-doc">Rodin</a></dt>
-            <dd>The <a href="namespace_rodin.html" class="m-doc">Rodin</a> library for Shape and Topology Optimization.</dd>
+            <dd>The <a href="namespace_rodin.html" class="m-doc">Rodin</a> library for finite element methods and shape optimization.</dd>
             <dt>namespace <a href="namespace_rodin_1_1_variational.html" class="m-doc">Rodin::Variational</a></dt>
-            <dd>Module which provides the necessary tools for constructing variational problems.</dd>
+            <dd>Module which provides the necessary tools for constructing and solving variational problems.</dd>
           </dl>
         </section>
         <section id="nested-classes">
