@@ -71,7 +71,8 @@ static std::array<Real, 3> basis(int axis)
 enum class ObjectiveMode
 {
   K,
-  C
+  C,
+  Q
 };
 
 enum class ObjectiveSense
@@ -87,9 +88,11 @@ static ObjectiveMode parseObjectiveMode(const char* value)
     return ObjectiveMode::K;
   if (mode == "C" || mode == "c")
     return ObjectiveMode::C;
+  if (mode == "Q" || mode == "q")
+    return ObjectiveMode::Q;
 
   throw std::runtime_error(
-    "Unsupported 3D objective mode. Use OBJECTIVE_MODE=K or OBJECTIVE_MODE=C.");
+    "Unsupported 3D objective mode. Use OBJECTIVE_MODE=K, OBJECTIVE_MODE=C or OBJECTIVE_MODE=Q.");
 }
 
 static ObjectiveSense parseObjectiveSense(const char* value)
@@ -175,9 +178,11 @@ int main(int argc, char** argv)
     // Objective basis vectors
     const auto ei = basis(iAxis);
     const auto ej = basis(jAxis);
-    const Real stateOmegaX = objectiveMode == ObjectiveMode::C ? ej[0] : 0.0;
-    const Real stateOmegaY = objectiveMode == ObjectiveMode::C ? ej[1] : 0.0;
-    const Real stateOmegaZ = objectiveMode == ObjectiveMode::C ? ej[2] : 0.0;
+    const bool rotationalState = objectiveMode == ObjectiveMode::C || objectiveMode == ObjectiveMode::Q;
+    const bool rotationalAdjoint = objectiveMode == ObjectiveMode::Q;
+    const Real stateOmegaX = rotationalState ? ej[0] : 0.0;
+    const Real stateOmegaY = rotationalState ? ej[1] : 0.0;
+    const Real stateOmegaZ = rotationalState ? ej[2] : 0.0;
 
     const Real stateTx = objectiveMode == ObjectiveMode::K ? ej[0] : 0.0;
     const Real stateTy = objectiveMode == ObjectiveMode::K ? ej[1] : 0.0;
@@ -199,17 +204,17 @@ int main(int argc, char** argv)
     };
 
     const auto adjointVelocity = VectorFunction{
-      [=](const Geometry::Point&)
+      [=](const Geometry::Point& p)
       {
-        return ei[0];
+        return rotationalAdjoint ? ei[1] * p.z() - ei[2] * p.y() : ei[0];
       },
-      [=](const Geometry::Point&)
+      [=](const Geometry::Point& p)
       {
-        return ei[1];
+        return rotationalAdjoint ? ei[2] * p.x() - ei[0] * p.z() : ei[1];
       },
-      [=](const Geometry::Point&)
+      [=](const Geometry::Point& p)
       {
-        return ei[2];
+        return rotationalAdjoint ? ei[0] * p.y() - ei[1] * p.x() : ei[2];
       }
     };
 
@@ -378,17 +383,14 @@ int main(int argc, char** argv)
 
       auto ju = Jacobian(u);
 
-      auto nObj = FaceNormal(th);
-      nObj.traceOf(Obstacle);
-
-      const auto eiVec = VectorFunction{ei[0], ei[1], ei[2]};
+      auto nObj = -FaceNormal(fluidMesh);
       auto sigma = mu * (ju + ju.T()) - p * IdentityMatrix(d);
       auto traction = sigma * nObj;
 
-      P0g p0Obj(th);
+      P0g p0Obj(fluidMesh);
       TestFunction z0Obj(p0Obj);
       LinearForm lfObj(z0Obj);
-      lfObj = FaceIntegral(Dot(traction, eiVec), z0Obj).over(shapeInterface);
+      lfObj = FaceIntegral(Dot(traction, adjointVelocity), z0Obj).over(shapeInterface);
       lfObj.assemble();
 
       GridFunction oneObj(p0Obj);
@@ -421,7 +423,7 @@ int main(int argc, char** argv)
       const double violation = obstacleVolume - targetObstacleVolume;
       const double shift = -lambdaAL + penalty * violation;
 
-      P0g p0Stats(th);
+      P0g p0Stats(fluidMesh);
       TestFunction z0Stats(p0Stats);
 
       LinearForm lfArea(z0Stats);

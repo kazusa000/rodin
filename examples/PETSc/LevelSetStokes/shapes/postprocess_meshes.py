@@ -141,6 +141,40 @@ def inside_torus(pt):
     return (rho - 0.14) ** 2 + (z - 0.5) ** 2 <= 0.08 * 0.08
 
 
+def inside_rounded_three_lobe(pt):
+    x, y, z = pt
+    c0 = (x - 0.50) ** 2 + (y - 0.50) ** 2 + (z - 0.50) ** 2 <= 0.12 * 0.12
+    c1 = (x - 0.62) ** 2 + (y - 0.50) ** 2 + (z - 0.50) ** 2 <= 0.13 * 0.13
+    c2 = (x - 0.44) ** 2 + (y - 0.60) ** 2 + (z - 0.50) ** 2 <= 0.13 * 0.13
+    c3 = (x - 0.44) ** 2 + (y - 0.40) ** 2 + (z - 0.50) ** 2 <= 0.13 * 0.13
+    return c0 or c1 or c2 or c3
+
+
+def inside_rounded_four_lobe(pt):
+    x, y, z = pt
+    c0 = (x - 0.50) ** 2 + (y - 0.50) ** 2 + (z - 0.50) ** 2 <= 0.11 * 0.11
+    c1 = (x - 0.50) ** 2 + (y - 0.66) ** 2 + (z - 0.50) ** 2 <= 0.12 * 0.12
+    c2 = (x - 0.50) ** 2 + (y - 0.34) ** 2 + (z - 0.50) ** 2 <= 0.12 * 0.12
+    c3 = (x - 0.66) ** 2 + (y - 0.50) ** 2 + (z - 0.50) ** 2 <= 0.12 * 0.12
+    c4 = (x - 0.34) ** 2 + (y - 0.50) ** 2 + (z - 0.50) ** 2 <= 0.12 * 0.12
+    return c0 or c1 or c2 or c3 or c4
+
+
+def inside_seven_lobe_star(pt):
+    x, y, z = pt
+    bulbs = [
+        (0.50, 0.50, 0.50, 0.095),
+        (0.50, 0.69, 0.50, 0.095),
+        (0.65, 0.62, 0.50, 0.095),
+        (0.69, 0.47, 0.50, 0.095),
+        (0.60, 0.33, 0.50, 0.095),
+        (0.43, 0.30, 0.50, 0.095),
+        (0.31, 0.41, 0.50, 0.095),
+        (0.34, 0.59, 0.50, 0.095),
+    ]
+    return any((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2 <= r * r for cx, cy, cz, r in bulbs)
+
+
 SHAPES = {
     "ellipsoid_init.mesh": inside_ellipsoid,
     "oblate_init.mesh": inside_oblate,
@@ -153,6 +187,9 @@ SHAPES = {
     "dumbbell_init.mesh": inside_dumbbell,
     "sphere_bump_init.mesh": inside_sphere_bump,
     "torus_init.mesh": inside_torus,
+    "rounded_three_lobe_init.mesh": inside_rounded_three_lobe,
+    "rounded_four_lobe_init.mesh": inside_rounded_four_lobe,
+    "seven_lobe_star_init.mesh": inside_seven_lobe_star,
 }
 
 
