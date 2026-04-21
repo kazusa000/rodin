@@ -31,6 +31,7 @@
 #include "RuntimeConfig.h"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -65,6 +66,16 @@ static constexpr Real   defaultHMax    = 0.2;
 static constexpr Real   defaultAlpha   = 0.2;
 static constexpr Real   defaultDt      = 0.5 * (defaultHMax - 0.1 * defaultHMax);
 static constexpr Real   regularization = 1e-12;
+static constexpr size_t defaultConvergenceWindow = 5;
+static constexpr Real   defaultConvergenceRtolJraw = 5e-3;
+static constexpr int    defaultFinalRefine = 1;
+static constexpr Real   defaultFinalHmaxFactor = 1.0;
+static constexpr Real   defaultFinalHminRatio = 0.1;
+static constexpr Real   defaultFinalHausdRatio = 3.0;
+static constexpr Real   defaultFinalRmc = 1e-4;
+static constexpr Real   defaultFinalOptimizeHmaxFactor = 0.3;
+static constexpr Real   defaultFinalOptimizeHminRatio = 0.05;
+static constexpr Real   defaultFinalOptimizeHausdRatio = 1.0;
 
 // Null-space gradient flow step-size constants (O(1), insensitive to tuning)
 static constexpr Real A_J = 0.5;
@@ -140,6 +151,26 @@ int main(int argc, char** argv)
   {
     const char* meshFile = LevelSetStokes::Runtime::envCString("MESH", LEVELSET_STOKES_MESH_FILE);
     const size_t maxIt   = LevelSetStokes::Runtime::envSizeT("MAX_ITERS", defaultMaxIt);
+    const size_t convergenceWindow =
+      LevelSetStokes::Runtime::envSizeT("CONVERGENCE_WINDOW", defaultConvergenceWindow);
+    const Real convergenceRtolJraw =
+      LevelSetStokes::Runtime::envDouble("CONVERGENCE_RTOL_JRAW", defaultConvergenceRtolJraw);
+    const bool finalRefineEnabled =
+      LevelSetStokes::Runtime::envInt("FINAL_REFINE", defaultFinalRefine) != 0;
+    const Real finalHmaxFactor =
+      LevelSetStokes::Runtime::envDouble("FINAL_HMAX_FACTOR", defaultFinalHmaxFactor);
+    const Real finalHminRatio =
+      LevelSetStokes::Runtime::envDouble("FINAL_HMIN_RATIO", defaultFinalHminRatio);
+    const Real finalHausdRatio =
+      LevelSetStokes::Runtime::envDouble("FINAL_HAUSD_RATIO", defaultFinalHausdRatio);
+    const Real finalRmc =
+      LevelSetStokes::Runtime::envDouble("FINAL_RMC", defaultFinalRmc);
+    const Real finalOptimizeHmaxFactor =
+      LevelSetStokes::Runtime::envDouble("FINAL_OPT_HMAX_FACTOR", defaultFinalOptimizeHmaxFactor);
+    const Real finalOptimizeHminRatio =
+      LevelSetStokes::Runtime::envDouble("FINAL_OPT_HMIN_RATIO", defaultFinalOptimizeHminRatio);
+    const Real finalOptimizeHausdRatio =
+      LevelSetStokes::Runtime::envDouble("FINAL_OPT_HAUSD_RATIO", defaultFinalOptimizeHausdRatio);
     const ObjectiveMode objectiveMode =
       parseObjectiveMode(LevelSetStokes::Runtime::envCString("OBJECTIVE_MODE", "K"));
     const ObjectiveSense objectiveSense =
@@ -170,7 +201,7 @@ int main(int argc, char** argv)
 
     // XDMF output
     std::filesystem::create_directories("out");
-    IO::XDMF xdmf("out/LevelSetStokes3DObstacle_NS");
+    IO::XDMF xdmf("out/LevelSetStokes3DObstacle_test_3DNS_finalopti1");
 
     auto domainGrid = xdmf.grid("domain");
     domainGrid.setMesh(th, IO::XDMF::MeshPolicy::Transient);
@@ -188,6 +219,8 @@ int main(int argc, char** argv)
 
     // Volume constraint target
     const double targetObstacleVolume = th.getVolume(Obstacle);
+    std::vector<double> jrawHistory;
+    jrawHistory.reserve(maxIt);
 
     // Objective basis vectors
     const auto ei = basis(iAxis);
@@ -604,7 +637,7 @@ int main(int argc, char** argv)
       // ----------------------------------------------------------------------
       Alert::Info() << "   | Advecting level set." << Alert::Raise;
 
-      // Δt = 1 per paper §5.3.2: step size is encoded in αJ, αC.
+      // Δt = 1   step size is encoded in αJ, αC.
       P1 shSpeed(th);
       GridFunction speed(shSpeed);
       speed = Frobenius(thetaField);
@@ -704,6 +737,150 @@ int main(int argc, char** argv)
         << Alert::Raise;
 
       th.save("out/Omega." + std::to_string(it) + ".mesh", IO::FileFormat::MEDIT);
+
+      jrawHistory.push_back(Jraw);
+      bool convergedByJraw = false;
+      if (convergenceWindow >= 2 && convergenceRtolJraw > 0.0 && jrawHistory.size() >= convergenceWindow)
+      {
+        const double referenceJraw = jrawHistory[jrawHistory.size() - convergenceWindow];
+        const double scale =
+          std::max(1.0, std::max(std::abs(Jraw), std::abs(referenceJraw)));
+        const double relativeChange = std::abs(Jraw - referenceJraw) / scale;
+        if (relativeChange < convergenceRtolJraw)
+        {
+          Alert::Info()
+            << "   | Converged by Jraw criterion: window=" << convergenceWindow
+            << ", rel_change=" << relativeChange
+            << ", tol=" << convergenceRtolJraw
+            << Alert::Raise;
+          convergedByJraw = true;
+        }
+      }
+
+      if (convergedByJraw && finalRefineEnabled)
+      {
+        const Real finalDiscHmax = std::max(Real(1e-6), finalHmaxFactor * hmax);
+        const Real finalDiscHmin = finalHminRatio * finalDiscHmax;
+        const Real finalDiscHausd = finalHausdRatio * finalDiscHmin;
+        const Real finalOptHmax = std::max(Real(1e-6), finalOptimizeHmaxFactor * hmax);
+        const Real finalOptHmin = finalOptimizeHminRatio * finalOptHmax;
+        const Real finalOptHausd = finalOptimizeHausdRatio * finalOptHmin;
+
+        Alert::Info()
+          << "   | Final beautify discretize: hmax=" << finalDiscHmax
+          << ", hmin=" << finalDiscHmin
+          << ", hausd=" << finalDiscHausd
+          << ", rmc=" << finalRmc
+          << Alert::Raise;
+
+        Alert::Info()
+          << "   | Final beautify optimize target: hmax=" << finalOptHmax
+          << ", hmin=" << finalOptHmin
+          << ", hausd=" << finalOptHausd
+          << Alert::Raise;
+
+        try
+        {
+          {
+            auto& conn = th.getConnectivity();
+            conn.compute(2, 3);
+            conn.compute(3, 2);
+            conn.compute(2, 1);
+            conn.compute(1, 0);
+            conn.compute(0, 0);
+          }
+
+          P1 finalSh(th);
+          GridFunction finalDist(finalSh);
+          Distance::Eikonal(finalDist)
+            .setInterior(Fluid)
+            .setInterface(shapeInterface)
+            .solve()
+            .sign();
+
+          Alert::Info()
+            << "   | Final beautify discretize."
+            << Alert::Raise;
+
+          MeshType finalTh =
+            MMG::LevelSetDiscretizer()
+              .split(Fluid,    {Fluid, Obstacle})
+              .split(Obstacle, {Fluid, Obstacle})
+              .setRMC(finalRmc)
+              .setHMax(finalDiscHmax)
+              .setHMin(finalDiscHmin)
+              .setHausdorff(finalDiscHausd)
+              .setAngleDetection(false)
+              .setBoundaryReference(GammaShape)
+              .setBaseReferences(baseOuterBdr)
+              .discretize(finalDist);
+
+          for (auto fit = finalTh.getFace(); fit; ++fit)
+          {
+            if (fit->getAttribute() == Geometry::Attribute(Obstacle))
+              finalTh.setAttribute(fit.key(), {});
+          }
+
+          {
+            auto& conn = finalTh.getConnectivity();
+            conn.compute(2, 3);
+            conn.compute(3, 2);
+            conn.compute(2, 1);
+            conn.compute(1, 0);
+            conn.compute(0, 0);
+          }
+
+          const std::string finalPreOptPath = "out/Omega.final.preopt.mesh";
+          finalTh.save(finalPreOptPath, IO::FileFormat::MEDIT);
+
+          MeshType finalThOpt;
+          finalThOpt.load(finalPreOptPath, IO::FileFormat::MEDIT);
+
+          Alert::Info()
+            << "   | Final beautify optimize."
+            << Alert::Raise;
+
+          MMG::Optimizer()
+            .setHMax(finalOptHmax)
+            .setHMin(finalOptHmin)
+            .setHausdorff(finalOptHausd)
+            .setAngleDetection(false)
+            .optimize(finalThOpt);
+
+          {
+            auto& conn = finalThOpt.getConnectivity();
+            conn.compute(2, 3);
+            conn.compute(3, 2);
+            conn.compute(2, 1);
+            conn.compute(1, 0);
+            conn.compute(0, 0);
+          }
+
+          finalThOpt.save("out/Omega.final.mesh", IO::FileFormat::MEDIT);
+          finalThOpt.save("out/Omega." + std::to_string(it + 1) + ".mesh", IO::FileFormat::MEDIT);
+
+          auto finalFluidMesh = finalThOpt.trim(Obstacle);
+          domainGrid.clear();
+          domainGrid.setMesh(finalThOpt, IO::XDMF::MeshPolicy::Transient);
+          stateGrid.clear();
+          stateGrid.setMesh(finalFluidMesh, IO::XDMF::MeshPolicy::Transient);
+          xdmf.write(it + 1).flush();
+
+          Alert::Info()
+            << "   | Final beautify saved: out/Omega.final.mesh and out/Omega." << (it + 1) << ".mesh"
+            << Alert::Raise;
+        }
+        catch (const std::exception& e)
+        {
+          Alert::Warning()
+            << "Final beautify failed: " << e.what()
+            << ". Keeping coarse final mesh."
+            << Alert::Raise;
+        }
+      }
+
+      if (convergedByJraw)
+        break;
     }
 
     xdmf.close();
@@ -717,7 +894,7 @@ int main(int argc, char** argv)
   }
   catch (const std::exception& e)
   {
-    std::cerr << "LevelSetStokes3DObstacle_NS failed: " << e.what() << '\n';
+    std::cerr << "test_3DNS_finalopti1 failed: " << e.what() << '\n';
     PetscFinalize();
     return 1;
   }

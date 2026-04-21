@@ -1,6 +1,14 @@
 /*
- * Single-file rewrite of the Stokes shape-optimization prototype.
- * Semantic choice is fixed here:
+ * Null-space gradient flow variant of LevelSetStokes3DObstacle.
+ *
+ * Replaces the Augmented Lagrangian volume constraint handling with the
+ * null-space gradient flow method (Feppon, Allaire, Dapogny 2020).
+ * The descent direction is decomposed into:
+ *   ξ_J: null-space component (objective descent within feasible directions)
+ *   ξ_C: range-space component (Gauss-Newton constraint correction)
+ * with adaptive normalization — no penalty parameters to tune.
+ *
+ * Semantic choice (unchanged):
  *   - obstacle cells: attribute 2
  *   - fluid cells:    attribute 3
  *   - shape interface: attribute 13
@@ -23,6 +31,7 @@
 #include "RuntimeConfig.h"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -52,11 +61,15 @@ static constexpr Attribute GammaShape = 13;
 static constexpr Real mu = 1.0;
 
 // Optimization parameters
-static constexpr size_t defaultMaxIt   = 60;
+static constexpr size_t defaultMaxIt   = 5;
 static constexpr Real   defaultHMax    = 0.2;
 static constexpr Real   defaultAlpha   = 0.2;
 static constexpr Real   defaultDt      = 0.5 * (defaultHMax - 0.1 * defaultHMax);
 static constexpr Real   regularization = 1e-12;
+static constexpr size_t defaultConvergenceWindow = 5;
+static constexpr Real   defaultConvergenceRtolJraw = 5e-3;
+static constexpr Real   defaultNsAlphaJ = 0.5;
+static constexpr Real   defaultNsAlphaC = 0.5;
 
 static std::array<Real, 3> basis(int axis)
 {
@@ -92,7 +105,7 @@ static ObjectiveMode parseObjectiveMode(const char* value)
     return ObjectiveMode::Q;
 
   throw std::runtime_error(
-    "Unsupported 3D objective mode. Use OBJECTIVE_MODE=K, OBJECTIVE_MODE=C or OBJECTIVE_MODE=Q.");
+    "Unsupported 3D NS objective mode. Use OBJECTIVE_MODE=K, OBJECTIVE_MODE=C or OBJECTIVE_MODE=Q.");
 }
 
 static ObjectiveSense parseObjectiveSense(const char* value)
@@ -111,6 +124,10 @@ int main(int argc, char** argv)
 {
   PetscInitialize(&argc, &argv, PETSC_NULLPTR, PETSC_NULLPTR);
 
+  // Force line-buffered stdout so output appears promptly even under ld-linux loader
+  std::setvbuf(stdout, nullptr, _IOLBF, 0);
+  std::cout << std::unitbuf;
+
   const Real defaultHMaxRuntime = LevelSetStokes::Runtime::envDouble("HMAX", defaultHMax);
   const Real hminRatio = LevelSetStokes::Runtime::envDouble("HMIN_RATIO", 0.1);
   const Real hausdRatio = LevelSetStokes::Runtime::envDouble("HAUSD_RATIO", 0.1);
@@ -124,6 +141,14 @@ int main(int argc, char** argv)
   {
     const char* meshFile = LevelSetStokes::Runtime::envCString("MESH", LEVELSET_STOKES_MESH_FILE);
     const size_t maxIt   = LevelSetStokes::Runtime::envSizeT("MAX_ITERS", defaultMaxIt);
+    const size_t convergenceWindow =
+      LevelSetStokes::Runtime::envSizeT("CONVERGENCE_WINDOW", defaultConvergenceWindow);
+    const Real convergenceRtolJraw =
+      LevelSetStokes::Runtime::envDouble("CONVERGENCE_RTOL_JRAW", defaultConvergenceRtolJraw);
+    const Real nsAlphaJParam =
+      LevelSetStokes::Runtime::envDouble("NS_ALPHA_J", defaultNsAlphaJ);
+    const Real nsAlphaCParam =
+      LevelSetStokes::Runtime::envDouble("NS_ALPHA_C", defaultNsAlphaC);
     const ObjectiveMode objectiveMode =
       parseObjectiveMode(LevelSetStokes::Runtime::envCString("OBJECTIVE_MODE", "K"));
     const ObjectiveSense objectiveSense =
@@ -154,7 +179,7 @@ int main(int argc, char** argv)
 
     // XDMF output
     std::filesystem::create_directories("out");
-    IO::XDMF xdmf("out/LevelSetStokes3DObstacle");
+    IO::XDMF xdmf("out/3Dv2");
 
     auto domainGrid = xdmf.grid("domain");
     domainGrid.setMesh(th, IO::XDMF::MeshPolicy::Transient);
@@ -165,16 +190,15 @@ int main(int argc, char** argv)
     std::ofstream fObj("obj.txt");
     std::ofstream fObjRaw("obj_raw.txt");
     std::ofstream fVol("vol.txt");
-    std::ofstream fAL("al.txt");
+    std::ofstream fNS("ns.txt");
 
-    if (!fObj || !fObjRaw || !fVol || !fAL)
+    if (!fObj || !fObjRaw || !fVol || !fNS)
       throw std::runtime_error("Failed to open output history files.");
 
-    // Augmented Lagrangian parameters
-    double lambdaAL = 0.0;
-    double penalty  = LevelSetStokes::Runtime::envDouble("AL_PENALTY", 100.0);
+    // Volume constraint target
     const double targetObstacleVolume = th.getVolume(Obstacle);
-
+    std::vector<double> jrawHistory;
+    jrawHistory.reserve(maxIt);
     // Objective basis vectors
     const auto ei = basis(iAxis);
     const auto ej = basis(jAxis);
@@ -183,7 +207,6 @@ int main(int argc, char** argv)
     const Real stateOmegaX = rotationalState ? ej[0] : 0.0;
     const Real stateOmegaY = rotationalState ? ej[1] : 0.0;
     const Real stateOmegaZ = rotationalState ? ej[2] : 0.0;
-
     const Real stateTx = objectiveMode == ObjectiveMode::K ? ej[0] : 0.0;
     const Real stateTy = objectiveMode == ObjectiveMode::K ? ej[1] : 0.0;
     const Real stateTz = objectiveMode == ObjectiveMode::K ? ej[2] : 0.0;
@@ -397,7 +420,7 @@ int main(int argc, char** argv)
       oneObj = 1.0;
 
       const double Jraw = -lfObj(oneObj);
-      const double senseSign = objectiveSense == ObjectiveSense::Min ? 1.0 : -1.0;
+      const double senseSign = objectiveSense == ObjectiveSense::Max ? -1.0 : 1.0;
       const double J = senseSign * Jraw;
 
       Alert::Info()
@@ -421,7 +444,6 @@ int main(int argc, char** argv)
 
       const double obstacleVolume = th.getVolume(Obstacle);
       const double violation = obstacleVolume - targetObstacleVolume;
-      const double shift = -lambdaAL + penalty * violation;
 
       P0g p0Stats(fluidMesh);
       TestFunction z0Stats(p0Stats);
@@ -443,23 +465,136 @@ int main(int argc, char** argv)
       auto n = FaceNormal(th);
       n.traceOf(Obstacle);
 
-      // ----------------------------------------------------------------------
-      // Hilbert extension
-      // ----------------------------------------------------------------------
-      Alert::Info() << "   | Solving vector Hilbert extension." << Alert::Raise;
+
+      Alert::Info() << "   | Solving Hilbert identification problems for DJ and Dg." << Alert::Raise;
 
       P1 vh(th, d);
-      PETSc::Variational::TrialFunction theta(vh); theta.setName("theta");
-      PETSc::Variational::TestFunction psi(vh);
 
-      Problem hilbert(theta, psi);
-      hilbert =
-          Integral(alpha * alpha * Jacobian(theta), Jacobian(psi))
-        + Integral(theta, psi)
-        + FaceIntegral((G + shift) * Dot(n, psi)).over(shapeInterface)
-        + DirichletBC(theta, VectorFunction{0.0, 0.0, 0.0}).on(baseOuterBdr);
+      // Discrete V-inner product:
+      //   aV(u, v) = ∫_D alpha^2 ∇u:∇v + ∫_D u·v
+      TrialFunction innerU(vh);
+      TestFunction innerV(vh);
+      BilinearForm innerVForm(innerU, innerV);
+      innerVForm =
+          Integral(alpha * alpha * Jacobian(innerU), Jacobian(innerV))
+        + Integral(innerU, innerV);
+      innerVForm.assemble();
 
-      Solver::KSP(hilbert).solve();
+      // gradJ in V: <gradJ, psi>_V = DJ(psi) = ∫_Γ G (psi·n)
+      PETSc::Variational::TrialFunction gradJTrial(vh); gradJTrial.setName("gradJ");
+      PETSc::Variational::TestFunction gradJTest(vh);
+
+      Problem identifyJ(gradJTrial, gradJTest);
+      identifyJ =
+          Integral(alpha * alpha * Jacobian(gradJTrial), Jacobian(gradJTest))
+        + Integral(gradJTrial, gradJTest)
+        - FaceIntegral(G * Dot(n, gradJTest)).over(shapeInterface)
+        + DirichletBC(gradJTrial, VectorFunction{0.0, 0.0, 0.0}).on(baseOuterBdr);
+
+      Solver::KSP(identifyJ).solve();
+
+      // gradg in V: <gradg, psi>_V = Dg(psi) = ∫_Γ (psi·n)
+      PETSc::Variational::TrialFunction gradgTrial(vh); gradgTrial.setName("gradg");
+      PETSc::Variational::TestFunction gradgTest(vh);
+
+      Problem identifyg(gradgTrial, gradgTest);
+      identifyg =
+          Integral(alpha * alpha * Jacobian(gradgTrial), Jacobian(gradgTest))
+        + Integral(gradgTrial, gradgTest)
+        - FaceIntegral(Dot(n, gradgTest)).over(shapeInterface)
+        + DirichletBC(gradgTrial, VectorFunction{0.0, 0.0, 0.0}).on(baseOuterBdr);
+
+      Solver::KSP(identifyg).solve();
+
+      GridFunction gradJ(vh);
+      gradJ = gradJTrial.getSolution();
+      GridFunction gradg(vh);
+      gradg = gradgTrial.getSolution();
+
+      // Single equality constraint:
+      //   xiJ = gradJ - <gradJ, gradg>_V / <gradg, gradg>_V * gradg
+      const Real innerJG = innerVForm(gradJ, gradg);
+      const Real innerGG = innerVForm(gradg, gradg);
+      const Real projCoeff = innerJG / std::max(innerGG, Real(1e-30));
+
+      GridFunction xiJ(vh);
+      xiJ = gradJ;
+      {
+        GridFunction tmp(vh);
+        tmp = gradg;
+        tmp *= projCoeff;
+        xiJ -= tmp;
+      }
+
+      P1 shNormSpace(th);
+      GridFunction normGradJ(shNormSpace);
+      normGradJ = Frobenius(gradJ);
+      GridFunction normGradg(shNormSpace);
+      normGradg = Frobenius(gradg);
+      GridFunction normXiJ(shNormSpace);
+      normXiJ = Frobenius(xiJ);
+
+      const Real maxGradJ = normGradJ.max();
+      const Real maxGradg = normGradg.max();
+      const Real maxXiJ = normXiJ.max();
+      const Real orthResidual = innerVForm(xiJ, gradg);
+
+      LinearForm lfNullCheck(z0Stats);
+      lfNullCheck = FaceIntegral(Dot(n, xiJ), z0Stats).over(shapeInterface);
+      lfNullCheck.assemble();
+      const Real nullResidual = lfNullCheck(oneStats);
+
+      Alert::Info()
+        << "   | Identification diag: <gradJ,gradg>=" << innerJG
+        << ", <gradg,gradg>=" << innerGG
+        << ", projCoeff=" << projCoeff
+        << ", max|gradJ|=" << maxGradJ
+        << ", max|gradg|=" << maxGradg
+        << ", max|xiJ|=" << maxXiJ
+        << ", <xiJ,gradg>_V=" << orthResidual
+        << ", Dg(xiJ)=" << nullResidual
+        << ", mean(G)=" << meanG
+        << ", violation=" << violation
+        << Alert::Raise;
+
+      // Range space step (Gauss-Newton constraint correction), formula (2.8):
+      //   xiC = (g(x) / <gradg, gradg>_V) * gradg
+      const Real rangeCoeff = violation / std::max(innerGG, Real(1e-30));
+
+      GridFunction xiC(vh);
+      xiC = gradg;
+      xiC *= rangeCoeff;
+
+      GridFunction normXiC(shNormSpace);
+      normXiC = Frobenius(xiC);
+      const Real maxXiC = normXiC.max();
+
+      Alert::Info()
+        << "   | Range space diag: rangeCoeff=" << rangeCoeff
+        << ", max|xiC|=" << maxXiC
+        << Alert::Raise;
+      //   αJ = nsAlphaJParam * hmin / ||ξJ||∞
+      //   αC = min(0.9, nsAlphaCParam * hmin / max(1e-9, ||ξC||∞))
+      const Real alphaJ = nsAlphaJParam * hmin / std::max(maxXiJ, Real(1e-30));
+      const Real alphaC = std::min(Real(0.9), nsAlphaCParam * hmin / std::max(maxXiC, Real(1e-9)));
+
+      //   θ = -(αJ · ξJ + αC · ξC)
+      GridFunction thetaField(vh);
+      thetaField = xiJ;
+      thetaField *= -alphaJ;
+      {
+        GridFunction tmp(vh);
+        tmp = xiC;
+        tmp *= -alphaC;
+        thetaField += tmp;
+      }
+
+      Alert::Info()
+        << "  alphaJ=" << alphaJ
+        << ", alphaC=" << alphaC
+        << ", dispJ=" << alphaJ * maxXiJ
+        << ", dispC=" << alphaC * maxXiC
+        << Alert::Raise;
 
       // ----------------------------------------------------------------------
       // Signed-distance reconstruction
@@ -479,28 +614,28 @@ int main(int argc, char** argv)
       // ----------------------------------------------------------------------
       Alert::Info() << "   | Advecting level set." << Alert::Raise;
 
-      auto& V = theta.getSolution();
-
-      P1 shNorm(th);
-      GridFunction speed(shNorm);
-      speed = Frobenius(V);
-
+      // Δt = 1   step size is encoded in αJ, αC.
+      P1 shSpeed(th);
+      GridFunction speed(shSpeed);
+      speed = Frobenius(thetaField);
       const Real vmax = speed.max();
-      if (vmax > 1.0)
-        V /= vmax;
+
+      Alert::Info()
+        << "   | Advection: vmax=" << vmax
+        << ", ||theta||∞=" << vmax
+        << Alert::Raise;
 
       TrialFunction advect(sh);
       TestFunction test(sh);
-      Advection::Lagrangian(advect, test, dist, V).step(dt);
+      Advection::Lagrangian(advect, test, dist, thetaField).step(1.0);
 
       // ----------------------------------------------------------------------
       // XDMF snapshot before remeshing
       // ----------------------------------------------------------------------
       domainGrid.clear();
       domainGrid.setMesh(th, IO::XDMF::MeshPolicy::Transient);
-      domainGrid.add("dist",   dist,                 IO::XDMF::Center::Node);
-      domainGrid.add("theta",  theta.getSolution(),  IO::XDMF::Center::Node);
-      domainGrid.add("speed",  speed,                IO::XDMF::Center::Node);
+      domainGrid.add("dist",   dist,   IO::XDMF::Center::Node);
+      domainGrid.add("theta",  thetaField,  IO::XDMF::Center::Node);
       domainGrid.add("advect", advect.getSolution(), IO::XDMF::Center::Node);
 
       stateGrid.clear();
@@ -553,37 +688,50 @@ int main(int argc, char** argv)
       }
 
       // ----------------------------------------------------------------------
-      // Augmented Lagrangian update
+      // Logging
       // ----------------------------------------------------------------------
-      const double Jaug = J - lambdaAL * violation + 0.5 * penalty * violation * violation;
-
-      fObj << J << " " << Jaug << "\n";
+      fObj << J << "\n";
       fObjRaw << Jraw << "\n";
       fVol << obstacleVolume << " " << violation << "\n";
-      fAL  << lambdaAL << " " << penalty << "\n";
+      fNS  << alphaJ << " " << alphaC << " " << projCoeff << " " << rangeCoeff << " " << maxXiJ << " " << maxXiC << "\n";
 
       fObj.flush();
       fObjRaw.flush();
       fVol.flush();
-      fAL.flush();
-
-      lambdaAL += -penalty * violation;
-      if (std::abs(violation) > 0.01 * targetObstacleVolume)
-        penalty = std::min(1.0e6, 1.2 * penalty);
+      fNS.flush();
 
       Alert::Info()
         << "   | Jraw=" << Jraw
         << ", Jopt=" << J
-        << ", Jaug=" << Jaug
         << ", Vobs=" << obstacleVolume
         << ", c=" << violation
         << ", mean(G)=" << meanG
-        << ", shift=" << shift
-        << ", lambda=" << lambdaAL
-        << ", penalty=" << penalty
+        << ", alphaJ=" << alphaJ
+        << ", alphaC=" << alphaC
+        << ", projCoeff=" << projCoeff
+        << ", max|xiJ|=" << maxXiJ
+        << ", max|xiC|=" << maxXiC
         << Alert::Raise;
 
       th.save("out/Omega." + std::to_string(it) + ".mesh", IO::FileFormat::MEDIT);
+
+      jrawHistory.push_back(Jraw);
+      if (convergenceWindow >= 2 && convergenceRtolJraw > 0.0 && jrawHistory.size() >= convergenceWindow)
+      {
+        const double referenceJraw = jrawHistory[jrawHistory.size() - convergenceWindow];
+        const double scale =
+          std::max(1.0, std::max(std::abs(Jraw), std::abs(referenceJraw)));
+        const double relativeChange = std::abs(Jraw - referenceJraw) / scale;
+        if (relativeChange < convergenceRtolJraw)
+        {
+          Alert::Info()
+            << "   | Converged by Jraw criterion: window=" << convergenceWindow
+            << ", rel_change=" << relativeChange
+            << ", tol=" << convergenceRtolJraw
+            << Alert::Raise;
+          break;
+        }
+      }
     }
 
     xdmf.close();
@@ -597,7 +745,7 @@ int main(int argc, char** argv)
   }
   catch (const std::exception& e)
   {
-    std::cerr << "LevelSetStokes3DObstacle failed: " << e.what() << '\n';
+    std::cerr << "LevelSetStokes3DObstacle_NS failed: " << e.what() << '\n';
     PetscFinalize();
     return 1;
   }

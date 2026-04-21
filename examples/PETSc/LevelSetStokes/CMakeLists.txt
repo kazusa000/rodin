@@ -1,39 +1,19 @@
 set(LEVELSET_STOKES_TARGETS
-  PETSc_LevelSetStokes3DObstacle
-  PETSc_LevelSetStokes3DObstacle_NS
-  PETSc_LevelSetStokes3DObstacle_RV
-  PETSc_LevelSetStokes2DObstacle
-  PETSc_LevelSetStokes2DObstacle_NS
-  PETSc_LevelSetStokes2DObstacle_RV
-  PETSc_LevelSetStokes2DObstacle_NSRV
+  PETSc_3Dv1
+  PETSc_3Dv2
+  PETSc_3Dv3
 )
 
-add_executable(PETSc_LevelSetStokes3DObstacle
-  LevelSetStokes3DObstacle.cpp
+add_executable(PETSc_3Dv1
+  3Dv1.cpp
 )
 
-add_executable(PETSc_LevelSetStokes3DObstacle_NS
-  LevelSetStokes3DObstacle_NS.cpp
+add_executable(PETSc_3Dv2
+  3Dv2.cpp
 )
 
-add_executable(PETSc_LevelSetStokes3DObstacle_RV
-  LevelSetStokes3DObstacle_RV.cpp
-)
-
-add_executable(PETSc_LevelSetStokes2DObstacle
-  LevelSetStokes2DObstacle.cpp
-)
-
-add_executable(PETSc_LevelSetStokes2DObstacle_NS
-  LevelSetStokes2DObstacle_NS.cpp
-)
-
-add_executable(PETSc_LevelSetStokes2DObstacle_RV
-  LevelSetStokes2DObstacle_RV.cpp
-)
-
-add_executable(PETSc_LevelSetStokes2DObstacle_NSRV
-  LevelSetStokes2DObstacle_NSRV.cpp
+add_executable(PETSc_3Dv3
+  3Dv3.cpp
 )
 
 foreach(_tgt IN LISTS LEVELSET_STOKES_TARGETS)
@@ -51,37 +31,17 @@ foreach(_tgt IN LISTS LEVELSET_STOKES_TARGETS)
 
 endforeach()
 
-target_compile_definitions(PETSc_LevelSetStokes3DObstacle
+target_compile_definitions(PETSc_3Dv1
   PRIVATE
   LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
 )
 
-target_compile_definitions(PETSc_LevelSetStokes3DObstacle_NS
+target_compile_definitions(PETSc_3Dv2
   PRIVATE
   LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
 )
 
-target_compile_definitions(PETSc_LevelSetStokes3DObstacle_RV
+target_compile_definitions(PETSc_3Dv3
   PRIVATE
   LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
-)
-
-target_compile_definitions(PETSc_LevelSetStokes2DObstacle
-  PRIVATE
-  LEVELSET_STOKES_2D_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/2dshapes/circle_init_2d.mesh"
-)
-
-target_compile_definitions(PETSc_LevelSetStokes2DObstacle_NS
-  PRIVATE
-  LEVELSET_STOKES_2D_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/2dshapes/circle_init_2d.mesh"
-)
-
-target_compile_definitions(PETSc_LevelSetStokes2DObstacle_RV
-  PRIVATE
-  LEVELSET_STOKES_2D_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/2dshapes/circle_init_2d.mesh"
-)
-
-target_compile_definitions(PETSc_LevelSetStokes2DObstacle_NSRV
-  PRIVATE
-  LEVELSET_STOKES_2D_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/2dshapes/circle_init_2d.mesh"
 )
