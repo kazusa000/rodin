@@ -2,6 +2,7 @@ set(LEVELSET_STOKES_TARGETS
   PETSc_3Dv1
   PETSc_3Dv2
   PETSc_3Dv3
+  PETSc_3Dv4_test
 )
 
 add_executable(PETSc_3Dv1
@@ -14,6 +15,10 @@ add_executable(PETSc_3Dv2
 
 add_executable(PETSc_3Dv3
   3Dv3.cpp
+)
+
+add_executable(PETSc_3Dv4_test
+  3Dv4_test.cpp
 )
 
 foreach(_tgt IN LISTS LEVELSET_STOKES_TARGETS)
@@ -42,6 +47,11 @@ target_compile_definitions(PETSc_3Dv2
 )
 
 target_compile_definitions(PETSc_3Dv3
+  PRIVATE
+  LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
+)
+
+target_compile_definitions(PETSc_3Dv4_test
   PRIVATE
   LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
 )
