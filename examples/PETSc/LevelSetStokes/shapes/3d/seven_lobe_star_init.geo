@@ -3,7 +3,7 @@ SetFactory("OpenCASCADE");
 Mesh.MeshSizeMin = 0.045;
 Mesh.MeshSizeMax = 0.09;
 
-Box(1) = {0, 0, 0, 1, 1, 1};
+Box(1) = {-0.5, -0.5, -0.5, 2, 2, 2};
 
 // Rounded many-lobed seed close to Fig. (a4): a compact center
 // with seven smooth outer bulbs.
@@ -25,7 +25,7 @@ fluid[] = Volume{:};
 fluid() -= obstacle();
 
 interface[] = Surface In BoundingBox{0.18-eps, 0.16-eps, 0.38-eps, 0.82+eps, 0.84+eps, 0.62+eps};
-outer[] = Surface In BoundingBox{-eps, -eps, -eps, 1+eps, 1+eps, 1+eps};
+outer[] = Surface In BoundingBox{-0.5-eps, -0.5-eps, -0.5-eps, 1.5+eps, 1.5+eps, 1.5+eps};
 outer() -= interface();
 
 Physical Volume(2) = {obstacle()};

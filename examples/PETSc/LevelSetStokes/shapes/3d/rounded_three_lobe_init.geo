@@ -3,7 +3,7 @@ SetFactory("OpenCASCADE");
 Mesh.MeshSizeMin = 0.05;
 Mesh.MeshSizeMax = 0.10;
 
-Box(1) = {0, 0, 0, 1, 1, 1};
+Box(1) = {-0.5, -0.5, -0.5, 2, 2, 2};
 
 // A smoother three-lobed seed: a central core plus three overlapping bulbs.
 Sphere(2) = {0.50, 0.50, 0.50, 0.12};
@@ -20,7 +20,7 @@ fluid[] = Volume{:};
 fluid() -= obstacle();
 
 interface[] = Surface In BoundingBox{0.28-eps, 0.26-eps, 0.35-eps, 0.76+eps, 0.74+eps, 0.65+eps};
-outer[] = Surface In BoundingBox{-eps, -eps, -eps, 1+eps, 1+eps, 1+eps};
+outer[] = Surface In BoundingBox{-0.5-eps, -0.5-eps, -0.5-eps, 1.5+eps, 1.5+eps, 1.5+eps};
 outer() -= interface();
 
 Physical Volume(2) = {obstacle()};

@@ -3,7 +3,7 @@ SetFactory("OpenCASCADE");
 Mesh.MeshSizeMin = 0.05;
 Mesh.MeshSizeMax = 0.10;
 
-Box(1) = {0, 0, 0, 1, 1, 1};
+Box(1) = {-0.5, -0.5, -0.5, 2, 2, 2};
 
 // Rounded four-lobed seed close to Fig. (a3): a smooth core with
 // four overlapping bulbs arranged along the cardinal directions.
@@ -22,7 +22,7 @@ fluid[] = Volume{:};
 fluid() -= obstacle();
 
 interface[] = Surface In BoundingBox{0.20-eps, 0.20-eps, 0.36-eps, 0.80+eps, 0.80+eps, 0.64+eps};
-outer[] = Surface In BoundingBox{-eps, -eps, -eps, 1+eps, 1+eps, 1+eps};
+outer[] = Surface In BoundingBox{-0.5-eps, -0.5-eps, -0.5-eps, 1.5+eps, 1.5+eps, 1.5+eps};
 outer() -= interface();
 
 Physical Volume(2) = {obstacle()};

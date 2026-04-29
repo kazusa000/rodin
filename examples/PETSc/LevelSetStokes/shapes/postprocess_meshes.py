@@ -8,6 +8,8 @@ BASE = Path("/home/wjj/Project/stage/rodin/examples/PETSc/LevelSetStokes")
 BASE_3D = BASE / "3dshapes"
 
 EPS = 1e-8
+BOX_MIN = -0.5
+BOX_MAX = 1.5
 
 
 def parse_mesh(path: Path):
@@ -49,7 +51,12 @@ def write_mesh(path: Path, lines, vertices, triangles, tetrahedra):
 
 
 def on_outer_boundary(pt):
-    return any(abs(c) < EPS or abs(c - 1.0) < EPS for c in pt)
+    return any(abs(c - BOX_MIN) < EPS or abs(c - BOX_MAX) < EPS for c in pt)
+
+
+def inside_sphere(pt):
+    x, y, z = pt
+    return (x - 0.5) ** 2 + (y - 0.5) ** 2 + (z - 0.5) ** 2 <= 0.22 * 0.22
 
 
 def inside_ellipsoid(pt):
@@ -135,6 +142,11 @@ def inside_sphere_bump(pt):
     return sphere or bump
 
 
+def inside_sphere_fine(pt):
+    x, y, z = pt
+    return (x - 0.5) ** 2 + (y - 0.5) ** 2 + (z - 0.5) ** 2 <= 0.22 * 0.22
+
+
 def inside_torus(pt):
     x, y, z = pt
     rho = math.hypot(x - 0.5, y - 0.5)
@@ -176,6 +188,7 @@ def inside_seven_lobe_star(pt):
 
 
 SHAPES = {
+    "sphere_init_aligned.mesh": inside_sphere,
     "ellipsoid_init.mesh": inside_ellipsoid,
     "oblate_init.mesh": inside_oblate,
     "prolate_init.mesh": inside_prolate,
@@ -186,6 +199,7 @@ SHAPES = {
     "three_lobe_init.mesh": inside_three_lobe,
     "dumbbell_init.mesh": inside_dumbbell,
     "sphere_bump_init.mesh": inside_sphere_bump,
+    "sphere_fine_init.mesh": inside_sphere_fine,
     "torus_init.mesh": inside_torus,
     "rounded_three_lobe_init.mesh": inside_rounded_three_lobe,
     "rounded_four_lobe_init.mesh": inside_rounded_four_lobe,

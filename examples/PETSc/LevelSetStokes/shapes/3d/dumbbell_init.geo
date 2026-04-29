@@ -3,7 +3,7 @@ SetFactory("OpenCASCADE");
 Mesh.MeshSizeMin = 0.055;
 Mesh.MeshSizeMax = 0.11;
 
-Box(1) = {0, 0, 0, 1, 1, 1};
+Box(1) = {-0.5, -0.5, -0.5, 2, 2, 2};
 Cylinder(2) = {0.38, 0.5, 0.5, 0.24, 0, 0, 0.07, 2*Pi};
 Sphere(3) = {0.38, 0.5, 0.5, 0.15};
 Sphere(4) = {0.62, 0.5, 0.5, 0.15};
@@ -17,7 +17,7 @@ fluid[] = Volume{:};
 fluid() -= obstacle();
 
 interface[] = Surface In BoundingBox{0.22-eps, 0.34-eps, 0.34-eps, 0.78+eps, 0.66+eps, 0.66+eps};
-outer[] = Surface In BoundingBox{-eps, -eps, -eps, 1+eps, 1+eps, 1+eps};
+outer[] = Surface In BoundingBox{-0.5-eps, -0.5-eps, -0.5-eps, 1.5+eps, 1.5+eps, 1.5+eps};
 outer() -= interface();
 
 Physical Volume(2) = {obstacle()};

@@ -6,6 +6,9 @@
  */
 #include <boost/algorithm/string.hpp>
 
+#include <iomanip>
+#include <limits>
+
 #include "MEDIT.h"
 #include "Rodin/Alert/Warning.h"
 
@@ -418,6 +421,7 @@ namespace Rodin::IO
 
   void MeshPrinter<FileFormat::MEDIT, Context::Local>::printMesh(std::ostream& os, bool pEnd)
   {
+    os << std::setprecision(std::numeric_limits<double>::max_digits10);
     printVersion(os);
     printDimension(os);
     printEntities(os);
