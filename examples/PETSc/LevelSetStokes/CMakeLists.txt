@@ -3,6 +3,8 @@ set(LEVELSET_STOKES_TARGETS
   PETSc_3Dv9
   PETSc_3Dv11_test
   PETSc_3Dv13
+  PETSc_3Dv14_test
+  PETSc_3Dv15_test
   PETSc_3DPostSmooth
 )
 
@@ -20,6 +22,14 @@ add_executable(PETSc_3Dv11_test
 
 add_executable(PETSc_3Dv13
   3Dv13.cpp
+)
+
+add_executable(PETSc_3Dv14_test
+  3Dv14_test.cpp
+)
+
+add_executable(PETSc_3Dv15_test
+  3Dv15_test.cpp
 )
 
 add_executable(PETSc_3DPostSmooth
@@ -57,6 +67,16 @@ target_compile_definitions(PETSc_3Dv11_test
 )
 
 target_compile_definitions(PETSc_3Dv13
+  PRIVATE
+  LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
+)
+
+target_compile_definitions(PETSc_3Dv14_test
+  PRIVATE
+  LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
+)
+
+target_compile_definitions(PETSc_3Dv15_test
   PRIVATE
   LEVELSET_STOKES_MESH_FILE="${CMAKE_CURRENT_SOURCE_DIR}/3dshapes/sphere_init_aligned.mesh"
 )
