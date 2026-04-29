@@ -84,9 +84,9 @@ static constexpr Real defaultActiveSetDampingDecay = 0.5;
 static constexpr Real defaultActiveSetDampingRecovery = 1.1;
 static constexpr Real defaultActiveSetDampingMin = 0.05;
 static constexpr Real defaultPcFactorShiftAmount = 1e-10;
-static constexpr const char* defaultKspType = "preonly";
-static constexpr const char* defaultKspPcType = "lu";
-static constexpr const char* defaultKspPcFactorSolverType = "mumps";
+static constexpr const char* defaultKspType = "gmres";
+static constexpr const char* defaultKspPcType = "bjacobi";
+static constexpr const char* defaultKspPcFactorSolverType = "";
 static constexpr size_t defaultKspMaxIt = 500;
 static constexpr Real defaultKspRtol = 1e-8;
 static constexpr const char* defaultStokesKspType = "fgmres";
@@ -896,6 +896,8 @@ static void configureStokesFieldSplitOptions(
 
     setPetscOption(p + "fieldsplit_" + velocitySplitName + "_ksp_type", "preonly");
     setPetscOption(p + "fieldsplit_" + velocitySplitName + "_pc_type", velocityPcType);
+    if (velocityPcType == "lu")
+      setPetscOption(p + "fieldsplit_" + velocitySplitName + "_pc_factor_mat_solver_type", "mumps");
     setPetscOption(p + "fieldsplit_" + pressureSplitName + "_ksp_type", "preonly");
     setPetscOption(p + "fieldsplit_" + pressureSplitName + "_pc_type", pressurePcType);
   }
