@@ -15,6 +15,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -1320,10 +1321,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   IO::XDMF xdmf("KelvinBall");
   auto chamber = xdmf.grid("Chamber");
   chamber.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
-  auto fluidState = xdmf.grid("Fluid");
+  std::optional<IO::XDMF::Grid> fluidState;
+  if (!bemState)
+    fluidState.emplace(xdmf.grid("Fluid"));
   IO::XDMF sewedXdmf("KelvinBallSewed");
   auto sewedDesignOutput = sewedXdmf.grid("Design");
-  auto sewedFluidOutput = sewedXdmf.grid("Fluid");
+  std::optional<IO::XDMF::Grid> sewedFluidOutput;
+  if (!bemState)
+    sewedFluidOutput.emplace(sewedXdmf.grid("Fluid"));
   const std::string reconstructionName =
     reconstructionMethod == "wngir" ? "KelvinBallWNGIR" : "KelvinBallMMG";
   IO::XDMF reconstructionXdmf(reconstructionName);
@@ -1379,7 +1384,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reportStageTiming(2, stageSeconds[1]);
 
     const auto stage3Start = Clock::now();
-    announce("Stage 3: Solving the translational and rotational Stokes states.");
+    announce(bemState ? "Stage 3: Solving BEM rigid states and their discrete rho derivative." :
+      "Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
     const KelvinBall::Metrics resistanceMetrics(metricParameters);
     KelvinBall::BemState boundaryState;
@@ -2077,20 +2083,23 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       interfaceOutput.add("Smoothed_Curvature", interfaceCurvature,
         IO::XDMF::Center::Node);
     }
-    fluidState.clear();
-    fluidState.setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
-    fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
-    fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
-    fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
-    fluidState.add("Rotation_0", uR0, IO::XDMF::Center::Node);
-    fluidState.add("Rotation_1", uR1, IO::XDMF::Center::Node);
-    fluidState.add("Rotation_2", uR2, IO::XDMF::Center::Node);
-    fluidState.add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
-    fluidState.add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
-    fluidState.add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
-    fluidState.add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
-    fluidState.add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
-    fluidState.add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
+    if (!bemState)
+    {
+    fluidState->clear();
+    fluidState->setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
+    fluidState->add("Translation_0", uT0, IO::XDMF::Center::Node);
+    fluidState->add("Translation_1", uT1, IO::XDMF::Center::Node);
+    fluidState->add("Translation_2", uT2, IO::XDMF::Center::Node);
+    fluidState->add("Rotation_0", uR0, IO::XDMF::Center::Node);
+    fluidState->add("Rotation_1", uR1, IO::XDMF::Center::Node);
+    fluidState->add("Rotation_2", uR2, IO::XDMF::Center::Node);
+    fluidState->add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
+    fluidState->add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
+    fluidState->add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
+    fluidState->add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
+    fluidState->add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
+    fluidState->add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
+    }
 
     KelvinBall::SewedOutput sewedDesign(mesh, FlatSet<Attribute>{Gamma, Outer});
     P1 sewedDesignScalar(sewedDesign.getMesh());
@@ -2203,20 +2212,20 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     sewedFluid.setScalarLoad(sewedPR0, rotationPressures, 0);
     sewedFluid.setScalarLoad(sewedPR1, rotationPressures, 1);
     sewedFluid.setScalarLoad(sewedPR2, rotationPressures, 2);
-    sewedFluidOutput.clear();
-    sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
-    sewedFluidOutput.add("Translation_0", sewedUT0, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Translation_1", sewedUT1, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Translation_2", sewedUT2, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Rotation_0", sewedUR0, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Rotation_1", sewedUR1, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Rotation_2", sewedUR2, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Pressure_Translation_0", sewedPT0, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Pressure_Translation_1", sewedPT1, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Pressure_Translation_2", sewedPT2, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Pressure_Rotation_0", sewedPR0, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Pressure_Rotation_1", sewedPR1, IO::XDMF::Center::Node);
-    sewedFluidOutput.add("Pressure_Rotation_2", sewedPR2, IO::XDMF::Center::Node);
+    sewedFluidOutput->clear();
+    sewedFluidOutput->setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
+    sewedFluidOutput->add("Translation_0", sewedUT0, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Translation_1", sewedUT1, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Translation_2", sewedUT2, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Rotation_0", sewedUR0, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Rotation_1", sewedUR1, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Rotation_2", sewedUR2, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Pressure_Translation_0", sewedPT0, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Pressure_Translation_1", sewedPT1, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Pressure_Translation_2", sewedPT2, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Pressure_Rotation_0", sewedPR0, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Pressure_Rotation_1", sewedPR1, IO::XDMF::Center::Node);
+    sewedFluidOutput->add("Pressure_Rotation_2", sewedPR2, IO::XDMF::Center::Node);
 
     if (motionEvery > 0 &&
       ((iteration + 1) % motionEvery == 0 || iteration + 1 == maxIterations))
