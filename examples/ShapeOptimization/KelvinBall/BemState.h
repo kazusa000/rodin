@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <limits>
 #include <sstream>
@@ -13,6 +14,7 @@
 #include <string>
 #include <vector>
 #include "Metrics.h"
+#include <Rodin/IO/MEDIT.h>
 
 namespace KelvinBall
 {
@@ -33,7 +35,16 @@ namespace KelvinBall
       for (const auto* extension : {".mesh", ".json", ".nodes"})
         if (std::filesystem::exists(stem + extension))
           throw std::runtime_error("Refusing to overwrite a BEM state artifact.");
-      mesh.save(stem + ".mesh", IO::FileFormat::MEDIT);
+      {
+        // Mesh::save currently uses the stream's default six digits. BEM must
+        // evaluate the actual native coordinates, not a rounded surrogate.
+        std::ofstream output(stem + ".mesh");
+        if (!output) throw std::runtime_error("Cannot write original BEM input.");
+        output << std::setprecision(std::numeric_limits<Real>::max_digits10);
+        IO::MeshPrinter<IO::FileFormat::MEDIT, Context::Local>(mesh).print(output);
+        output.flush();
+        if (!output) throw std::runtime_error("BEM input write failed.");
+      }
       // Names above are generated, shell-safe relative filenames. The command
       // itself is an explicit trusted runner setting, never mesh content.
       const std::string command = std::string(callback) + " " + stem +
