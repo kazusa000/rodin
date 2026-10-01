@@ -1116,8 +1116,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("The advection step factor must be positive.");
   if (!(levelSetPenalty > 0))
     throw std::runtime_error("The level-set trace penalty must be positive.");
-  if (!(thicknessFactor > 0))
-    throw std::runtime_error("--thickness-min must be positive.");
+  if (!(std::isfinite(thicknessFactor) && thicknessFactor >= 0))
+    throw std::runtime_error("--thickness-min must be nonnegative (zero disables the penalty).");
   if (motionFrames == 0)
     throw std::runtime_error("The motion needs at least one frame.");
   if (!(motionForce.norm() > 0))
@@ -1923,7 +1923,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const Real thetaInfinityNorm = xiRhoNorm.max();
     const Real dRhoTheta = dRho(theta);
     const Real dVolumeTheta = dVolume(theta);
-    stageDiagnostics.dThicknessTheta = -thicknessLoad.dot(theta.getData());
+    stageDiagnostics.dThicknessTheta = thicknessFactor > 0
+      ? -thicknessLoad.dot(theta.getData()) : nan;
     if (thicknessFactor > 0)
     {
       previousThicknessPenalty = stageDiagnostics.thicknessPenalty;
