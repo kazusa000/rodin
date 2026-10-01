@@ -23,19 +23,14 @@ namespace KelvinBall
       Real outerRadius = 2;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
-      /// Settings of the single MMG optimization of the WNGIR background, the
-      /// sizes in multiples of h.
+      /// Settings of the initial WNGIR background preparation; sizes are in h.
       Real backgroundHMin = 0.1;
       Real backgroundHMax = 1;
       Real backgroundHausdorff = 0.05;
       Real backgroundGradation = 2;
-      /// Optional MMG adaptation that replaces the optimization pass after each
-      /// level-set cut. The size grows linearly from the interface size on
-      /// Gamma to the far size at the given width; all in multiples of h.
+      /// Optional MMG adaptation after each MMG cut or once on the fixed
+      /// WNGIR background. Its size map ranges from 0.1 h to 10 h.
       bool adapt = false;
-      Real adaptInterfaceSize = 1;
-      Real adaptFarSize = 1;
-      Real adaptWidth = 3;
       Real adaptGradation = 1.3;
       /// Crossing fraction below which the MMG cut snaps the near endpoint of
       /// a crossed edge onto the level set; zero disables the snapping.

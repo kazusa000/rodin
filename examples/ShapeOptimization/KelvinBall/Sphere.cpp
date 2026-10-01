@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <Rodin/Distance/Eikonal.h>
+#include <Rodin/Adaptation/WNGIRLoss.h>
 #include <Rodin/Variational.h>
 
 namespace KelvinBall
@@ -191,7 +192,8 @@ namespace KelvinBall
     return count;
   }
 
-  SphereDiscretization Sphere::discretize(bool conformingCuts) const
+  SphereDiscretization Sphere::discretize(bool conformingCuts,
+    Real requestedWelschScale) const
   {
     const Real h = m_configuration.getH();
     MMG::Mesh mesh(makeUniformChamber());
@@ -212,14 +214,13 @@ namespace KelvinBall
       .setHMax(hmax)
       .setHausdorff(hausdorff)
       .setGradation(2)
-      .setBaseReferences(FlatSet<Attribute>{Fluid})
       .setBoundaryReference(Gamma)
       .setAngleDetection(false);
     mesh = discretizer.discretize(sphere);
     splitSelfPairedCut(mesh);
     if (m_configuration.adapt && !conformingCuts)
     {
-      adapt(mesh, h);
+      adapt(mesh, h, requestedWelschScale);
     }
     else
     {
@@ -239,35 +240,67 @@ namespace KelvinBall
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};
   }
 
-  SphereDiscretization Sphere::prepareWNGIRBackground() const
+  SphereDiscretization Sphere::prepareWNGIRBackground(Real welschScale) const
   {
     const Real h = m_configuration.getH();
-    const Real hmin = m_configuration.backgroundHMin * h;
-    const Real hmax = m_configuration.backgroundHMax * h;
+    const Real interfaceSize = Real(0.1) * h;
+    const Real farSize = Real(10) * h;
+    const Real hmin = m_configuration.adapt
+      ? interfaceSize
+      : m_configuration.backgroundHMin * h;
+    const Real hmax = m_configuration.adapt
+      ? farSize
+      : m_configuration.backgroundHMax * h;
     const Real hausdorff = m_configuration.backgroundHausdorff * h;
     MMG::Mesh mesh(makeUniformChamber());
     const size_t cellsBefore = mesh.getCellCount();
-    protectFixedGeometry(mesh, true);
-    MMG::Optimizer()
-      .setHMin(hmin)
-      .setHMax(hmax)
-      .setHausdorff(hausdorff)
-      .setGradation(m_configuration.backgroundGradation)
-      .setAngleDetection(false)
-      .optimize(mesh);
+    if (m_configuration.adapt)
+    {
+      P1<Real, Mesh> sizeSpace(mesh);
+      MMG::RealGridFunction size(sizeSpace);
+      const Adaptation::WNGIRLoss welsch(welschScale);
+      for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+      {
+        const Real distance =
+          std::abs(mesh.getVertexCoordinates(vertex).norm() - Real(1));
+        size[vertex] =
+          farSize - (farSize - interfaceSize) * welsch.getWeight(distance);
+      }
+      protectFixedGeometry(mesh, false);
+      MMG::Adapt()
+        .setHMin(hmin)
+        .setHMax(hmax)
+        .setHausdorff(hausdorff)
+        .setGradation(m_configuration.adaptGradation)
+        .setAngleDetection(false)
+        .adapt(mesh, size);
+    }
+    else
+    {
+      protectFixedGeometry(mesh, true);
+      MMG::Optimizer()
+        .setHMin(hmin)
+        .setHMax(hmax)
+        .setHausdorff(hausdorff)
+        .setGradation(m_configuration.backgroundGradation)
+        .setAngleDetection(false)
+        .optimize(mesh);
+    }
     splitSelfPairedCut(mesh);
-    const size_t requiredTriangles = protectFixedGeometry(mesh, true);
+    const size_t requiredTriangles = protectFixedGeometry(mesh, !m_configuration.adapt);
 
     const size_t cellsAfter = mesh.getCellCount();
     return {std::move(mesh),
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};
   }
 
-  void Sphere::adapt(MMG::Mesh& mesh, Real h) const
+  void Sphere::adapt(MMG::Mesh& mesh, Real h, Real requestedWelschScale) const
   {
-    const Real interfaceSize = m_configuration.adaptInterfaceSize * h;
-    const Real farSize = m_configuration.adaptFarSize * h;
-    const Real width = m_configuration.adaptWidth * h;
+    const Real interfaceSize = Real(0.1) * h;
+    const Real farSize = Real(10) * h;
+    const Real welschScale = requestedWelschScale > 0
+      ? requestedWelschScale : Real(3) * h;
+    const Adaptation::WNGIRLoss welsch(welschScale);
 
     P1<Real, Mesh> sizeSpace(mesh);
     MMG::RealGridFunction size(sizeSpace);
@@ -277,14 +310,14 @@ namespace KelvinBall
     Distance::Eikonal(distance).setInterior(Obstacle).setInterface(Gamma).solve();
     for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
     {
-      const Real ratio = std::min(Real(1), std::abs(distance[vertex]) / width);
-      size[vertex] = interfaceSize + (farSize - interfaceSize) * ratio;
+      size[vertex] = farSize - (farSize - interfaceSize)
+        * welsch.getWeight(std::abs(distance[vertex]));
     }
 
     protectFixedGeometry(mesh, false);
     MMG::Adapt()
-      .setHMin(0.1 * h)
-      .setHMax(std::max(interfaceSize, farSize))
+      .setHMin(interfaceSize)
+      .setHMax(farSize)
       .setHausdorff(0.1 * h * h)
       .setGradation(m_configuration.adaptGradation)
       .setAngleDetection(false)

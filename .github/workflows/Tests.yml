@@ -14,6 +14,116 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  Convergence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        multithreaded: [ON, OFF]
+    env:
+      OMP_NUM_THREADS: 2
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: false
+
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: gcc-14
+          cmake: true
+
+      - name: Install dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libboost1.74-all-dev
+          libsuitesparse-dev
+          libeigen3-dev
+          libscotch-dev
+          libmetis-dev
+          libhdf5-dev
+          libomp-dev
+
+      - name: Configure convergence build
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DRODIN_BUILD_SRC=ON
+          -DRODIN_BUILD_UNIT_TESTS=OFF
+          -DRODIN_BUILD_MANUFACTURED_TESTS=OFF
+          -DRODIN_BUILD_CONVERGENCE_TESTS=ON
+          -DRODIN_BUILD_EXAMPLES=OFF
+          -DRODIN_BUILD_BENCHMARKS=OFF
+          -DRODIN_INSTALL_RESOURCES=OFF
+          -DRODIN_USE_MPI=OFF
+          -DRODIN_USE_PETSC=OFF
+          -DRODIN_MULTITHREADED=${{ matrix.multithreaded }}
+
+      - name: Build convergence suites
+        run: cmake --build build -j 2
+
+      - name: Run convergence suites
+        run: >-
+          ctest --test-dir build/tests -L convergence
+          --output-on-failure -j 2
+
+  PETScConvergence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: false
+
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: gcc-14
+          cmake: true
+
+      - name: Install dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libboost1.74-all-dev
+          libsuitesparse-dev
+          libeigen3-dev
+          libscotch-dev
+          libmetis-dev
+          libhdf5-dev
+          petsc-dev
+          mpich
+
+      - name: Configure PETSc convergence build
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DRODIN_BUILD_SRC=ON
+          -DRODIN_BUILD_UNIT_TESTS=OFF
+          -DRODIN_BUILD_MANUFACTURED_TESTS=OFF
+          -DRODIN_BUILD_CONVERGENCE_TESTS=ON
+          -DRODIN_BUILD_EXAMPLES=OFF
+          -DRODIN_BUILD_BENCHMARKS=OFF
+          -DRODIN_INSTALL_RESOURCES=OFF
+          -DRODIN_MULTITHREADED=OFF
+          -DRODIN_USE_MPI=ON
+          -DRODIN_USE_PETSC=ON
+
+      - name: Build PETSc convergence suite
+        run: >-
+          cmake --build build -j 2 --target
+          RodinConvergenceHPETScPoisson
+          RodinConvergenceHPETScMPIPoisson
+
+      - name: Run PETSc convergence suite
+        run: >-
+          ctest --test-dir build/tests -R RodinConvergenceHPETSc
+          --output-on-failure -j 1
+
   Unit:
     runs-on: ubuntu-latest
     strategy:
@@ -29,10 +139,11 @@ jobs:
       MAKEFLAGS: "-j2"
       OMP_NUM_THREADS: 2
       CTEST_PARALLEL_LEVEL: 2
-      # The optional direct solvers, built on the entries without a sanitizer:
-      # MUMPS calls into MPI, whose implementations leak by design, and the
-      # leak checker would report that as a failure of every one of them.
-      RODIN_DIRECT_SOLVERS: ${{ (matrix.asan == 'OFF' && matrix.ubsan == 'OFF') && 'ON' || 'OFF' }}
+      # A standalone Ubuntu/Open MPI repro reports PMIx leaks under ASan even
+      # without MUMPS, including when MPI_Finalize is called. Keep MUMPS out
+      # of ASan jobs while testing it under UBSan and the SuiteSparse solvers
+      # under both sanitizers.
+      RODIN_MUMPS: ${{ matrix.asan == 'OFF' && 'ON' || 'OFF' }}
       # The runner image packages SuiteSparse 7.6, whose ParU has no ParU.h.
       # The ParU solver needs the C API of SuiteSparse 7.10 or newer, so those
       # entries build SuiteSparse themselves and configure against it.
@@ -82,7 +193,6 @@ jobs:
           lcov
 
       - name: Restore SuiteSparse
-        if: env.RODIN_DIRECT_SOLVERS == 'ON'
         id: suitesparse
         uses: actions/cache@v4
         with:
@@ -90,7 +200,7 @@ jobs:
           key: suitesparse-${{ env.SUITESPARSE_VERSION }}-${{ runner.os }}-${{ matrix.compiler }}
 
       - name: Build SuiteSparse
-        if: env.RODIN_DIRECT_SOLVERS == 'ON' && steps.suitesparse.outputs.cache-hit != 'true'
+        if: steps.suitesparse.outputs.cache-hit != 'true'
         run: |
           curl -fsSL "https://github.com/DrTimothyAldenDavis/SuiteSparse/archive/refs/tags/v${SUITESPARSE_VERSION}.tar.gz" | tar xz
           cmake -S "SuiteSparse-${SUITESPARSE_VERSION}" -B suitesparse-build \
@@ -111,12 +221,12 @@ jobs:
           -DRODIN_USE_PETSC=ON
           -DRODIN_USE_ASAN=${{ matrix.asan }}
           -DRODIN_USE_UBSAN=${{ matrix.ubsan }}
-          -DCMAKE_PREFIX_PATH=${{ env.RODIN_DIRECT_SOLVERS == 'ON' && env.SUITESPARSE_PREFIX || '' }}
-          -DRODIN_USE_CHOLMOD=${{ env.RODIN_DIRECT_SOLVERS }}
-          -DRODIN_USE_MUMPS=${{ env.RODIN_DIRECT_SOLVERS }}
-          -DRODIN_USE_PARU=${{ env.RODIN_DIRECT_SOLVERS }}
-          -DRODIN_USE_SPQR=${{ env.RODIN_DIRECT_SOLVERS }}
-          -DRODIN_USE_UMFPACK=${{ env.RODIN_DIRECT_SOLVERS }}
+          -DCMAKE_PREFIX_PATH=${{ env.SUITESPARSE_PREFIX }}
+          -DRODIN_USE_CHOLMOD=ON
+          -DRODIN_USE_MUMPS=${{ env.RODIN_MUMPS }}
+          -DRODIN_USE_PARU=ON
+          -DRODIN_USE_SPQR=ON
+          -DRODIN_USE_UMFPACK=ON
           -DRODIN_BUILD_DOC=OFF
           -DRODIN_INSTALL_RESOURCES=OFF
           -DRODIN_USE_MCSS=OFF
@@ -157,6 +267,22 @@ jobs:
         run: >
           ctest --test-dir ${{ github.workspace }}/build/tests
           -L unit -L distributed -LE slow
+          --rerun-failed -V --output-on-failure
+
+      # These cases remain in every sanitizer configuration, but have their
+      # own CTest timeout instead of sharing the 120-second MPI assembly suite.
+      - name: Run slow MPI geometry tests
+        id: slow_mpi_geometry
+        run: >
+          ctest --test-dir ${{ github.workspace }}/build/tests
+          -L slow -R '^RodinMPIAssemblyGeometrySlowTest_np(1|2|3|4|8)$'
+          --output-on-failure -j 1
+
+      - name: Rerun failed slow MPI geometry tests (verbose)
+        if: steps.slow_mpi_geometry.outcome == 'failure'
+        run: >
+          ctest --test-dir ${{ github.workspace }}/build/tests
+          -L slow -R '^RodinMPIAssemblyGeometrySlowTest_np(1|2|3|4|8)$'
           --rerun-failed -V --output-on-failure
 
   Manufactured:
@@ -323,14 +449,14 @@ jobs:
       - name: Build
         run: cmake --build ${{ github.workspace }}/build
 
-      - name: Run slow manufactured tests
+      - name: Run slow tests
         run: >
           ctest --test-dir ${{ github.workspace }}/build/tests
           -L slow
           --output-on-failure
           -j ${{ env.CTEST_PARALLEL_LEVEL }}
 
-      - name: Rerun failed slow manufactured tests (verbose)
+      - name: Rerun failed slow tests (verbose)
         if: failure()
         run: >
           ctest --test-dir ${{ github.workspace }}/build/tests

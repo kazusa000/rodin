@@ -14,6 +14,12 @@ was abandoned. When you do performance work, the acceptance bar is *identical
 numerics* (iteration counts, final energies/fits) against a baseline run —
 not just "tests pass".
 
+**Inspect history before changing established behavior.** Use `git blame` and
+the relevant commits to find why a condition, threshold, or formula was
+introduced or removed, especially in numerical convergence and stopping logic.
+If the implementation differs from a paper or specification, establish whether
+the difference was deliberate before editing the code.
+
 ## Anomalies
 
 **An unexplained measurement is a finding, not a footnote. Do not ship a
@@ -46,6 +52,21 @@ uniform house idiom. Do not introduce a checking macro, and do not convert
 existing asserts to one. Better still: backend-independent code (form
 language, `Problem`, `LinearSolverBase`) should not touch PETSc at all —
 keep PETSc calls inside `src/Rodin/PETSc/`.
+
+## Implementation locality
+
+**Prefer implementation locality and monolithic method style.** The method
+that owns an operation should show its sequence and decisions. Do not create
+helper or free functions solely to shorten that method or deduplicate similar
+code in other implementations. If an algorithm has meaningful stages, separate
+them into methods of the same class and keep shared state in that class.
+Independent operations with their own contracts may still be separate
+components, such as `MatrixSetup`.
+
+For assembly backends, `execute` owns matrix setup, mesh iteration, ownership
+and attribute filtering, local kernel evaluation, entry insertion, and final
+assembly. Backend policy remains visible in each specialization; similar
+loops across backends do not by themselves justify a forwarding free function.
 
 ## Design preferences
 
