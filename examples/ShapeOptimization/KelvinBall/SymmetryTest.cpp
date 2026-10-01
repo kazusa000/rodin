@@ -1,4 +1,5 @@
 #include "SewedOutput.h"
+#include "Common.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>

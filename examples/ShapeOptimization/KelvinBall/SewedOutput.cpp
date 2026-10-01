@@ -5,6 +5,7 @@
  *          https://www.boost.org/LICENSE_1_0.txt)
  */
 #include "SewedOutput.h"
+#include "Common.h"
 
 #include <algorithm>
 #include <array>
