@@ -6,10 +6,24 @@
  */
 #include <fstream>
 #include <iomanip>
+#include <limits>
+#include <Rodin/IO/MEDIT.h>
 #include "Metrics.h"
 #include "Sphere.h"
 
 using namespace KelvinBall;
+
+namespace
+{
+  void saveMesh(const KelvinBall::Mesh& mesh, const std::string& path)
+  {
+    std::ofstream output(path);
+    output << std::setprecision(std::numeric_limits<Real>::max_digits10);
+    IO::MeshPrinter<IO::FileFormat::MEDIT, Context::Local> printer(mesh);
+    printer.print(output);
+    if (!output) throw std::runtime_error("Failed writing full-precision mesh.");
+  }
+}
 
 // Fixed-geometry boundary-condition experiment. Never advances the shape or
 // treats truncated-domain dissipation with nonzero outer trace as body drag.
@@ -32,11 +46,11 @@ int main(int argc, char** argv)
   if (meshFile.empty()) chamber = Sphere(configuration).discretize().mesh;
   else chamber.load(meshFile, IO::FileFormat::MEDIT);
   prepare(chamber);
-  chamber.save("chamber.mesh", IO::FileFormat::MEDIT);
+  saveMesh(chamber, "chamber.mesh");
   SubMesh fluid = chamber.trim(Obstacle);
   splitSelfPairedCut(fluid);
   prepare(fluid);
-  fluid.save("fluid.mesh", IO::FileFormat::MEDIT);
+  saveMesh(fluid, "fluid.mesh");
   if (prepareOnly) return 0;
   const OuterVelocity outer(outerFile);
   VelocitySpace Vh(fluid, 3);
