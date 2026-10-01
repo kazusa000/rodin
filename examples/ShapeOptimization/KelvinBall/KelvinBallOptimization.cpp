@@ -397,6 +397,19 @@ namespace KelvinBall
       Real planeResidual(
         Attribute attribute, const Math::SpatialPoint& x, Real outerRadius)
       {
+        if (KelvinBall::Tetrahedral)
+        {
+          switch (attribute)
+          {
+            case Outer: return std::min(std::abs(x(0) - outerRadius),
+              std::abs(x(1) - outerRadius));
+            case SigmaPlus: return std::abs(x(1) - x(2));
+            case SigmaMinus: return std::abs(x(0) - x(2));
+            case SigmaXYPlus: return std::abs(x(0) + x(2));
+            case SigmaXYMinus: return std::abs(x(1) + x(2));
+            default: return 0;
+          }
+        }
         switch (attribute)
         {
           case Outer:
@@ -534,7 +547,8 @@ namespace KelvinBall
         Real supremum = 0;
         for (const Index vertex : vertices)
         {
-          const Real error = std::abs(mesh.getVertexCoordinates(vertex).norm() - 1.0);
+          const auto& x = mesh.getVertexCoordinates(vertex);
+          const Real error = std::abs(x.norm() - KelvinBall::initialRadius(x));
           squared += error * error;
           supremum = std::max(supremum, error);
         }
@@ -997,6 +1011,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("--mmg-adapt applies only to --reconstruction=mmg.");
   if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
     throw std::runtime_error("--mmg-snap applies only to --reconstruction=mmg.");
+  if (KelvinBall::Tetrahedral && reconstructionMethod != "mmg")
+    throw std::runtime_error("The tetrahedral extension supports MMG only.");
   if (geometryOnly && stateOnly)
     throw std::runtime_error("Use either --geometry-only or --state-only, not both.");
   const Real h = configuration.getH();
@@ -1004,6 +1020,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   const Real dt = stepFactor * h;
   Alert::Info configurationInfo;
   configurationInfo << substageHeading("Configuration") << Alert::NewLine
+                    << diagnosticLabel("Symmetry copies:")
+                    << Alert::Notation::Number(KelvinBall::ChamberMultiplicity)
+                    << Alert::NewLine << diagnosticLabel("Seed perturbation:")
+                    << (KelvinBall::Tetrahedral ? "0.02*(H3+H6)/sqrt(2)" : "none")
+                    << Alert::NewLine
                     << diagnosticLabel("Grid points:") << Alert::Notation::Number(points)
                     << Alert::NewLine << diagnosticLabel("Outer radius:")
                     << Alert::Notation::Number(outerRadius) << Alert::NewLine

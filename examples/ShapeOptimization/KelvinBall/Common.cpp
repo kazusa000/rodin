@@ -10,11 +10,31 @@
 
 namespace KelvinBall
 {
+#ifdef KELVIN_TETRAHEDRAL
+  // y=z -> x=z, and x=-z -> y=-z. No self-paired x=y cut.
+  const std::array<RotationPair, 2> RotationPairs{
+    {{SigmaPlus, SigmaMinus, {0, 0, 1, 1, 0, 0, 0, 1, 0}},
+      {SigmaXYPlus, SigmaXYMinus, {0, 1, 0, 0, 0, -1, -1, 0, 0}}}};
+  const FlatSet<Attribute> MasterCuts{SigmaMinus, SigmaXYMinus};
+#else
   const std::array<RotationPair, 2> RotationPairs{
     {{SigmaXYMinus, SigmaXYPlus, {0, 1, 0, 1, 0, 0, 0, 0, -1}},
       {SigmaMinus, SigmaPlus, {1, 0, 0, 0, 0, -1, 0, 1, 0}}}};
 
   const FlatSet<Attribute> MasterCuts{SigmaPlus, SigmaXYPlus};
+#endif
+
+  Real initialRadius(const Math::SpatialPoint& x)
+  {
+    if (!Tetrahedral || x.norm() == 0)
+      return 1;
+    const auto u = (x / x.norm()).eval();
+    const Real a = u(0), b = u(1), c = u(2);
+    const Real h3 = 3 * std::sqrt(Real(3)) * a * b * c;
+    const Real h6 = 6 * std::sqrt(Real(3)) *
+      (a*a - b*b) * (b*b - c*c) * (c*c - a*a);
+    return 1 + Real(0.02) * (h3 + h6) / std::sqrt(Real(2));
+  }
 
   RotationPair::RotationPair(
     Attribute slave, Attribute master, std::initializer_list<Real> coefficients)
@@ -46,6 +66,8 @@ namespace KelvinBall
 
   void splitSelfPairedCut(Mesh& mesh)
   {
+    if (Tetrahedral)
+      return;
     const size_t faceDimension = mesh.getDimension() - 1;
     for (auto face = mesh.getPolytope(faceDimension); face; ++face)
     {

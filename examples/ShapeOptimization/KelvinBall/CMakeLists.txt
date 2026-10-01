@@ -33,3 +33,17 @@ target_link_libraries(KelvinBallSphere
   Rodin::MMG
   Rodin::Solver
   Rodin::Variational)
+
+# Separate executable: the immutable cubic default is not switched at runtime.
+get_target_property(kelvin_sources KelvinBall SOURCES)
+get_target_property(kelvin_libraries KelvinBall LINK_LIBRARIES)
+add_executable(KelvinBallTetra EXCLUDE_FROM_ALL ${kelvin_sources})
+target_compile_definitions(KelvinBallTetra PRIVATE KELVIN_TETRAHEDRAL=1)
+target_link_libraries(KelvinBallTetra PRIVATE ${kelvin_libraries})
+
+foreach(mode IN ITEMS Cubic Tetra)
+  add_executable(KelvinBall${mode}GeometryTest EXCLUDE_FROM_ALL
+    SymmetryTest.cpp Common.cpp SewedOutput.cpp)
+  target_link_libraries(KelvinBall${mode}GeometryTest PRIVATE ${kelvin_libraries})
+endforeach()
+target_compile_definitions(KelvinBallTetraGeometryTest PRIVATE KELVIN_TETRAHEDRAL=1)

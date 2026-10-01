@@ -32,7 +32,8 @@ namespace KelvinBall
               rotation(0, permutation[0]) = sx;
               rotation(1, permutation[1]) = sy;
               rotation(2, permutation[2]) = sz;
-              if (std::abs(rotation.determinant() - 1) < 1e-12)
+              if (std::abs(rotation.determinant() - 1) < 1e-12 &&
+                (!Tetrahedral || sx * sy * sz == 1))
                 result.push_back(rotation);
             }
           }

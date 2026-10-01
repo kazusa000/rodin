@@ -44,7 +44,15 @@ namespace KelvinBall
   inline constexpr Real DefaultNitschePenalty = 320;
   inline constexpr Real DefaultStabilizationFactor = 0.05;
   inline constexpr Real LinearResidualTolerance = 1e-8;
-  inline constexpr size_t ChamberMultiplicity = 24;
+#ifdef KELVIN_TETRAHEDRAL
+  inline constexpr bool Tetrahedral = true;
+#else
+  inline constexpr bool Tetrahedral = false;
+#endif
+  inline constexpr size_t ChamberMultiplicity = Tetrahedral ? 12 : 24;
+
+  /// Fixed, unselected T-only perturbation of the unit sphere.
+  Real initialRadius(const Math::SpatialPoint& x);
 
 #ifdef RODIN_USE_MUMPS
   inline constexpr const char* DirectSolverName = "MUMPS";

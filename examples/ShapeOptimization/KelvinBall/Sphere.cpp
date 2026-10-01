@@ -55,16 +55,21 @@ namespace KelvinBall
         continue;
       for (const Real sign : {Real(1), Real(-1)})
       {
+        for (size_t exchange = 0; exchange < (Tetrahedral ? 2u : 1u); ++exchange)
+        {
         IndexArray vertices(cell->getVertices().size());
         for (size_t local = 0; local < vertices.size(); ++local)
         {
           Math::SpatialPoint x = cube.getVertexCoordinates(cell->getVertices()(local));
           x(2) *= sign;
+          if (exchange)
+            std::swap(x(0), x(1));
           vertices(local) = insertVertex(x);
         }
-        if (sign < 0)
+        if ((sign < 0) != (exchange != 0))
           std::swap(vertices(0), vertices(1));
         cells.emplace_back(std::move(vertices), Fluid);
+        }
       }
     }
 
@@ -84,8 +89,20 @@ namespace KelvinBall
     {
       const auto c = centroid(chamber, *face);
       Attribute attribute = 0;
-      if (std::abs(c(0) - m_configuration.outerRadius) < tolerance)
+      if (std::abs(c(0) - m_configuration.outerRadius) < tolerance ||
+        (Tetrahedral && std::abs(c(1) - m_configuration.outerRadius) < tolerance))
         attribute = Outer;
+      else if (Tetrahedral)
+      {
+        if (std::abs(c(1) - c(2)) < tolerance)
+          attribute = SigmaPlus;
+        else if (std::abs(c(0) - c(2)) < tolerance)
+          attribute = SigmaMinus;
+        else if (std::abs(c(0) + c(2)) < tolerance)
+          attribute = SigmaXYPlus;
+        else if (std::abs(c(1) + c(2)) < tolerance)
+          attribute = SigmaXYMinus;
+      }
       else if (std::abs(c(0) - c(1)) < tolerance)
         attribute = c(2) < 0 ? SigmaXYMinus : SigmaXYPlus;
       else if (std::abs(c(1) - c(2)) < tolerance)
@@ -136,20 +153,24 @@ namespace KelvinBall
       const auto attribute = face->getAttribute();
       if (!attribute)
         continue;
+      // Both outer cube faces impose the same BC, but their common edge is
+      // a geometric ridge. Use a local feature label, never a mesh attribute.
+      const Attribute feature = Tetrahedral && *attribute == Outer &&
+        centroid(mesh, *face)(1) > centroid(mesh, *face)(0) ? 8 : *attribute;
       for (const Index edge : faceEdges.at(face->getIndex()))
-        edgeLabels[edge].insert(*attribute);
+        edgeLabels[edge].insert(feature);
       for (const Index vertex : face->getVertices())
-        vertexLabels[vertex].insert(*attribute);
+        vertexLabels[vertex].insert(feature);
     }
     const auto onFixedFace = [&](const FlatSet<Attribute>& labels) {
       return std::any_of(labels.begin(), labels.end(),
-        [&](Attribute label) { return fixed.contains(label); });
+        [&](Attribute label) { return fixed.contains(label) || (Tetrahedral && label == 8); });
     };
     // The two halves of the x = y cut lie in one plane. The line between them
     // is a reference edge, which MMG keeps as a line of edges; a ridge there
     // would join two identical normals and leave its tangent undefined.
     const auto plane = [](Attribute label) {
-      return label == SigmaXYMinus ? SigmaXYPlus : label;
+      return !Tetrahedral && label == SigmaXYMinus ? SigmaXYPlus : label;
     };
     for (const auto& [edge, labels] : edgeLabels)
     {
@@ -182,7 +203,8 @@ namespace KelvinBall
     P1 levelSetSpace(mesh);
     GridFunction sphere(levelSetSpace);
     sphere = RealFunction([](const Geometry::Point& point) {
-      return point.getPhysicalCoordinates().norm() - Real(1);
+      const auto& x = point.getPhysicalCoordinates();
+      return x.norm() - initialRadius(x);
     });
     MMG::LevelSetDiscretizer discretizer;
     discretizer.split(Fluid, {Obstacle, Fluid})
