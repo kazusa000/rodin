@@ -28,7 +28,7 @@ int main(int argc, char** argv)
     else throw std::runtime_error("Unknown boundary experiment option: " + option);
   }
   configuration.finalize();
-  Mesh chamber;
+  KelvinBall::Mesh chamber;
   if (meshFile.empty()) chamber = Sphere(configuration).discretize().mesh;
   else chamber.load(meshFile, IO::FileFormat::MEDIT);
   prepare(chamber);

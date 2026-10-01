@@ -97,9 +97,10 @@ namespace KelvinBall
     private:
       auto outerTrace(size_t load) const
       {
-        return VectorFunction(3, [this, load](const Geometry::Point& p) {
+        const auto trace = [this, load](const Geometry::Point& p) {
           return m_outer ? m_outer->value(p, load) : Math::SpatialVector<Real>{0, 0, 0};
-        });
+        };
+        return VectorFunction<decltype(trace)>(3, trace);
       }
 
       void checkPairs(const Mesh& mesh, const RotatedNitscheIntegrator& coupling) const
