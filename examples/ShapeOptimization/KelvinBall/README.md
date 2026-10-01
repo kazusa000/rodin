@@ -643,3 +643,19 @@ reconstruction, since the last design is not reconstructed.
 | `KelvinBallOptimization` | The staged optimisation loop |
 | `Thickness` | Minimum-thickness penalty and its derivative |
 | `Common`, `Configuration` | Shared data, mesh preparation, options |
+# Optional external BEM state pilot
+
+`--state-backend=bem --thickness-min=0` replaces the FEM Stokes solve with
+`KELVIN_BEM_COMMAND`. Each iteration exports the original chamber MEDIT mesh;
+the command must produce a V2 nodal payload and a JSON certificate. The reader
+checks symmetry, original vertex coordinates and Gamma connectivity, positive
+k/q, rho consistency and residual <= 1e-10. Defaults remain FEM.
+
+The external derivative is an integrated coordinate covector of the discrete
+regularized-Stokeslet rho, including the area-dependent regularization length.
+It is added to the existing P1 Riesz problem, then passed through the unchanged
+volume null-space projection and rotated-characteristic level-set/MMG update.
+`Flow(-dt, ...)` gives physical displacement +dt*theta, so the BEM load has the
+positive rho derivative sign. There is no extra chamber multiplicity factor.
+No zero volumetric state or fluid-motion fields are exported in BEM mode.
+This bridge does not certify closure or continuum convergence of an input.

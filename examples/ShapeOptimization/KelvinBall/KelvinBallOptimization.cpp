@@ -41,6 +41,7 @@
 
 #include "Configuration.h"
 #include "Metrics.h"
+#include "BemState.h"
 #include "RotatedCharacteristicContinuation.h"
 #include "RotatedNitscheIntegrator.h"
 #include "SewedOutput.h"
@@ -1024,6 +1025,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool saveMeshDiagnostic = false;
   bool geometryOnly = false;
   bool stateOnly = false;
+  bool bemState = false;
   Real regularizationFactor = 4.0;
   Real normalRegularizationFactor = 1.0;
   Real stepFactor = 0.1;
@@ -1084,6 +1086,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       geometryOnly = true;
     else if (mode == "--state-only")
       stateOnly = true;
+    else if (mode == "--state-backend=bem")
+      bemState = true;
     else if (mode == "--help")
     {
       printUsage(argv[0]);
@@ -1093,6 +1097,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       throw std::runtime_error("Unknown KelvinBall option: " + std::string(mode));
   }
   configuration.finalize();
+  if (bemState && thicknessFactor != 0)
+    throw std::runtime_error("BEM pilot requires --thickness-min=0.");
+  if (bemState)
+    std::ofstream("state-backend.txt") << "BEM original-panel discrete rho derivative; FEM Riesz/volume/transport only\n";
   const size_t points = configuration.points;
   const Real outerRadius = configuration.outerRadius;
   const Real nitschePenalty = configuration.nitschePenalty;
@@ -1374,8 +1382,20 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     announce("Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
     const KelvinBall::Metrics resistanceMetrics(metricParameters);
-    const KelvinBall::Values metrics = resistanceMetrics.evaluateChamber(
-      Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
+    KelvinBall::BemState boundaryState;
+    KelvinBall::Values metrics;
+    if (bemState)
+    {
+      boundaryState = KelvinBall::BemState::evaluate(mesh, iteration);
+      metrics = boundaryState.metrics;
+      for (auto* field : {&uT0, &uT1, &uT2, &uR0, &uR1, &uR2})
+        field->getData().setZero();
+      for (auto* field : {&pT0, &pT1, &pT2, &pR0, &pR1, &pR2})
+        field->getData().setZero();
+    }
+    else
+      metrics = resistanceMetrics.evaluateChamber(
+        Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
     stageSeconds[2] = elapsedSeconds(stage3Start);
     reportStageTiming(3, stageSeconds[2]);
     const Real k = metrics.k;
@@ -1784,9 +1804,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << Alert::Notation::Number(components.tangentialFraction)
                     << Alert::Raise;
     }
-    const GradientDiagnostics rhoGradientDiagnostics =
-      identifyGradient(shapeSpace, -rhoDensity, shapeCoupling, rhoGradient, hilbertLength,
-        nitschePenalty, "Rho");
+    Math::Vector<Real> bemLoad;
+    if (bemState)
+      bemLoad = boundaryState.nodalLoad(shapeSpace);
+    const GradientDiagnostics rhoGradientDiagnostics = bemState
+      ? identifyGradient(shapeSpace, RealFunction{0}, shapeCoupling, rhoGradient, hilbertLength,
+          nitschePenalty, "BEM rho", &bemLoad)
+      : identifyGradient(shapeSpace, -rhoDensity, shapeCoupling, rhoGradient, hilbertLength,
+          nitschePenalty, "Rho");
     const GradientDiagnostics volumeGradientDiagnostics =
       identifyGradient(shapeSpace, RealFunction{-1}, shapeCoupling, volumeGradient,
         hilbertLength, nitschePenalty, "Volume");
@@ -1797,6 +1822,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
     dVolume = FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
     dRho.assemble();
+    if (bemState)
+      dRho.getVector() = bemLoad;
     dVolume.assemble();
     const Real volumeMetric = dVolume(volumeGradient);
     if (!(std::isfinite(volumeMetric) && std::abs(volumeMetric) > Real(1e-20)))
@@ -2147,6 +2174,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         IO::XDMF::Center::Node);
     }
 
+    // BEM traction states are recorded by the callback. Do not export zero
+    // volumetric FEM fields as if they were BEM solutions.
+    if (!bemState)
+    {
     KelvinBall::SewedOutput sewedFluid(fluid, FlatSet<Attribute>{Gamma, Outer});
     VelocitySpace sewedVelocitySpace = makeVelocitySpace(sewedFluid.getMesh());
     PressureSpace sewedPressureSpace(sewedFluid.getMesh());
@@ -2265,6 +2296,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         // indexed by the fraction of a revolution rather than by time.
         motionXdmf.write(time / period).flush();
       }
+    }
+
     }
 
     if (iteration + 1 == maxIterations)
