@@ -15,8 +15,7 @@ int main()
 {
   const auto& rotations = SewedOutput::getCubeRotations();
   require(rotations.size() == ChamberMultiplicity, "incorrect group order");
-  Math::SpatialPoint x(3);
-  x << 0.21, 0.53, 0.82;
+  const Math::SpatialPoint x{0.21, 0.53, 0.82};
   size_t chambers = 0;
   for (const auto& rotation : rotations)
   {
@@ -34,17 +33,17 @@ int main()
   if (Tetrahedral)
   {
     Math::SpatialPoint quarter(3), mirror(3), boundary(3);
-    quarter << -x(1), x(0), x(2);
-    mirror << -x(0), x(1), x(2);
+    quarter = Math::SpatialPoint{-x(1), x(0), x(2)};
+    mirror = Math::SpatialPoint{-x(0), x(1), x(2)};
     require(std::abs(initialRadius(x)-initialRadius(quarter)) > 1e-4,
       "seed accidentally retains cubic symmetry");
     require(std::abs(initialRadius(x)-initialRadius(mirror)) > 1e-4,
       "seed accidentally retains reflection symmetry");
-    boundary << 0.8, 0.3, 0.3;
+    boundary = Math::SpatialPoint{0.8, 0.3, 0.3};
     const Math::SpatialPoint first = RotationPairs[0].rotation * boundary;
     require(std::abs(first(0)-first(2)) < 1e-14 && first(1)>=first(0),
       "incorrect positive cut pairing");
-    boundary << 0.3, 0.8, -0.3;
+    boundary = Math::SpatialPoint{0.3, 0.8, -0.3};
     const Math::SpatialPoint second = RotationPairs[1].rotation * boundary;
     require(std::abs(second(1)+second(2)) < 1e-14 && second(0)>=second(1),
       "incorrect negative cut pairing");

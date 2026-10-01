@@ -28,7 +28,7 @@ namespace KelvinBall
   {
     if (!Tetrahedral || x.norm() == 0)
       return 1;
-    const auto u = (x / x.norm()).eval();
+    const Math::SpatialPoint u = x / x.norm();
     const Real a = u(0), b = u(1), c = u(2);
     const Real h3 = 3 * std::sqrt(Real(3)) * a * b * c;
     const Real h6 = 6 * std::sqrt(Real(3)) *
