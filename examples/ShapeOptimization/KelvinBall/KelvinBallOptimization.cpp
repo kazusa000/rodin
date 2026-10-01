@@ -36,6 +36,7 @@
 #include <Rodin/Distance/Eikonal.h>
 #include <Rodin/Geometry.h>
 #include <Rodin/IO/XDMF.h>
+#include <Rodin/IO/MEDIT.h>
 #include <Rodin/MMG.h>
 #include <Rodin/Variational.h>
 
@@ -915,6 +916,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool saveMeshDiagnostic = false;
   bool geometryOnly = false;
   bool stateOnly = false;
+  bool boundaryStep = false;
+  std::string inputMesh, outerValues, bemValues;
   Real regularizationFactor = 4.0;
   Real stepFactor = 0.1;
   Real levelSetPenalty = 1;
@@ -975,6 +978,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       geometryOnly = true;
     else if (mode == "--state-only")
       stateOnly = true;
+    else if (mode == "--boundary-step")
+      boundaryStep = true;
+    else if (mode.rfind("--mesh=", 0) == 0)
+      inputMesh = std::string(mode.substr(7));
+    else if (mode.rfind("--outer-values=", 0) == 0)
+      outerValues = std::string(mode.substr(15));
+    else if (mode.rfind("--bem-values=", 0) == 0)
+      bemValues = std::string(mode.substr(13));
     else if (mode == "--help")
     {
       printUsage(argv[0]);
@@ -984,6 +995,23 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       throw std::runtime_error("Unknown KelvinBall option: " + std::string(mode));
   }
   configuration.finalize();
+  if (boundaryStep && (inputMesh.empty() || outerValues.empty() || bemValues.empty() ||
+      maxIterations != 1 || stateOnly || geometryOnly || reconstructionMethod != "mmg" ||
+      thicknessFactor != 0))
+    throw std::runtime_error("Boundary step requires one MMG update, mesh, outer and BEM "
+      "data, and --thickness-min=0.");
+  if (!boundaryStep && (!inputMesh.empty() || !outerValues.empty() || !bemValues.empty()))
+    throw std::runtime_error("External mesh/BEM data require --boundary-step.");
+  std::array<Real, 3> bodyResistance{};
+  if (boundaryStep)
+  {
+    std::ifstream values(bemValues);
+    if (!(values >> bodyResistance[0] >> bodyResistance[1] >> bodyResistance[2]) ||
+        !std::isfinite(bodyResistance[0]) || !std::isfinite(bodyResistance[1]) ||
+        !std::isfinite(bodyResistance[2]) || bodyResistance[0] <= 0 || bodyResistance[2] <= 0)
+      throw std::runtime_error("Invalid BEM k,c,q.");
+  }
+  const KelvinBall::OuterVelocity outer(outerValues);
   const size_t points = configuration.points;
   const Real outerRadius = configuration.outerRadius;
   const Real nitschePenalty = configuration.nitschePenalty;
@@ -1083,9 +1111,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         "WNGIR."
       : "Stage 1: Discretizing the initial sphere with MMG.");
   Sphere sphere(configuration);
-  SphereDiscretization initial = reconstructionMethod == "wngir"
-    ? sphere.prepareWNGIRBackground()
-    : sphere.discretize();
+  SphereDiscretization initial;
+  if (boundaryStep)
+  {
+    initial.mesh.load(inputMesh, IO::FileFormat::MEDIT);
+    KelvinBall::prepare(initial.mesh);
+  }
+  else
+    initial = reconstructionMethod == "wngir"
+      ? sphere.prepareWNGIRBackground() : sphere.discretize();
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   Optional<MMG::Mesh> wngirBackground;
   MMG::Mesh mesh;
@@ -1211,15 +1245,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const auto stage3Start = Clock::now();
     announce("Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
-    const KelvinBall::Metrics resistanceMetrics(metricParameters);
+    const KelvinBall::Metrics resistanceMetrics(metricParameters, boundaryStep ? &outer : nullptr);
     const KelvinBall::Values metrics = resistanceMetrics.evaluateChamber(
       Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
     stageSeconds[2] = elapsedSeconds(stage3Start);
     reportStageTiming(3, stageSeconds[2]);
-    const Real k = metrics.k;
-    const Real c = metrics.c;
-    const Real q = metrics.q;
-    const Real rho = metrics.rho;
+    // Nonzero outer work invalidates the truncated energy as body resistance.
+    // This opt-in step uses free-space BEM coefficients and FEM state strains
+    // as an approximate free-space direction, checked externally against BEM.
+    const Real k = boundaryStep ? bodyResistance[0] : metrics.k;
+    const Real c = boundaryStep ? bodyResistance[1] : metrics.c;
+    const Real q = boundaryStep ? bodyResistance[2] : metrics.q;
+    const Real rho = boundaryStep ? std::abs(c) / std::sqrt(k*q) : metrics.rho;
     const Real couplingSymmetry = metrics.couplingSymmetry;
     const Real volume = mesh.getVolume(Obstacle);
     const Real nitscheJump = metrics.nitscheJump;
@@ -1460,6 +1497,20 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const Real dRhoTheta = dRho(theta);
     const Real dVolumeTheta = dVolume(theta);
     const Real requiredDVolumeTheta = 0;
+    if (boundaryStep)
+    {
+      std::ofstream direction("direction.txt");
+      direction.precision(17);
+      for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+      {
+        const auto& x = mesh.getVertexCoordinates(vertex);
+        const auto dofs = shapeSpace.getDOFs(0, vertex);
+        direction << x(0) << ' ' << x(1) << ' ' << x(2);
+        for (Index j = 0; j < 3; ++j) direction << ' ' << theta.getData()(dofs(j));
+        direction << '\n';
+      }
+      if (!direction) throw std::runtime_error("Could not export shape direction.");
+    }
     Alert::Info() << substageHeading("Constrained direction") << Alert::NewLine
                   << diagnosticLabel("Null-space multiplier:")
                   << Alert::Notation::Number(nullSpaceMultiplier) << Alert::NewLine
@@ -1705,7 +1756,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
     }
 
-    if (iteration + 1 == maxIterations)
+    if (iteration + 1 == maxIterations && !boundaryStep)
     {
       xdmf.write(static_cast<Real>(iteration)).flush();
       sewedXdmf.write(static_cast<Real>(iteration)).flush();
@@ -1895,6 +1946,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reconstructionXdmf.write(static_cast<Real>(iteration + 1)).flush();
     checkFixedGeometry(result.mesh, outerRadius);
     checkMaterials(result.mesh);
+    if (boundaryStep)
+    {
+      std::ofstream output("candidate.mesh");
+      output.precision(std::numeric_limits<Real>::max_digits10);
+      IO::MeshPrinter<IO::FileFormat::MEDIT, Context::Local> printer(result.mesh);
+      printer.print(output);
+      if (!output) throw std::runtime_error("Could not export the MMG candidate.");
+    }
     nextMesh.emplace(std::move(result.mesh));
     stageSeconds[8] = elapsedSeconds(stage9Start);
     reportStageTiming(9, stageSeconds[8]);
