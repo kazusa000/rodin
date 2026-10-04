@@ -85,5 +85,6 @@ namespace KelvinBall
     connectivity.restrict(1, 0);
     connectivity.restrict(2, 0);
     connectivity.restrict(2, 3);
+    connectivity.compute(0, 0);
   }
 }

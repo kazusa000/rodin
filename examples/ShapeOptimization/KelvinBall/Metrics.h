@@ -24,6 +24,7 @@
 
 #include "Common.h"
 #include "OuterVelocity.h"
+#include "PressureGauge.h"
 #include "RotatedNitscheIntegrator.h"
 #include "SewedOutput.h"
 
@@ -190,21 +191,41 @@ namespace KelvinBall
         auto& system = stokes.getLinearSystem();
         coupling.assembleStokes<1>(Vh, Qh, stokes.getTrialOffsets(), system, Mu,
           m_parameters.nitschePenalty, -stabilization, FlatSet<Attribute>{Gamma, Outer});
+        const auto pressureReferences = enclosedPressureReferences(Qh);
+        Math::SparseMatrix<Real> originalOperator;
+        Math::Vector<Real> originalVector;
+        if (!pressureReferences.empty())
+        {
+          // Retain the unpinned equations for the acceptance residual. A gauge
+          // must not conceal an incompatible right-hand side or change a PDE.
+          originalOperator = system.getOperator();
+          originalVector = system.getVector();
+          IndexMap<Real> gauges;
+          for (size_t block : {1, 3, 5})
+            for (Index dof : pressureReferences)
+              gauges.emplace(stokes.getTrialOffsets()[block] + dof, Real(0));
+          system.eliminate(gauges);
+        }
         solveDirect(stokes);
+        const auto& checkedOperator = pressureReferences.empty()
+          ? system.getOperator() : originalOperator;
+        const auto& checkedVector = pressureReferences.empty()
+          ? system.getVector() : originalVector;
         const Real residual =
-          (system.getOperator() * system.getSolution() - system.getVector()).norm() /
-          std::max(system.getVector().norm(), Real(1));
+          (checkedOperator * system.getSolution() - checkedVector).norm() /
+          std::max(checkedVector.norm(), Real(1));
         std::cerr << std::setprecision(17) << "Chamber Stokes loadOffset=" << loadOffset
                   << " residual=" << residual << " tolerance=" << LinearResidualTolerance
+                  << " enclosedPressureReferences=" << pressureReferences.size()
                   << " solutionNorm=" << system.getSolution().norm() << std::endl;
         if (std::getenv("KELVIN_DUMP_STOKES"))
         {
           const std::string prefix = "stokes-" + std::to_string(loadOffset);
-          Eigen::saveMarket(system.getOperator(), prefix + "-matrix.mtx");
+          Eigen::saveMarket(checkedOperator, prefix + "-matrix.mtx");
           std::ofstream vectors(prefix + "-vectors.txt");
           vectors << std::setprecision(17);
           for (Eigen::Index i = 0; i < system.getVector().size(); ++i)
-            vectors << system.getVector()(i) << ' ' << system.getSolution()(i) << '\n';
+            vectors << checkedVector(i) << ' ' << system.getSolution()(i) << '\n';
           if (!vectors)
             throw std::runtime_error("Cannot write Stokes diagnostic vectors.");
         }
