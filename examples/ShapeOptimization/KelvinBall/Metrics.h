@@ -10,8 +10,12 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <unsupported/Eigen/SparseExtra>
 
 #include <Rodin/Assembly.h>
 #include <Rodin/Alert/Info.h>
@@ -190,6 +194,20 @@ namespace KelvinBall
         const Real residual =
           (system.getOperator() * system.getSolution() - system.getVector()).norm() /
           std::max(system.getVector().norm(), Real(1));
+        std::cerr << std::setprecision(17) << "Chamber Stokes loadOffset=" << loadOffset
+                  << " residual=" << residual << " tolerance=" << LinearResidualTolerance
+                  << " solutionNorm=" << system.getSolution().norm() << std::endl;
+        if (std::getenv("KELVIN_DUMP_STOKES"))
+        {
+          const std::string prefix = "stokes-" + std::to_string(loadOffset);
+          Eigen::saveMarket(system.getOperator(), prefix + "-matrix.mtx");
+          std::ofstream vectors(prefix + "-vectors.txt");
+          vectors << std::setprecision(17);
+          for (Eigen::Index i = 0; i < system.getVector().size(); ++i)
+            vectors << system.getVector()(i) << ' ' << system.getSolution()(i) << '\n';
+          if (!vectors)
+            throw std::runtime_error("Cannot write Stokes diagnostic vectors.");
+        }
         if (!std::isfinite(residual) || residual > LinearResidualTolerance)
           throw std::runtime_error("The chamber Stokes system did not converge.");
         velocity0 = u0.getSolution();
