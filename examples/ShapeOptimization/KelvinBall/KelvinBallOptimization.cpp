@@ -2472,6 +2472,23 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           auto reconstructed = discretizeLevelSetMMG(mesh, advectedDistance, scale,
             sphere, configuration.adapt, configuration.mmgSnap,
             requestedWelschScale);
+          try
+          {
+            // A successful MMG call is not yet a valid chamber. Keep the
+            // original tolerances and let the existing bounded retry handle
+            // invalid candidates before any next iteration consumes them.
+            checkFixedGeometry(reconstructed.mesh, outerRadius);
+            checkMaterials(reconstructed.mesh);
+          }
+          catch (const std::exception&)
+          {
+            const std::string candidate = "mmg-invalid-candidate-" +
+              std::to_string(iteration + 1) + "-" + std::to_string(attempt);
+            reconstructed.mesh.save(candidate + ".mesh", IO::FileFormat::MEDIT);
+            Alert::Warning() << "Saved the invalid MMG candidate to "
+                             << candidate << ".mesh." << Alert::Raise;
+            throw;
+          }
           reconstructed.diagnostics.scale = scale / h;
           return reconstructed;
         }
