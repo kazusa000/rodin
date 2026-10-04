@@ -1,4 +1,5 @@
 /* Distributed under the Boost Software License, Version 1.0. */
+#include <Rodin/Assembly.h>
 #include "PressureGauge.h"
 #include <iostream>
 
