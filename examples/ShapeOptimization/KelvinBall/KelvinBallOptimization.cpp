@@ -402,6 +402,8 @@ namespace KelvinBall
           << "Usage" << Alert::NewLine << "  " << executable << " [options]"
           << Alert::NewLine << Alert::Notation("--bem-reconstruction-check")
           << "  Check each MMG candidate with BEM inside the bounded retry (default: off)."
+          << Alert::NewLine << Alert::Notation("--bem-update-backtracking")
+          << "  Retry rejected BEM updates at half the transport timestep, fixed MMG scale (default: off)."
           << Alert::NewLine << Alert::Notation("--n=<points>")
           << "              Background points per edge (default: 13)." << Alert::NewLine
           << Alert::Notation("--h=<size>")
@@ -1034,6 +1036,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool stateOnly = false;
   bool bemState = false;
   bool bemReconstructionCheck = false;
+  bool bemUpdateBacktracking = false;
   Real regularizationFactor = 4.0;
   Real normalRegularizationFactor = 1.0;
   Real stepFactor = 0.1;
@@ -1098,6 +1101,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       bemState = true;
     else if (mode == "--bem-reconstruction-check")
       bemReconstructionCheck = true;
+    else if (mode == "--bem-update-backtracking")
+      bemUpdateBacktracking = true;
     else if (mode == "--help")
     {
       printUsage(argv[0]);
@@ -1109,6 +1114,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   configuration.finalize();
   if (bemReconstructionCheck && (!bemState || reconstructionMethod != "mmg"))
     throw std::runtime_error("--bem-reconstruction-check requires BEM states and MMG reconstruction.");
+  if (bemUpdateBacktracking && !bemReconstructionCheck)
+    throw std::runtime_error("--bem-update-backtracking requires --bem-reconstruction-check.");
   if (bemState && thicknessFactor != 0)
     throw std::runtime_error("BEM pilot requires --thickness-min=0.");
   if (bemState)
@@ -1359,6 +1366,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
 
   for (size_t iteration = 0; iteration < maxIterations; ++iteration)
   {
+    Real usedDt = dt;
     std::array<Real, 9> stageSeconds;
     stageSeconds.fill(nan);
     if (iteration == 0)
@@ -1480,7 +1488,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                                 Real requiredDVolumeTheta,
                                 const GradientDiagnostics& rhoGradientDiagnostics,
                                 const GradientDiagnostics& volumeGradientDiagnostics) {
-      history << iteration << ',' << outerRadius << ',' << h << ',' << dt << ','
+      history << iteration << ',' << outerRadius << ',' << h << ',' << usedDt << ','
               << advectionQuadratureOrder << ',' << hilbertLength << ',' << nitschePenalty
               << ',' << stabilizationFactor << ',' << assemblyBackend << ','
               << KelvinBall::DirectSolverName << ',' << meshDiagnostics.vertices << ','
@@ -2407,26 +2415,30 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     KelvinBall::RotatedNitscheIntegrator advectionCoupling(advectionMesh,
       FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
       rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
-    TrialFunction advected(advectionLevelSetSpace);
-    TestFunction test(advectionLevelSetSpace);
-    KelvinBall::RotatedCharacteristicContinuation rotationalContinuation(
-      -dt, advectionMesh, advectionCoupling.getLocator(), RotationPairs);
-    Problem transport(advected, test);
-    auto transportedDistance = Integral(Flow(-dt, advectionDistance,
-      advectionDirection, Math::RungeKutta::RK4{}, rotationalContinuation), test);
-    transportedDistance.setOrder(advectionQuadratureOrder);
-    transport = Integral(advected, test) - transportedDistance;
-    transport.assemble();
-    advectionCoupling.assembleScalarTracePenalty(advectionLevelSetSpace,
-      transport.getLinearSystem(), levelSetPenalty, advectionDistance);
-    Solver::CG(transport).solve();
-    const auto& advectedDistance = advected.getSolution();
-    const auto& transportSystem = transport.getLinearSystem();
-    const Real transportResidual =
-      (transportSystem.getOperator() * transportSystem.getSolution() -
-        transportSystem.getVector())
-        .norm() /
-      std::max(transportSystem.getVector().norm(), Real(1));
+    GridFunction advectedDistance(advectionLevelSetSpace);
+    const auto solveTransport = [&](Real trialDt) {
+      // Every trial starts from the same distance and frozen shape direction.
+      // Reassemble the original RK4 characteristic/mass/trace problem; do not
+      // interpolate between transported fields or move mesh vertices.
+      TrialFunction advected(advectionLevelSetSpace);
+      TestFunction test(advectionLevelSetSpace);
+      KelvinBall::RotatedCharacteristicContinuation rotationalContinuation(
+        -trialDt, advectionMesh, advectionCoupling.getLocator(), RotationPairs);
+      Problem transport(advected, test);
+      auto transportedDistance = Integral(Flow(-trialDt, advectionDistance,
+        advectionDirection, Math::RungeKutta::RK4{}, rotationalContinuation), test);
+      transportedDistance.setOrder(advectionQuadratureOrder);
+      transport = Integral(advected, test) - transportedDistance;
+      transport.assemble();
+      advectionCoupling.assembleScalarTracePenalty(advectionLevelSetSpace,
+        transport.getLinearSystem(), levelSetPenalty, advectionDistance);
+      Solver::CG(transport).solve();
+      advectedDistance.getData() = advected.getSolution().getData();
+      const auto& system = transport.getLinearSystem();
+      return (system.getOperator() * system.getSolution() - system.getVector()).norm() /
+        std::max(system.getVector().norm(), Real(1));
+    };
+    const Real transportResidual = solveTransport(usedDt);
     const Real advectionIncrement =
       (advectedDistance.getData() - advectionDistance.getData())
         .lpNorm<Eigen::Infinity>();
@@ -2449,15 +2461,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                   << Alert::Notation::Number(distanceJump) << Alert::NewLine
                   << diagnosticLabel("Advected rotated jump:")
                   << Alert::Notation::Number(advectedJump) << Alert::Raise;
-    GridFunction advectedOutput(levelSetSpace);
-    advectedOutput.getData() = advectedDistance.getData();
-    chamber.add("Advected", advectedOutput, IO::XDMF::Center::Node);
-    GridFunction sewedAdvected(sewedDesignScalar);
-    sewedDesign.setScalar(sewedAdvected, advectedOutput);
-    sewedDesignOutput.add("Advected", sewedAdvected, IO::XDMF::Center::Node);
-
-    xdmf.write(static_cast<Real>(iteration)).flush();
-    sewedXdmf.write(static_cast<Real>(iteration)).flush();
+    const auto exportAdvection = [&]() {
+      GridFunction advectedOutput(levelSetSpace);
+      advectedOutput.getData() = advectedDistance.getData();
+      chamber.add("Advected", advectedOutput, IO::XDMF::Center::Node);
+      GridFunction sewedAdvected(sewedDesignScalar);
+      sewedDesign.setScalar(sewedAdvected, advectedOutput);
+      sewedDesignOutput.add("Advected", sewedAdvected, IO::XDMF::Center::Node);
+      xdmf.write(static_cast<Real>(iteration)).flush();
+      sewedXdmf.write(static_cast<Real>(iteration)).flush();
+    };
+    if (!bemUpdateBacktracking)
+      exportAdvection();
     stageSeconds[7] = elapsedSeconds(stage8Start);
     reportStageTiming(8, stageSeconds[7]);
 
@@ -2477,17 +2492,29 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           classified, classifiedLevelSet, h, outerRadius, argc, argv,
           configuration.adapt ? backgroundWelschScale : 0);
       }
-      // A failed MMG stage is retried on the same advected level set with
-      // every MMG size computed from half the scale; the next iteration
-      // starts again from h.
+      // Default retries halve the MMG scale on the same transported field.
+      // Opt-in time backtracking instead re-solves transport at half dt with
+      // the same original mesh and direction, keeping the MMG scale at h.
       Real scale = h;
       for (size_t attempt = 0;; ++attempt)
       {
         try
         {
-          auto reconstructed = discretizeLevelSetMMG(mesh, advectedDistance, scale,
-            sphere, configuration.adapt, configuration.mmgSnap,
-            requestedWelschScale, configuration.mmgAngleDetection);
+          auto reconstructed = [&]() {
+            if (!bemUpdateBacktracking)
+              return discretizeLevelSetMMG(mesh, advectedDistance, scale,
+                sphere, configuration.adapt, configuration.mmgSnap,
+                requestedWelschScale, configuration.mmgAngleDetection);
+            // MMG removes the old material partition before cutting. A time
+            // retry must leave the transport mesh and its trace operator intact.
+            MMG::Mesh trialMesh(mesh);
+            P1 trialSpace(trialMesh);
+            GridFunction trialDistance(trialSpace);
+            trialDistance.getData() = advectedDistance.getData();
+            return discretizeLevelSetMMG(trialMesh, trialDistance, scale,
+              sphere, configuration.adapt, configuration.mmgSnap,
+              requestedWelschScale, configuration.mmgAngleDetection);
+          }();
           try
           {
             // A successful MMG call is not yet a valid chamber. Keep the
@@ -2525,18 +2552,50 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           // Keep what MMG received, so that the failure can be reproduced.
           const std::string failure = "mmg-failure-" + std::to_string(iteration + 1) +
             "-" + std::to_string(attempt);
-          mesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
-          advectedDistance.save(failure + ".sol", IO::FileFormat::MEDIT);
+          if (bemUpdateBacktracking)
+          {
+            std::ofstream meshOutput(failure + ".mesh");
+            std::ofstream levelSetOutput(failure + ".sol");
+            meshOutput << std::setprecision(std::numeric_limits<Real>::max_digits10);
+            levelSetOutput << std::setprecision(std::numeric_limits<Real>::max_digits10);
+            IO::MeshPrinter<IO::FileFormat::MEDIT, Context::Local>(mesh).print(meshOutput);
+            IO::GridFunctionPrinter<IO::FileFormat::MEDIT,
+              std::decay_t<decltype(advectionLevelSetSpace)>, Math::Vector<Real>>
+              (advectedDistance).print(levelSetOutput);
+            meshOutput.flush();
+            levelSetOutput.flush();
+            if (!meshOutput || !levelSetOutput)
+              throw std::runtime_error("Cannot preserve failed update input.");
+          }
+          else
+          {
+            mesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
+            advectedDistance.save(failure + ".sol", IO::FileFormat::MEDIT);
+          }
           Alert::Warning() << "Saved the failed MMG input to " << failure << ".mesh and "
                            << failure << ".sol." << Alert::Raise;
           if (attempt == configuration.mmgRetries)
             throw;
-          Alert::Warning() << "MMG reconstruction failed at scale "
-                           << Alert::Notation::Number(scale / h) << " h: " << error.what()
-                           << Alert::NewLine << "Retrying at scale "
-                           << Alert::Notation::Number(scale / (2 * h)) << " h."
-                           << Alert::Raise;
-          scale /= 2;
+          if (bemUpdateBacktracking)
+          {
+            usedDt /= 2;
+            const Real retryResidual = solveTransport(usedDt);
+            Alert::Warning() << "Update candidate rejected: " << error.what()
+                             << Alert::NewLine << "Re-solved transport at timestep "
+                             << Alert::Notation::Number(usedDt)
+                             << " with unchanged MMG scale h; transport residual "
+                             << Alert::Notation::Number(retryResidual) << "."
+                             << Alert::Raise;
+          }
+          else
+          {
+            Alert::Warning() << "MMG reconstruction failed at scale "
+                             << Alert::Notation::Number(scale / h) << " h: " << error.what()
+                             << Alert::NewLine << "Retrying at scale "
+                             << Alert::Notation::Number(scale / (2 * h)) << " h."
+                             << Alert::Raise;
+            scale /= 2;
+          }
         }
       }
     }();
@@ -2546,6 +2605,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reconstructionXdmf.write(static_cast<Real>(iteration + 1)).flush();
     checkFixedGeometry(result.mesh, outerRadius);
     checkMaterials(result.mesh);
+    if (bemUpdateBacktracking)
+    {
+      stageDiagnostics.advectionIncrement =
+        (advectedDistance.getData() - advectionDistance.getData()).lpNorm<Eigen::Infinity>();
+      stageDiagnostics.advectedJump = advectionCoupling.scalarJump(advectedDistance);
+      predictedRhoChange = usedDt * dRhoTheta;
+      predictedVolumeChange = usedDt * dVolumeTheta;
+      exportAdvection();
+    }
     nextMesh.emplace(std::move(result.mesh));
     stageSeconds[8] = elapsedSeconds(stage9Start);
     reportStageTiming(9, stageSeconds[8]);

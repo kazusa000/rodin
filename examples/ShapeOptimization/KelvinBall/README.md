@@ -663,6 +663,17 @@ again under its ordinary `bem-state-i` name; candidate measurements are not
 additional optimization steps. This check doubles successful state evaluations
 and does not assert that refinement remedies a nearly singular matrix.
 
+`--bem-update-backtracking` additionally replaces the half-MMG-size retry
+by a half-transport-time retry, retaining the same bounded attempt count.
+It requires `--bem-reconstruction-check`. Each trial reassembles and solves
+the original RK4 characteristic transport and scalar trace problem from
+the same pre-update distance and frozen shape direction. The MMG scale
+stays at h; no mesh vertices are moved and no transported fields are blended.
+Numerical validity, not an objective comparison, accepts the first passing
+candidate. The CSV `dt`, incoming first-order predictions, transport
+diagnostics and exported advected field use the accepted outgoing time step.
+This is numerical admissibility backtracking, not an Armijo ascent guarantee.
+
 `--state-backend=bem --thickness-min=0` replaces the FEM Stokes solve with
 `KELVIN_BEM_COMMAND`. Each iteration exports the original chamber MEDIT mesh;
 the command must produce a V2 nodal payload and a JSON certificate. The reader
