@@ -35,6 +35,9 @@ namespace KelvinBall
       /// Crossing fraction below which the MMG cut snaps the near endpoint of
       /// a crossed edge onto the level set; zero disables the snapping.
       Real mmgSnap = 0;
+      /// Optional geometric angle detection on evolving MMG meshes; the
+      /// initial sphere discretization remains unchanged.
+      bool mmgAngleDetection = false;
       /// Number of times a failed MMG reconstruction is retried with the MMG
       /// sizes computed from half the previous scale.
       size_t mmgRetries = 2;

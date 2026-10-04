@@ -81,7 +81,8 @@ namespace KelvinBall
        * retried reconstruction halves. A positive @p requestedWelschScale
        * overrides the default scale.
        */
-      void adapt(MMG::Mesh& mesh, Real h, Real requestedWelschScale = 0) const;
+      void adapt(MMG::Mesh& mesh, Real h, Real requestedWelschScale = 0,
+        bool angleDetection = false) const;
 
       /**
        * @brief Marks the fixed boundary for MMG and returns the number of

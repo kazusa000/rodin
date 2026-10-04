@@ -294,7 +294,8 @@ namespace KelvinBall
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};
   }
 
-  void Sphere::adapt(MMG::Mesh& mesh, Real h, Real requestedWelschScale) const
+  void Sphere::adapt(MMG::Mesh& mesh, Real h, Real requestedWelschScale,
+    bool angleDetection) const
   {
     const Real interfaceSize = Real(0.1) * h;
     const Real farSize = Real(10) * h;
@@ -320,7 +321,7 @@ namespace KelvinBall
       .setHMax(farSize)
       .setHausdorff(0.1 * h * h)
       .setGradation(m_configuration.adaptGradation)
-      .setAngleDetection(false)
+      .setAngleDetection(angleDetection)
       .adapt(mesh, size);
     splitSelfPairedCut(mesh);
   }

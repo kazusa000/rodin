@@ -44,6 +44,8 @@ namespace KelvinBall
       adaptGradation = std::stod(std::string(option.substr(22)));
     else if (option.rfind("--mmg-snap=", 0) == 0)
       mmgSnap = std::stod(std::string(option.substr(11)));
+    else if (option == "--mmg-angle-detection")
+      mmgAngleDetection = true;
     else if (option.rfind("--mmg-retries=", 0) == 0)
       mmgRetries = std::stoul(std::string(option.substr(14)));
     else

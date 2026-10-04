@@ -480,6 +480,12 @@ suggests $\delta \approx 0.005$ at the usual resolutions.
 
 #### Retrying a failed reconstruction
 
+`--mmg-angle-detection` optionally enables MMG's geometric angle detection
+in the evolving level-set cut and its adaptation or optimization pass. It is
+off by default and does not change the initial sphere discretization. This is
+a mesher option, not coordinate projection: the existing chamber-geometry
+validator and bounded retry still reject invalid results.
+
 If the level-set discretisation, the optimisation pass or the adaptation of an
 iterate fails, the reconstruction is repeated on the same advected level set
 with every MMG size (minimum and maximum size, Hausdorff tolerance and

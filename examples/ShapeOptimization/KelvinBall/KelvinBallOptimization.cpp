@@ -454,6 +454,10 @@ namespace KelvinBall
           << "         MMG path: snap edge crossings closer than this fraction"
           << Alert::NewLine
           << "                              of the edge to a vertex (default: 0, off)."
+          << Alert::NewLine << Alert::Notation("--mmg-angle-detection")
+          << "       Detect geometric angles on evolving MMG meshes."
+          << Alert::NewLine
+          << "                              Default: off; initial sphere unchanged."
           << Alert::NewLine << Alert::Notation("--mmg-retries=<count>")
           << "      MMG path: retries of a failed reconstruction, each at half"
           << Alert::NewLine
@@ -713,7 +717,7 @@ namespace KelvinBall
       template <class LevelSet>
       MMGReconstruction discretizeLevelSetMMG(MMG::Mesh& mesh, const LevelSet& levelSet,
         Real h, const Sphere& sphere, bool adapt, Real snap,
-        Real requestedWelschScale)
+        Real requestedWelschScale, bool angleDetection)
       {
         const size_t previousCells = mesh.getCellCount();
         const Real hmin = 0.1 * h;
@@ -772,7 +776,7 @@ namespace KelvinBall
             SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus})
           .setBoundaryReference(Gamma)
           .setRMC(1e-5)
-          .setAngleDetection(false);
+          .setAngleDetection(angleDetection);
         // A crossed edge (i, j) is cut at t = phi_i / (phi_i - phi_j). A cut
         // with t near 0 or 1 puts the new vertex next to an existing one and
         // leaves a sliver. Snapping the near endpoint to zero instead makes the
@@ -925,7 +929,7 @@ namespace KelvinBall
           sphere.protectFixedGeometry(reconstructed, false);
         if (adapt)
         {
-          sphere.adapt(reconstructed, h, requestedWelschScale);
+          sphere.adapt(reconstructed, h, requestedWelschScale, angleDetection);
         }
         else
         {
@@ -934,7 +938,7 @@ namespace KelvinBall
             .setHMax(hmax)
             .setHausdorff(hausdorff)
             .setGradation(remeshGradation)
-            .setAngleDetection(false)
+            .setAngleDetection(angleDetection)
             .optimize(reconstructed);
           splitSelfPairedCut(reconstructed);
         }
@@ -1128,6 +1132,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("The reconstruction method must be mmg or wngir.");
   if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
     throw std::runtime_error("--mmg-snap applies only to --reconstruction=mmg.");
+  if (configuration.mmgAngleDetection && reconstructionMethod != "mmg")
+    throw std::runtime_error("--mmg-angle-detection applies only to --reconstruction=mmg.");
   if (KelvinBall::Tetrahedral && reconstructionMethod != "mmg")
     throw std::runtime_error("The tetrahedral extension supports MMG only.");
   if (geometryOnly && stateOnly)
@@ -1208,6 +1214,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (configuration.mmgSnap > 0)
     configurationInfo << Alert::NewLine << diagnosticLabel("Level-set snapping fraction:")
                       << Alert::Notation::Number(configuration.mmgSnap);
+  if (configuration.mmgAngleDetection)
+    configurationInfo << Alert::NewLine << diagnosticLabel("MMG update angle detection:")
+                      << "on (initial sphere unchanged)";
   configurationInfo << Alert::Raise;
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
@@ -2471,7 +2480,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         {
           auto reconstructed = discretizeLevelSetMMG(mesh, advectedDistance, scale,
             sphere, configuration.adapt, configuration.mmgSnap,
-            requestedWelschScale);
+            requestedWelschScale, configuration.mmgAngleDetection);
           try
           {
             // A successful MMG call is not yet a valid chamber. Keep the
