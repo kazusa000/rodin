@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <map>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -26,12 +27,16 @@ namespace KelvinBall
     std::vector<Math::SpatialVector<Real>> gradient;
     Real residual = 0;
 
-    static BemState evaluate(Mesh& mesh, size_t iteration)
+    static BemState evaluate(Mesh& mesh, size_t iteration,
+      std::optional<size_t> reconstructionAttempt = std::nullopt)
     {
       const char* callback = std::getenv("KELVIN_BEM_COMMAND");
       if (!callback || !*callback)
         throw std::runtime_error("BEM mode requires KELVIN_BEM_COMMAND.");
-      const std::string stem = "bem-state-" + std::to_string(iteration);
+      const std::string stem = reconstructionAttempt
+        ? "bem-candidate-" + std::to_string(iteration) + "-" +
+          std::to_string(*reconstructionAttempt)
+        : "bem-state-" + std::to_string(iteration);
       for (const auto* extension : {".mesh", ".json", ".nodes"})
         if (std::filesystem::exists(stem + extension))
           throw std::runtime_error("Refusing to overwrite a BEM state artifact.");
@@ -47,10 +52,16 @@ namespace KelvinBall
       }
       // Names above are generated, shell-safe relative filenames. The command
       // itself is an explicit trusted runner setting, never mesh content.
-      const std::string command = std::string(callback) + " " + stem +
+      std::string command = std::string(callback) + " " + stem +
         ".mesh --json-output " + stem + ".json --nodal-output " + stem + ".nodes";
-      if (std::system(command.c_str()) != 0)
-        throw std::runtime_error("BEM state/derivative callback failed.");
+      if (reconstructionAttempt)
+        command += " > " + stem + ".log 2>&1";
+      const int status = std::system(command.c_str());
+      if (reconstructionAttempt)
+        std::ofstream(stem + ".system-status.txt") << status << '\n';
+      if (status != 0)
+        throw std::runtime_error("BEM state/derivative callback failed for " + stem +
+          " (system status " + std::to_string(status) + ").");
       return read(mesh, stem + ".nodes");
     }
 

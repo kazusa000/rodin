@@ -651,6 +651,18 @@ reconstruction, since the last design is not reconstructed.
 | `Common`, `Configuration` | Shared data, mesh preparation, options |
 # Optional external BEM state pilot
 
+`--bem-reconstruction-check` is an opt-in numerical acceptance check for
+MMG candidates in BEM mode. It evaluates the unchanged all-original-panel
+state/derivative callback after the fixed-boundary and material checks, within
+the existing bounded half-scale reconstruction retry. The transported level
+set, retry count, geometry tolerances and BEM criteria remain unchanged. The
+first passing candidate is accepted without comparing objective values.
+Attempt-specific `bem-candidate-i-a` inputs, callback logs, raw system statuses
+and successful certificates are retained. Stage 3 evaluates the accepted mesh
+again under its ordinary `bem-state-i` name; candidate measurements are not
+additional optimization steps. This check doubles successful state evaluations
+and does not assert that refinement remedies a nearly singular matrix.
+
 `--state-backend=bem --thickness-min=0` replaces the FEM Stokes solve with
 `KELVIN_BEM_COMMAND`. Each iteration exports the original chamber MEDIT mesh;
 the command must produce a V2 nodal payload and a JSON certificate. The reader

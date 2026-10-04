@@ -400,6 +400,8 @@ namespace KelvinBall
       {
         Alert::Info()
           << "Usage" << Alert::NewLine << "  " << executable << " [options]"
+          << Alert::NewLine << Alert::Notation("--bem-reconstruction-check")
+          << "  Check each MMG candidate with BEM inside the bounded retry (default: off)."
           << Alert::NewLine << Alert::Notation("--n=<points>")
           << "              Background points per edge (default: 13)." << Alert::NewLine
           << Alert::Notation("--h=<size>")
@@ -1031,6 +1033,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool geometryOnly = false;
   bool stateOnly = false;
   bool bemState = false;
+  bool bemReconstructionCheck = false;
   Real regularizationFactor = 4.0;
   Real normalRegularizationFactor = 1.0;
   Real stepFactor = 0.1;
@@ -1093,6 +1096,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       stateOnly = true;
     else if (mode == "--state-backend=bem")
       bemState = true;
+    else if (mode == "--bem-reconstruction-check")
+      bemReconstructionCheck = true;
     else if (mode == "--help")
     {
       printUsage(argv[0]);
@@ -1102,6 +1107,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       throw std::runtime_error("Unknown KelvinBall option: " + std::string(mode));
   }
   configuration.finalize();
+  if (bemReconstructionCheck && (!bemState || reconstructionMethod != "mmg"))
+    throw std::runtime_error("--bem-reconstruction-check requires BEM states and MMG reconstruction.");
   if (bemState && thicknessFactor != 0)
     throw std::runtime_error("BEM pilot requires --thickness-min=0.");
   if (bemState)
@@ -2488,6 +2495,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             // invalid candidates before any next iteration consumes them.
             checkFixedGeometry(reconstructed.mesh, outerRadius);
             checkMaterials(reconstructed.mesh);
+            if (bemReconstructionCheck)
+            {
+              // Numerical acceptance, not objective-based mesh selection. The
+              // callback uses exactly the state/gradient protocol of Stage 3.
+              // Each attempt retains its input and callback output separately;
+              // Stage 3 independently evaluates the accepted next mesh again.
+              KelvinBall::BemState::evaluate(reconstructed.mesh, iteration + 1, attempt);
+              Alert::Info() << "BEM accepted MMG candidate " << iteration + 1
+                            << "-" << attempt << " at scale "
+                            << Alert::Notation::Number(scale / h) << " h."
+                            << Alert::Raise;
+            }
           }
           catch (const std::exception&)
           {
