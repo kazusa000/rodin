@@ -134,7 +134,9 @@ namespace KelvinBall
     Mesh::Builder builder; builder.initialize(3).nodes(points.size());
     for (const auto& x:points) builder.vertex(x);
     for (const auto& [tet,material]:cells) {
-      Index index; builder.polytope(Polytope::Type::Tetrahedron,IndexArray{tet[0],tet[1],tet[2],tet[3]},index);
+      IndexArray vertices(4);
+      for (size_t i=0;i<4;++i) vertices(i)=tet[i];
+      Index index; builder.polytope(Polytope::Type::Tetrahedron,std::move(vertices),index);
       builder.attribute({3,index},material);
     }
     Mesh mesh=builder.finalize();
