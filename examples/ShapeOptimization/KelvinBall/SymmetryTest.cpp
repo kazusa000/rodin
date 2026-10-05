@@ -27,8 +27,9 @@ int main()
   const std::string text = row.str();
   const auto parsed = IO::MEDIT::ParseVertex(3)(text.begin(), text.end());
   require(bool(parsed), "MEDIT vertex parse failed");
-  require((parsed->vertex.array() == saved.array()).all(),
-    "MEDIT max_digits10 coordinate round trip changed saved geometry");
+  for (size_t component = 0; component < 3; ++component)
+    require(parsed->vertex(component) == saved(component),
+      "MEDIT max_digits10 coordinate round trip changed saved geometry");
   require(parsed->attribute == 13, "MEDIT vertex attribute changed");
   const auto& rotations = SewedOutput::getCubeRotations();
   require(rotations.size() == ChamberMultiplicity, "incorrect group order");
