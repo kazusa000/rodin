@@ -246,7 +246,10 @@ namespace KelvinBall
     }
     const size_t requiredTriangles = protectFixedGeometry(mesh, conformingCuts);
     if (conformingCuts)
+    {
+      labelMaterialInterface(mesh);
       PeriodicCuts(mesh).checkClosedInterface();
+    }
     const size_t cellsAfter = mesh.getCellCount();
     return {std::move(mesh),
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};

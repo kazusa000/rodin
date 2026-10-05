@@ -10,6 +10,28 @@
 
 namespace KelvinBall
 {
+  /// Reconstruct semantic Gamma labels from the actual material adjacency.
+  /// MMG's volume conversion exports external boundary triangles, not these
+  /// internal faces, when face/cell incidence is present. This changes labels
+  /// only: it neither moves coordinates nor adds/removes any material face.
+  inline void labelMaterialInterface(Mesh& mesh)
+  {
+    mesh.getConnectivity().compute(2,3);
+    const auto& owners = mesh.getConnectivity().getIncidence(2,3);
+    for (auto face=mesh.getPolytope(2);face;++face)
+    {
+      bool solid=false,fluid=false;
+      for (Index owner:owners.at(face->getIndex()))
+      {
+        const auto material=mesh.getPolytope(3,owner)->getAttribute();
+        solid=solid || material==Obstacle;
+        fluid=fluid || material==Fluid;
+      }
+      if (solid && fluid) mesh.setAttribute({2,face->getIndex()},Gamma);
+      else if (face->getAttribute()==Gamma) mesh.setAttribute({2,face->getIndex()},{});
+    }
+  }
+
   /** Exact P1 scalar identification on congruent rotated cuts, Local Eigen only.
    * No point is moved. Noncongruent triangulations are rejected, not welded.
    * The tolerance is for floating-point coordinate matching, not seam repair.

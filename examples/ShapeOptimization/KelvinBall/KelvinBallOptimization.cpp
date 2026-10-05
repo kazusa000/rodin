@@ -1010,7 +1010,10 @@ namespace KelvinBall
         const size_t requiredTrianglesAfterOptimization =
           sphere.protectFixedGeometry(reconstructed, periodicCuts);
         if (periodicCuts)
+        {
+          labelMaterialInterface(reconstructed);
           PeriodicCuts(reconstructed).checkClosedInterface();
+        }
         saveStage(reconstructed, "post");
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
