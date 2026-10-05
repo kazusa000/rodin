@@ -47,3 +47,10 @@ foreach(mode IN ITEMS Cubic Tetra)
   target_link_libraries(KelvinBall${mode}GeometryTest PRIVATE ${kelvin_libraries})
 endforeach()
 target_compile_definitions(KelvinBallTetraGeometryTest PRIVATE KELVIN_TETRAHEDRAL=1)
+
+foreach(mode IN ITEMS Cubic Tetra)
+  add_executable(KelvinBall${mode}ThicknessTest EXCLUDE_FROM_ALL
+    SampledThicknessDiagnostic.cpp Common.cpp SewedOutput.cpp)
+  target_link_libraries(KelvinBall${mode}ThicknessTest PRIVATE ${kelvin_libraries})
+endforeach()
+target_compile_definitions(KelvinBallTetraThicknessTest PRIVATE KELVIN_TETRAHEDRAL=1)

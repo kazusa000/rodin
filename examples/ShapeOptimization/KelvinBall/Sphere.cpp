@@ -199,7 +199,7 @@ namespace KelvinBall
     const Real h = m_configuration.getH();
     MMG::Mesh mesh(makeUniformChamber());
     if (conformingCuts)
-      PeriodicCuts(mesh);
+      PeriodicCuts{mesh};
     const size_t cellsBefore = mesh.getCellCount();
     protectFixedGeometry(mesh, conformingCuts);
     const Real hmin = 0.1 * h;

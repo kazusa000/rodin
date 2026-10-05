@@ -50,6 +50,7 @@
 #include "Thickness.h"
 #include "Sphere.h"
 #include "PeriodicCuts.h"
+#include "SampledThickness.h"
 #include "../../WNGIRExampleParameters.h"
 
 using namespace Rodin;
@@ -1100,6 +1101,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Real stepFactor = 0.1;
   Real levelSetPenalty = 1;
   Real thicknessFactor = 2;
+  Real minimumThickness = 0;
+  Real thicknessAcceptPenalty = Real(1e-6);
+  Real thicknessCorrectionGain = Real(1);
   size_t motionEvery = 0;
   size_t motionFrames = 24;
   Math::SpatialVector<Real> motionForce(3);
@@ -1125,6 +1129,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       levelSetPenalty = std::stod(std::string(mode.substr(20)));
     else if (mode.rfind("--thickness-min=", 0) == 0)
       thicknessFactor = std::stod(std::string(mode.substr(16)));
+    else if (mode.rfind("--minimum-thickness=", 0) == 0)
+      minimumThickness = std::stod(std::string(mode.substr(20)));
+    else if (mode.rfind("--thickness-accept-penalty=", 0) == 0)
+      thicknessAcceptPenalty = std::stod(std::string(mode.substr(27)));
+    else if (mode.rfind("--thickness-correction-gain=", 0) == 0)
+      thicknessCorrectionGain = std::stod(std::string(mode.substr(28)));
     else if (mode.rfind("--motion-every=", 0) == 0)
       motionEvery = std::stoul(std::string(mode.substr(15)));
     else if (mode.rfind("--motion-frames=", 0) == 0)
@@ -1182,6 +1192,13 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   configuration.finalize();
   if (periodicCuts && reconstructionMethod != "mmg")
     throw std::runtime_error("--periodic-cuts requires MMG reconstruction.");
+  if (!std::isfinite(minimumThickness) || minimumThickness < 0 ||
+      !std::isfinite(thicknessAcceptPenalty) || thicknessAcceptPenalty < 0 ||
+      !std::isfinite(thicknessCorrectionGain) || thicknessCorrectionGain <= 0)
+    throw std::runtime_error("Invalid fixed minimum-thickness constraint parameters.");
+  if (minimumThickness > 0 && (!periodicCuts || thicknessFactor != 0 ||
+      (!geometryOnly && !bemUpdateBacktracking)))
+    throw std::runtime_error("Sampled thickness requires --periodic-cuts, --thickness-min=0, and time backtracking for updates.");
   if (mmgReplayMesh.empty() != mmgReplaySol.empty())
     throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
   const bool mmgReplay = !mmgReplayMesh.empty();
@@ -1781,6 +1798,26 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     rayDirection.getData().setZero();
     GridFunction smoothedCurvature(levelSetSpace);
     smoothedCurvature.getData().setZero();
+    SampledThickness::Result minimumThicknessResult;
+    if (minimumThickness > 0)
+    {
+      mesh.getConnectivity().compute(2, 3);
+      const Location::AABB<MMG::Mesh> locator(mesh);
+      thicknessLoad = Math::Vector<Real>::Zero(shapeSpace.getSize());
+      const SampledThickness constraint(mesh, minimumThickness, true);
+      minimumThicknessResult = constraint.evaluate(mesh, locator, shapeSpace, Real(1), thicknessLoad);
+      std::ofstream certificate("thickness-state-" + std::to_string(iteration) + ".json");
+      certificate << std::setprecision(17) << "{\"minimum\":" << minimumThickness
+        << ",\"accept_penalty\":" << thicknessAcceptPenalty
+        << ",\"penalty\":" << minimumThicknessResult.penalty
+        << ",\"deepest\":" << minimumThicknessResult.deepest
+        << ",\"rays\":" << minimumThicknessResult.rays
+        << ",\"violating\":" << minimumThicknessResult.violating
+        << ",\"cross_cut\":" << minimumThicknessResult.crossCut << "}\n";
+      if (!certificate) throw std::runtime_error("Could not save thickness certificate.");
+      identifyGradient(shapeSpace, RealFunction{0}, shapeCoupling,
+        thicknessDescent, hilbertLength, nitschePenalty, "Sampled thickness -dP", &thicknessLoad);
+    }
     if (thicknessFactor > 0)
     {
       thicknessLoad = Math::Vector<Real>::Zero(shapeSpace.getSize());
@@ -1963,6 +2000,25 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     Real nullSpaceMultiplier = -dVolume(rhoGradient) / volumeMetric;
     GridFunction xiRho(shapeSpace);
     xiRho = rhoGradient + nullSpaceMultiplier * volumeGradient;
+    if (minimumThickness > 0 && minimumThicknessResult.penalty > 0)
+    {
+      // Eliminate volume first: this is the Schur complement of Project1's
+      // active two-constraint Gram system, with the -dP Riesz representative.
+      const Real volumeMultiplier = -dVolume(thicknessDescent) / volumeMetric;
+      GridFunction repair(shapeSpace);
+      repair = thicknessDescent + volumeMultiplier * volumeGradient;
+      const Real gram = thicknessLoad.dot(repair.getData());
+      const Real rhs = -thicknessLoad.dot(xiRho.getData()) +
+        thicknessCorrectionGain * minimumThicknessResult.penalty;
+      if (rhs > 0)
+      {
+        if (!std::isfinite(gram) || gram <= Real(1e-20))
+          throw std::runtime_error("Active volume/thickness constraint basis is singular.");
+        const Real multiplier = rhs / gram;
+        xiRho = rhoGradient + nullSpaceMultiplier * volumeGradient + multiplier * repair;
+        nullSpaceMultiplier += multiplier * volumeMultiplier;
+      }
+    }
     if (thicknessFactor > 0)
     {
       const Real thicknessVolumeMultiplier =
@@ -2640,6 +2696,28 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             // invalid candidates before any next iteration consumes them.
             checkFixedGeometry(reconstructed.mesh, outerRadius);
             checkMaterials(reconstructed.mesh);
+            if (minimumThickness > 0)
+            {
+              auto& candidateMesh = reconstructed.mesh;
+              candidateMesh.getConnectivity().compute(2, 3);
+              const Location::AABB<MMG::Mesh> locator(candidateMesh);
+              P1 candidateSpace(candidateMesh, 3);
+              Math::Vector<Real> unused = Math::Vector<Real>::Zero(candidateSpace.getSize());
+              const SampledThickness constraint(candidateMesh, minimumThickness, true);
+              const auto measured = constraint.evaluate(candidateMesh, locator, candidateSpace, Real(1), unused);
+              std::ofstream certificate("thickness-candidate-" + std::to_string(iteration + 1) +
+                "-" + std::to_string(attempt) + ".json");
+              certificate << std::setprecision(17) << "{\"minimum\":" << minimumThickness
+                << ",\"accept_penalty\":" << thicknessAcceptPenalty << ",\"penalty\":"
+                << measured.penalty << ",\"deepest\":" << measured.deepest
+                << ",\"rays\":" << measured.rays << ",\"violating\":" << measured.violating
+                << ",\"cross_cut\":" << measured.crossCut
+                << ",\"accepted\":" << (measured.penalty <= thicknessAcceptPenalty ? "true" : "false") << "}\n";
+              certificate.close();
+              if (!certificate) throw std::runtime_error("Could not save candidate thickness certificate.");
+              if (measured.penalty > thicknessAcceptPenalty)
+                throw std::runtime_error("MMG candidate violates the sampled minimum-thickness constraint.");
+            }
             if (bemReconstructionCheck)
             {
               // Numerical acceptance, not objective-based mesh selection. The
