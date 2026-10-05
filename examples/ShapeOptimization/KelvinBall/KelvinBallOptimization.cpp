@@ -414,6 +414,10 @@ namespace KelvinBall
           << "  Save each actual update's MMG stages, metadata and input field (default: off)."
           << Alert::NewLine << Alert::Notation("--mmg-update-optimizer")
           << "  Use MMG Optimizer after updated level-set cuts; retain Adapt for the initial sphere (default: off)."
+          << Alert::NewLine << Alert::Notation("--resume-mesh=<file> --resume-step=<index> --resume-target-volume=<value>")
+          << "  Continue BEM optimization from a full-metadata accepted MMG checkpoint; iterations is the absolute design limit."
+          << Alert::NewLine << Alert::Notation("--save-checkpoints")
+          << "  Retain full MMG metadata after each successful BEM state (default: off)."
           << Alert::NewLine << Alert::Notation("--n=<points>")
           << "              Background points per edge (default: 13)." << Alert::NewLine
           << Alert::Notation("--h=<size>")
@@ -1107,6 +1111,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool mmgStageDiagnostics = false;
   bool mmgUpdateOptimizer = false;
   bool periodicCuts = false;
+  bool saveCheckpoints = false;
+  std::string resumeMesh;
+  std::optional<size_t> resumeStep;
+  std::optional<Real> resumeTargetVolume;
   std::string mmgReplayMesh;
   std::string mmgReplaySol;
   Real regularizationFactor = 4.0;
@@ -1190,6 +1198,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       mmgUpdateOptimizer = true;
     else if (mode == "--periodic-cuts")
       periodicCuts = true;
+    else if (mode == "--save-checkpoints")
+      saveCheckpoints = true;
+    else if (mode.rfind("--resume-mesh=", 0) == 0)
+      resumeMesh = std::string(mode.substr(14));
+    else if (mode.rfind("--resume-step=", 0) == 0)
+      resumeStep = std::stoul(std::string(mode.substr(14)));
+    else if (mode.rfind("--resume-target-volume=", 0) == 0)
+      resumeTargetVolume = std::stod(std::string(mode.substr(23)));
     else if (mode.rfind("--mmg-replay-mesh=", 0) == 0)
       mmgReplayMesh = std::string(mode.substr(18));
     else if (mode.rfind("--mmg-replay-sol=", 0) == 0)
@@ -1215,6 +1231,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (mmgReplayMesh.empty() != mmgReplaySol.empty())
     throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
   const bool mmgReplay = !mmgReplayMesh.empty();
+  const bool resume = !resumeMesh.empty();
+  if (resume != resumeStep.has_value() || resume != resumeTargetVolume.has_value())
+    throw std::runtime_error("Resume requires mesh, absolute step and original target volume together.");
+  if ((resume || saveCheckpoints) && (!bemState || reconstructionMethod != "mmg" ||
+      geometryOnly || stateOnly || mmgReplay))
+    throw std::runtime_error("Checkpoints require actual BEM/MMG optimization.");
+  if (resume && (!std::isfinite(*resumeTargetVolume) || *resumeTargetVolume <= 0 ||
+      *resumeStep >= maxIterations))
+    throw std::runtime_error("Invalid resume target volume or absolute design limit.");
   if (mmgUpdateOptimizer && (!configuration.adapt || geometryOnly || stateOnly ||
       mmgReplay || reconstructionMethod != "mmg"))
     throw std::runtime_error("--mmg-update-optimizer requires initial MMG Adapt and actual updates.");
@@ -1366,14 +1391,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   }
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
-  announce(reconstructionMethod == "wngir"
+  announce(resume ? "Stage 1: Loading the accepted full-metadata MMG checkpoint." : reconstructionMethod == "wngir"
       ? "Stage 1: Preparing the background mesh and fitting the initial sphere with "
         "WNGIR."
       : "Stage 1: Discretizing the initial sphere with MMG.");
   Sphere sphere(configuration);
-  SphereDiscretization initial = reconstructionMethod == "wngir"
-    ? sphere.prepareWNGIRBackground(backgroundWelschScale)
-    : sphere.discretize(periodicCuts, requestedWelschScale);
+  SphereDiscretization initial;
+  if (resume)
+    initial.mesh.load(resumeMesh, IO::FileFormat::MEDIT);
+  else
+    initial = reconstructionMethod == "wngir"
+      ? sphere.prepareWNGIRBackground(backgroundWelschScale)
+      : sphere.discretize(periodicCuts, requestedWelschScale);
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   Optional<MMG::Mesh> wngirBackground;
   MMG::Mesh mesh;
@@ -1428,7 +1457,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportStageTiming(1, stage1Seconds);
   if (geometryOnly)
     return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
+  const Real targetVolume = resume ? *resumeTargetVolume : mesh.getVolume(Obstacle);
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1496,7 +1525,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<Real> predictedVolumeChange;
   Optional<MMG::Mesh> nextMesh;
 
-  for (size_t iteration = 0; iteration < maxIterations; ++iteration)
+  for (size_t iteration = resume ? *resumeStep : 0; iteration < maxIterations; ++iteration)
   {
     Real usedDt = dt;
     std::array<Real, 9> stageSeconds;
@@ -1550,6 +1579,17 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     {
       boundaryState = KelvinBall::BemState::evaluate(mesh, iteration);
       metrics = boundaryState.metrics;
+      if (saveCheckpoints)
+      {
+        const std::string name = "checkpoint-" + std::to_string(iteration) + ".mmg.mesh";
+        if (std::filesystem::exists(name))
+          throw std::runtime_error("Refusing to overwrite an accepted checkpoint.");
+        std::ofstream output(name);
+        output << std::setprecision(std::numeric_limits<Real>::max_digits10);
+        MMG::MeshPrinter(mesh).print(output);
+        output.flush();
+        if (!output) throw std::runtime_error("Cannot save accepted MMG checkpoint.");
+      }
       for (auto* field : {&uT0, &uT1, &uT2, &uR0, &uR1, &uR2})
         field->getData().setZero();
       for (auto* field : {&pT0, &pT1, &pT2, &pR0, &pR1, &pR2})
