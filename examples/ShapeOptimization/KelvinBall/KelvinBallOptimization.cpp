@@ -409,6 +409,8 @@ namespace KelvinBall
           << "  Reconstruct a saved transport input with --geometry-only; save cut and post-adaptation stages, no optimization."
           << Alert::NewLine << Alert::Notation("--mmg-stage-diagnostics")
           << "  Save each actual update's MMG stages, metadata and input field (default: off)."
+          << Alert::NewLine << Alert::Notation("--mmg-update-optimizer")
+          << "  Use MMG Optimizer after updated level-set cuts; retain Adapt for the initial sphere (default: off)."
           << Alert::NewLine << Alert::Notation("--n=<points>")
           << "              Background points per edge (default: 13)." << Alert::NewLine
           << Alert::Notation("--h=<size>")
@@ -1074,6 +1076,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool bemReconstructionCheck = false;
   bool bemUpdateBacktracking = false;
   bool mmgStageDiagnostics = false;
+  bool mmgUpdateOptimizer = false;
   std::string mmgReplayMesh;
   std::string mmgReplaySol;
   Real regularizationFactor = 4.0;
@@ -1144,6 +1147,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       bemUpdateBacktracking = true;
     else if (mode == "--mmg-stage-diagnostics")
       mmgStageDiagnostics = true;
+    else if (mode == "--mmg-update-optimizer")
+      mmgUpdateOptimizer = true;
     else if (mode.rfind("--mmg-replay-mesh=", 0) == 0)
       mmgReplayMesh = std::string(mode.substr(18));
     else if (mode.rfind("--mmg-replay-sol=", 0) == 0)
@@ -1160,6 +1165,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (mmgReplayMesh.empty() != mmgReplaySol.empty())
     throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
   const bool mmgReplay = !mmgReplayMesh.empty();
+  if (mmgUpdateOptimizer && (!configuration.adapt || geometryOnly || stateOnly ||
+      mmgReplay || reconstructionMethod != "mmg"))
+    throw std::runtime_error("--mmg-update-optimizer requires initial MMG Adapt and actual updates.");
   if (mmgStageDiagnostics && (geometryOnly || stateOnly || mmgReplay || reconstructionMethod != "mmg"))
     throw std::runtime_error("--mmg-stage-diagnostics requires actual MMG updates, not a geometry-only replay.");
   if (mmgReplay && (!geometryOnly || stateOnly || bemState ||
@@ -1284,6 +1292,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (configuration.mmgAngleDetection)
     configurationInfo << Alert::NewLine << diagnosticLabel("MMG update angle detection:")
                       << "on (initial sphere unchanged)";
+  if (mmgUpdateOptimizer)
+    configurationInfo << Alert::NewLine << diagnosticLabel("MMG update postprocessor:")
+                      << "Optimizer (initial sphere still Adapt)";
   configurationInfo << Alert::Raise;
   if (mmgReplay)
   {
@@ -2577,7 +2588,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           auto reconstructed = [&]() {
             if (!bemUpdateBacktracking)
               return discretizeLevelSetMMG(mesh, advectedDistance, scale,
-                sphere, configuration.adapt, configuration.mmgSnap,
+                sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
                 requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix);
             // MMG removes the old material partition before cutting. A time
             // retry must leave the transport mesh and its trace operator intact.
@@ -2586,7 +2597,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             GridFunction trialDistance(trialSpace);
             trialDistance.getData() = advectedDistance.getData();
             return discretizeLevelSetMMG(trialMesh, trialDistance, scale,
-              sphere, configuration.adapt, configuration.mmgSnap,
+              sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
               requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix);
           }();
           try
