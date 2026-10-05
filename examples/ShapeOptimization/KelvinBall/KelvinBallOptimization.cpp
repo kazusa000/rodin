@@ -2164,7 +2164,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     distanceProjection.assemble();
     Real periodicDistanceResidual = 0;
     if (periodicCuts)
+    {
       periodicDistanceResidual = PeriodicCuts(mesh).solve(levelSetSpace, distanceProjection.getLinearSystem());
+      periodicDistance.getSolution().setData(distanceProjection.getLinearSystem().getSolution());
+    }
     else
     {
       shapeCoupling.assembleScalarTracePenalty(levelSetSpace,
@@ -2611,6 +2614,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       {
         const Real residual = PeriodicCuts(advectionMesh).solve(advectionLevelSetSpace,
           transport.getLinearSystem());
+        advected.getSolution().setData(transport.getLinearSystem().getSolution());
         advectedDistance.getData() = advected.getSolution().getData();
         return residual;
       }
