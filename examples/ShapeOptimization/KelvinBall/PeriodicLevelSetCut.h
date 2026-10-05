@@ -141,6 +141,7 @@ namespace KelvinBall
       builder.attribute({3,index},material);
     }
     Mesh mesh=builder.finalize();
+    mesh.getConnectivity().compute(2,3);
     for (auto f=mesh.getPolytope(2);f;++f) {
       const auto& v=f->getVertices(); const Triangle key=sorted({v[0],v[1],v[2]});
       if (boundary.count(key)) mesh.setAttribute({2,f->getIndex()},boundary.at(key));
