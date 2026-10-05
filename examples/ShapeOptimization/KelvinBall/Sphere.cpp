@@ -5,6 +5,7 @@
  *          https://www.boost.org/LICENSE_1_0.txt)
  */
 #include "Sphere.h"
+#include "PeriodicCuts.h"
 
 #include <algorithm>
 #include <cmath>
@@ -197,6 +198,8 @@ namespace KelvinBall
   {
     const Real h = m_configuration.getH();
     MMG::Mesh mesh(makeUniformChamber());
+    if (conformingCuts)
+      PeriodicCuts(mesh);
     const size_t cellsBefore = mesh.getCellCount();
     protectFixedGeometry(mesh, conformingCuts);
     const Real hmin = 0.1 * h;
@@ -235,6 +238,8 @@ namespace KelvinBall
       splitSelfPairedCut(mesh);
     }
     const size_t requiredTriangles = protectFixedGeometry(mesh, conformingCuts);
+    if (conformingCuts)
+      PeriodicCuts(mesh).checkClosedInterface();
     const size_t cellsAfter = mesh.getCellCount();
     return {std::move(mesh),
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};

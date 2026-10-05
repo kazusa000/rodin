@@ -49,6 +49,7 @@
 #include "SewedOutput.h"
 #include "Thickness.h"
 #include "Sphere.h"
+#include "PeriodicCuts.h"
 #include "../../WNGIRExampleParameters.h"
 
 using namespace Rodin;
@@ -729,7 +730,7 @@ namespace KelvinBall
       MMGReconstruction discretizeLevelSetMMG(MMG::Mesh& mesh, const LevelSet& levelSet,
         Real h, const Sphere& sphere, bool adapt, Real snap,
         Real requestedWelschScale, bool angleDetection,
-        const std::string& diagnosticPrefix = {})
+        const std::string& diagnosticPrefix = {}, bool periodicCuts = false)
       {
         const auto saveStage = [&](const MMG::Mesh& stage, const char* name) {
           if (diagnosticPrefix.empty())
@@ -801,7 +802,7 @@ namespace KelvinBall
           if (attribute && !fixed.contains(*attribute))
             mesh.setAttribute({mesh.getDimension() - 1, face->getIndex()}, {});
         }
-        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, false);
+        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, periodicCuts);
 
         MMG::LevelSetDiscretizer discretizer;
         // Under RMC, retain the body component attached to the chamber cuts;
@@ -931,6 +932,18 @@ namespace KelvinBall
                        << Alert::Notation::Number(snappedMinimum);
         }
         crossingInfo << Alert::Raise;
+        if (periodicCuts)
+        {
+          PeriodicCuts(mesh).project(sanitized);
+          for (auto cell = mesh.getCell(); cell; ++cell)
+          {
+            bool allZero = true;
+            for (const Index vertex : cell->getVertices())
+              allZero = allZero && sanitized[vertex] == 0;
+            if (allZero)
+              throw std::runtime_error("Periodic level set has an all-zero tetrahedron after snapping.");
+          }
+        }
         MMG::Mesh reconstructed = discretizer.discretize(sanitized);
 
         saveStage(reconstructed, "discretized");
@@ -967,8 +980,8 @@ namespace KelvinBall
           << Alert::Raise;
 
         const size_t requiredTrianglesBeforeOptimization =
-          sphere.protectFixedGeometry(reconstructed, false);
-        if (adapt)
+          sphere.protectFixedGeometry(reconstructed, periodicCuts);
+        if (adapt && !periodicCuts)
         {
           sphere.adapt(reconstructed, h, requestedWelschScale, angleDetection);
         }
@@ -984,7 +997,9 @@ namespace KelvinBall
           splitSelfPairedCut(reconstructed);
         }
         const size_t requiredTrianglesAfterOptimization =
-          sphere.protectFixedGeometry(reconstructed, false);
+          sphere.protectFixedGeometry(reconstructed, periodicCuts);
+        if (periodicCuts)
+          PeriodicCuts(reconstructed).checkClosedInterface();
         saveStage(reconstructed, "post");
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
@@ -1077,6 +1092,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool bemUpdateBacktracking = false;
   bool mmgStageDiagnostics = false;
   bool mmgUpdateOptimizer = false;
+  bool periodicCuts = false;
   std::string mmgReplayMesh;
   std::string mmgReplaySol;
   Real regularizationFactor = 4.0;
@@ -1149,6 +1165,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       mmgStageDiagnostics = true;
     else if (mode == "--mmg-update-optimizer")
       mmgUpdateOptimizer = true;
+    else if (mode == "--periodic-cuts")
+      periodicCuts = true;
     else if (mode.rfind("--mmg-replay-mesh=", 0) == 0)
       mmgReplayMesh = std::string(mode.substr(18));
     else if (mode.rfind("--mmg-replay-sol=", 0) == 0)
@@ -1162,6 +1180,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       throw std::runtime_error("Unknown KelvinBall option: " + std::string(mode));
   }
   configuration.finalize();
+  if (periodicCuts && reconstructionMethod != "mmg")
+    throw std::runtime_error("--periodic-cuts requires MMG reconstruction.");
   if (mmgReplayMesh.empty() != mmgReplaySol.empty())
     throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
   const bool mmgReplay = !mmgReplayMesh.empty();
@@ -1323,7 +1343,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Sphere sphere(configuration);
   SphereDiscretization initial = reconstructionMethod == "wngir"
     ? sphere.prepareWNGIRBackground(backgroundWelschScale)
-    : sphere.discretize(false, requestedWelschScale);
+    : sphere.discretize(periodicCuts, requestedWelschScale);
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   Optional<MMG::Mesh> wngirBackground;
   MMG::Mesh mesh;
@@ -2073,13 +2093,19 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     distanceProjection = Integral(periodicDistance, distanceTest) - eikonalDistanceLoad +
       DirichletBC(periodicDistance, RealFunction(0)).on(Gamma);
     distanceProjection.assemble();
-    shapeCoupling.assembleScalarTracePenalty(levelSetSpace,
-      distanceProjection.getLinearSystem(), levelSetPenalty, FlatSet<Attribute>{Gamma});
-    Solver::CG(distanceProjection).solve();
+    Real periodicDistanceResidual = 0;
+    if (periodicCuts)
+      periodicDistanceResidual = PeriodicCuts(mesh).solve(levelSetSpace, distanceProjection.getLinearSystem());
+    else
+    {
+      shapeCoupling.assembleScalarTracePenalty(levelSetSpace,
+        distanceProjection.getLinearSystem(), levelSetPenalty, FlatSet<Attribute>{Gamma});
+      Solver::CG(distanceProjection).solve();
+    }
     GridFunction distance(levelSetSpace);
     distance = periodicDistance.getSolution();
     const auto& distanceSystem = distanceProjection.getLinearSystem();
-    const Real distanceProjectionResidual =
+    const Real distanceProjectionResidual = periodicCuts ? periodicDistanceResidual :
       (distanceSystem.getOperator() * distanceSystem.getSolution() -
         distanceSystem.getVector())
         .norm() /
@@ -2512,6 +2538,13 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       transportedDistance.setOrder(advectionQuadratureOrder);
       transport = Integral(advected, test) - transportedDistance;
       transport.assemble();
+      if (periodicCuts)
+      {
+        const Real residual = PeriodicCuts(advectionMesh).solve(advectionLevelSetSpace,
+          transport.getLinearSystem());
+        advectedDistance.getData() = advected.getSolution().getData();
+        return residual;
+      }
       advectionCoupling.assembleScalarTracePenalty(advectionLevelSetSpace,
         transport.getLinearSystem(), levelSetPenalty, advectionDistance);
       Solver::CG(transport).solve();
@@ -2589,7 +2622,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             if (!bemUpdateBacktracking)
               return discretizeLevelSetMMG(mesh, advectedDistance, scale,
                 sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
-                requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix);
+                requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts);
             // MMG removes the old material partition before cutting. A time
             // retry must leave the transport mesh and its trace operator intact.
             MMG::Mesh trialMesh(mesh);
@@ -2598,7 +2631,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             trialDistance.getData() = advectedDistance.getData();
             return discretizeLevelSetMMG(trialMesh, trialDistance, scale,
               sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
-              requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix);
+              requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts);
           }();
           try
           {
