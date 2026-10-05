@@ -1,5 +1,6 @@
 #include "SewedOutput.h"
 #include "Common.h"
+#include "CrossedEdgeSnapGuard.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -18,6 +19,27 @@ void require(bool condition, const char* message)
 
 int main()
 {
+  // Regression: independent near-edge snaps must not zero both ends of an
+  // originally crossed edge, even when its periodic partners are elsewhere.
+  const std::vector<Real> original{-2e-4,6e-5,-2e-4,6e-5,1};
+  std::vector<Real> snapped{0,0,0,0,1};
+  const std::vector<Index> orbit{0,1,0,1,4};
+  const std::set<std::array<Index,2>> edges{{0,1},{2,3}};
+  require(guardCrossedEdgeSnaps(original,snapped,orbit,edges)==2,
+    "conflicting crossed-edge snaps were not restored");
+  require(snapped[0]==original[0] && snapped[2]==original[2] &&
+    snapped[1]==0 && snapped[3]==0 && snapped[4]==1,
+    "snap guard changed unrelated data or broke periodic orbit restoration");
+  require(guardCrossedEdgeSnaps(original,snapped,orbit,edges)==0,
+    "snap guard is not idempotent");
+  std::vector<Real> sameSign{0,0};
+  require(guardCrossedEdgeSnaps(std::vector<Real>{1,2},sameSign,
+    std::vector<Index>{0,1},std::set<std::array<Index,2>>{{0,1}})==0,
+    "snap guard restored an edge which was not originally crossed");
+  bool rejected=false;
+  try { guardCrossedEdgeSnaps(original,snapped,std::vector<Index>{0},edges); }
+  catch (const std::runtime_error&) { rejected=true; }
+  require(rejected,"snap guard accepted inconsistent data sizes");
   // Saved transport replays must not perturb coordinates during MEDIT input.
   const Math::SpatialPoint saved{0.9999999999999998, 1.0554945123781563,
     4.440892098500626e-16};

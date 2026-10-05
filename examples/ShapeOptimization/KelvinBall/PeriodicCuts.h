@@ -109,6 +109,8 @@ namespace KelvinBall
           field.getData()(space.getDOFs(0, i)(0)) = sum[m_roots[i]] / count[m_roots[i]];
       }
 
+      const std::vector<Index>& representatives() const { return m_roots; }
+
       template <class Space, class System>
       Real solve(const Space& space, System& system) const
       {

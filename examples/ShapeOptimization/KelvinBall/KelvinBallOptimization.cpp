@@ -43,6 +43,7 @@
 
 #include "Configuration.h"
 #include "PeriodicLevelSetCut.h"
+#include "CrossedEdgeSnapGuard.h"
 #include "Metrics.h"
 #include "BemState.h"
 #include "RotatedCharacteristicContinuation.h"
@@ -442,6 +443,8 @@ namespace KelvinBall
           << "      Minimum body thickness in h (default: 2)."
           << Alert::NewLine << Alert::Notation("--periodic-cuts")
           << " Exact P1 scalar identification and strict closed-interface acceptance (default: off)."
+          << Alert::NewLine << Alert::Notation("--mmg-crossed-edge-snap-guard")
+          << " Undo conflicting zero snaps on crossed edges and their periodic partners (default: off)."
           << Alert::NewLine << Alert::Notation("--minimum-thickness=<length>")
           << " Fixed absolute inward-ray thickness constraint (default: 0, off)."
           << Alert::NewLine << Alert::Notation("--thickness-accept-penalty=<value>")
@@ -744,7 +747,8 @@ namespace KelvinBall
       MMGReconstruction discretizeLevelSetMMG(MMG::Mesh& mesh, const LevelSet& levelSet,
         Real h, const Sphere& sphere, bool adapt, Real snap,
         Real requestedWelschScale, bool angleDetection,
-        const std::string& diagnosticPrefix = {}, bool periodicCuts = false)
+        const std::string& diagnosticPrefix = {}, bool periodicCuts = false,
+        bool crossedEdgeSnapGuard = false)
       {
         const auto saveStage = [&](const MMG::Mesh& stage, const char* name) {
           if (diagnosticPrefix.empty())
@@ -921,6 +925,22 @@ namespace KelvinBall
             }
           }
           Real displacement = 0;
+          if (crossedEdgeSnapGuard)
+          {
+            const auto representatives = PeriodicCuts(mesh).representatives();
+            std::set<std::array<Index,2>> edges;
+            for (auto cell=mesh.getCell();cell;++cell)
+              for (size_t a=0;a<4;++a) for (size_t b=a+1;b<4;++b)
+              {
+                std::array<Index,2> edge{cell->getVertices()[a],cell->getVertices()[b]};
+                std::sort(edge.begin(),edge.end()); edges.insert(edge);
+              }
+            std::vector<Real> values(sanitized.getData().begin(),sanitized.getData().end());
+            const size_t conflicts = guardCrossedEdgeSnaps(original,values,representatives,edges);
+            for (Index i=0;i<values.size();++i) sanitized[i]=values[i];
+            crossingInfo << Alert::NewLine << diagnosticLabel("Restored conflicting zero snaps:")
+                         << Alert::Notation::Number(conflicts);
+          }
           size_t snappedVertices = 0;
           for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
           {
@@ -1111,6 +1131,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool mmgStageDiagnostics = false;
   bool mmgUpdateOptimizer = false;
   bool periodicCuts = false;
+  bool crossedEdgeSnapGuard = false;
   bool saveCheckpoints = false;
   std::string resumeMesh;
   std::optional<size_t> resumeStep;
@@ -1198,6 +1219,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       mmgUpdateOptimizer = true;
     else if (mode == "--periodic-cuts")
       periodicCuts = true;
+    else if (mode == "--mmg-crossed-edge-snap-guard")
+      crossedEdgeSnapGuard = true;
     else if (mode == "--save-checkpoints")
       saveCheckpoints = true;
     else if (mode.rfind("--resume-mesh=", 0) == 0)
@@ -1221,6 +1244,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   configuration.finalize();
   if (periodicCuts && reconstructionMethod != "mmg")
     throw std::runtime_error("--periodic-cuts requires MMG reconstruction.");
+  if (crossedEdgeSnapGuard && (!periodicCuts || reconstructionMethod != "mmg"))
+    throw std::runtime_error("Crossed-edge snap guard requires periodic MMG cuts.");
   if (!std::isfinite(minimumThickness) || minimumThickness < 0 ||
       !std::isfinite(thicknessAcceptPenalty) || thicknessAcceptPenalty < 0 ||
       !std::isfinite(thicknessCorrectionGain) || thicknessCorrectionGain <= 0)
@@ -1383,7 +1408,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     replayDistance.load(mmgReplaySol, IO::FileFormat::MEDIT);
     auto replay = discretizeLevelSetMMG(replayMesh, replayDistance, h,
       replaySphere, configuration.adapt, configuration.mmgSnap,
-      requestedWelschScale, configuration.mmgAngleDetection, "mmg-replay");
+      requestedWelschScale, configuration.mmgAngleDetection, "mmg-replay",
+      periodicCuts, crossedEdgeSnapGuard);
     checkFixedGeometry(replay.mesh, outerRadius);
     checkMaterials(replay.mesh);
     reportSphereGeometry(replay.mesh);
@@ -2735,7 +2761,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             if (!bemUpdateBacktracking)
               return discretizeLevelSetMMG(mesh, advectedDistance, scale,
                 sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
-                requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts);
+                requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts,
+                crossedEdgeSnapGuard);
             // MMG removes the old material partition before cutting. A time
             // retry must leave the transport mesh and its trace operator intact.
             MMG::Mesh trialMesh(mesh);
@@ -2744,7 +2771,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             trialDistance.getData() = advectedDistance.getData();
             return discretizeLevelSetMMG(trialMesh, trialDistance, scale,
               sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
-              requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts);
+              requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts,
+              crossedEdgeSnapGuard);
           }();
           try
           {
