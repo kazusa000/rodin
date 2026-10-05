@@ -65,7 +65,9 @@ namespace KelvinBall
             slaveFaces.insert(triangle);
           }
           if (masterFaces.empty() || slaveFaces != masterFaces)
-            throw std::runtime_error("Periodic cut triangulations are not rotationally congruent.");
+            throw std::runtime_error("Periodic cut triangulations are not rotationally congruent: master=" +
+              std::to_string(pair.master) + " faces=" + std::to_string(masterFaces.size()) +
+              ", slave=" + std::to_string(pair.slave) + " faces=" + std::to_string(slaveFaces.size()));
         }
         for (Index i = 0; i < m_roots.size(); ++i) m_roots[i] = root(i);
       }

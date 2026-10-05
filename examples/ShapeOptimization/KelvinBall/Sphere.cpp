@@ -223,7 +223,7 @@ namespace KelvinBall
     if (conformingCuts)
     {
       PeriodicCuts(mesh).project(sphere);
-      mesh = periodicLevelSetCut(sphere);
+      mesh = periodicLevelSetCut(sphere, "periodic-initial");
     }
     else
       mesh = discretizer.discretize(sphere);

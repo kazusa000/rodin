@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <Eigen/LU>
+#include <fstream>
 #include "PeriodicCuts.h"
 
 namespace KelvinBall
@@ -14,7 +15,7 @@ namespace KelvinBall
    * rotated subdivision. No interface point is projected or repaired.
    */
   template<class Field>
-  MMG::Mesh periodicLevelSetCut(const Field& phi)
+  MMG::Mesh periodicLevelSetCut(const Field& phi, const std::string& diagnosticPrefix = {})
   {
     const auto& source = phi.getFiniteElementSpace().getMesh();
     using Polygon = std::vector<Index>;
@@ -145,7 +146,16 @@ namespace KelvinBall
       if (boundary.count(key)) mesh.setAttribute({2,f->getIndex()},boundary.at(key));
       else if (materials.at(key).size()==2) mesh.setAttribute({2,f->getIndex()},Gamma);
     }
-    PeriodicCuts(mesh).checkClosedInterface();
+    try { PeriodicCuts(mesh).checkClosedInterface(); }
+    catch (const std::exception&) {
+      if (!diagnosticPrefix.empty()) {
+        std::ofstream out(diagnosticPrefix + "-p1-cut-invalid.mesh");
+        out.precision(17);
+        IO::MeshPrinter<IO::FileFormat::MEDIT,Context::Local>(mesh).print(out);
+        if (!out) throw std::runtime_error("Failed retaining invalid periodic P1 cut.");
+      }
+      throw;
+    }
     return MMG::Mesh(std::move(mesh));
   }
 }

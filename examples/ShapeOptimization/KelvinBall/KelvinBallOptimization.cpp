@@ -955,7 +955,7 @@ namespace KelvinBall
           }
         }
         MMG::Mesh reconstructed = periodicCuts
-          ? periodicLevelSetCut(sanitized) : discretizer.discretize(sanitized);
+          ? periodicLevelSetCut(sanitized, diagnosticPrefix) : discretizer.discretize(sanitized);
 
         saveStage(reconstructed, "discretized");
         splitSelfPairedCut(reconstructed);
