@@ -3,6 +3,10 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
+#include <limits>
+#include <Rodin/IO/MEDIT.h>
 
 using namespace KelvinBall;
 
@@ -14,6 +18,18 @@ void require(bool condition, const char* message)
 
 int main()
 {
+  // Saved transport replays must not perturb coordinates during MEDIT input.
+  const Math::SpatialPoint saved{0.9999999999999998, 1.0554945123781563,
+    4.440892098500626e-16};
+  std::ostringstream row;
+  row << std::setprecision(std::numeric_limits<Real>::max_digits10)
+      << saved(0) << ' ' << saved(1) << ' ' << saved(2) << " 13";
+  const std::string text = row.str();
+  const auto parsed = IO::MEDIT::ParseVertex(3)(text.begin(), text.end());
+  require(bool(parsed), "MEDIT vertex parse failed");
+  require((parsed->vertex.array() == saved.array()).all(),
+    "MEDIT max_digits10 coordinate round trip changed saved geometry");
+  require(parsed->attribute == 13, "MEDIT vertex attribute changed");
   const auto& rotations = SewedOutput::getCubeRotations();
   require(rotations.size() == ChamberMultiplicity, "incorrect group order");
   const Math::SpatialPoint x{0.21, 0.53, 0.82};

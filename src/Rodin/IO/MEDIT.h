@@ -8,6 +8,8 @@
 #define RODIN_IO_MEDIT_H
 
 #include <iomanip>
+#include <locale>
+#include <sstream>
 #include <unordered_map>
 #include <boost/bimap.hpp>
 #include <boost/spirit/home/x3.hpp>
@@ -360,11 +362,20 @@ namespace Rodin::IO::MEDIT
         using boost::spirit::x3::uint_;
         using boost::spirit::x3::_attr;
         using boost::spirit::x3::repeat;
+        using boost::spirit::x3::raw;
         size_t i = 0;
+        bool coordinatesParsed = true;
         Data res{ Math::SpatialPoint(m_sdim), ~Geometry::Attribute(0) };
         const auto getX = [&](auto& ctx) {
           assert(i < m_sdim);
-          res.vertex(i++) = _attr(ctx);
+          // Keep Spirit's grammar, but convert the original decimal token.
+          // Its double_ value can differ by an ULP after a max_digits10
+          // round trip, which changes decisions in geometric reconstruction.
+          const auto& token = _attr(ctx);
+          std::istringstream coordinate(std::string(token.begin(), token.end()));
+          coordinate.imbue(std::locale::classic());
+          if (!(coordinate >> res.vertex(i++)))
+            coordinatesParsed = false;
         };
         const auto getAttribute = [&](auto& ctx) { res.attribute = _attr(ctx); };
         const bool r = [&]()
@@ -373,12 +384,12 @@ namespace Rodin::IO::MEDIT
             return boost::spirit::x3::phrase_parse(
               begin, end, uint_[getAttribute], space);
           const auto p =
-            double_[getX] >> repeat(m_sdim - 1)[double_[getX]] >> uint_[getAttribute];
+            raw[double_][getX] >> repeat(m_sdim - 1)[raw[double_][getX]] >> uint_[getAttribute];
           return boost::spirit::x3::phrase_parse(begin, end, p, space);
         }();
         if (begin != end)
           return {};
-        else if (r)
+        else if (r && coordinatesParsed)
           return { res, };
         else
           return {};
