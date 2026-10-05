@@ -49,12 +49,16 @@ endforeach()
 target_compile_definitions(KelvinBallTetraGeometryTest PRIVATE KELVIN_TETRAHEDRAL=1)
 
 foreach(mode IN ITEMS Cubic Tetra)
+  add_executable(KelvinBall${mode}Thickness EXCLUDE_FROM_ALL
+    ThicknessDiagnostic.cpp Common.cpp SewedOutput.cpp)
+  target_link_libraries(KelvinBall${mode}Thickness PRIVATE ${kelvin_libraries})
   add_executable(KelvinBall${mode}Boundary EXCLUDE_FROM_ALL
     KelvinBallBoundary.cpp Common.cpp Configuration.cpp Metrics.cpp
     RotatedNitscheIntegrator.cpp SewedOutput.cpp Sphere.cpp)
   target_link_libraries(KelvinBall${mode}Boundary PRIVATE ${kelvin_libraries})
 endforeach()
 target_compile_definitions(KelvinBallTetraBoundary PRIVATE KELVIN_TETRAHEDRAL=1)
+target_compile_definitions(KelvinBallTetraThickness PRIVATE KELVIN_TETRAHEDRAL=1)
 add_executable(KelvinBallOuterVelocityTest EXCLUDE_FROM_ALL OuterVelocityTest.cpp)
 target_link_libraries(KelvinBallOuterVelocityTest PRIVATE ${kelvin_libraries})
 add_executable(KelvinBallPressureGaugeTest EXCLUDE_FROM_ALL PressureGaugeTest.cpp Common.cpp)

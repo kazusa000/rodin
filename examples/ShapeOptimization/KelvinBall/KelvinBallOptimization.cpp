@@ -315,6 +315,10 @@ namespace KelvinBall
           << "      Minimum body thickness in h (default: 2; 0 disables it)."
           << Alert::NewLine << Alert::Notation("--thickness-weight=<value>")
           << "   Weight of the thickness penalty (default: 1)." << Alert::NewLine
+          << Alert::Notation("--thickness-absolute=<value>")
+          << " Fixed absolute thickness, overriding the h factor." << Alert::NewLine
+          << Alert::Notation("--thickness-exact")
+          << " Exact derivative of discrete thickness quadrature; enables boundary-step thickness." << Alert::NewLine
           << Alert::Notation("--motion-every=<count>")
           << "      Write the rigid motion every count iterates (default: 0, off)."
           << Alert::NewLine << Alert::Notation("--motion-force=<fx,fy,fz>")
@@ -922,6 +926,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Real stepFactor = 0.1;
   Real levelSetPenalty = 1;
   Real thicknessFactor = 2;
+  Real thicknessAbsolute = 0;
+  bool thicknessExact = false;
   Real thicknessWeight = 1;
   size_t motionEvery = 0;
   size_t motionFrames = 24;
@@ -946,6 +952,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       levelSetPenalty = std::stod(std::string(mode.substr(20)));
     else if (mode.rfind("--thickness-min=", 0) == 0)
       thicknessFactor = std::stod(std::string(mode.substr(16)));
+    else if (mode.rfind("--thickness-absolute=", 0) == 0)
+      thicknessAbsolute = std::stod(std::string(mode.substr(21)));
+    else if (mode == "--thickness-exact")
+      thicknessExact = true;
     else if (mode.rfind("--thickness-weight=", 0) == 0)
       thicknessWeight = std::stod(std::string(mode.substr(19)));
     else if (mode.rfind("--motion-every=", 0) == 0)
@@ -997,9 +1007,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   configuration.finalize();
   if (boundaryStep && (inputMesh.empty() || outerValues.empty() || bemValues.empty() ||
       maxIterations != 1 || stateOnly || geometryOnly || reconstructionMethod != "mmg" ||
-      thicknessFactor != 0))
+      ((thicknessFactor > 0 || thicknessAbsolute > 0) && !thicknessExact)))
     throw std::runtime_error("Boundary step requires one MMG update, mesh, outer and BEM "
-      "data, and --thickness-min=0.");
+      "data, and disabled thickness or --thickness-exact.");
   if (!boundaryStep && (!inputMesh.empty() || !outerValues.empty() || !bemValues.empty()))
     throw std::runtime_error("External mesh/BEM data require --boundary-step.");
   std::array<Real, 3> bodyResistance{};
@@ -1024,7 +1034,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("The advection step factor must be positive.");
   if (!(levelSetPenalty > 0))
     throw std::runtime_error("The level-set trace penalty must be positive.");
-  if (thicknessFactor < 0 || !(thicknessWeight > 0))
+  if (thicknessFactor < 0 || thicknessAbsolute < 0 || !std::isfinite(thicknessAbsolute) || !(thicknessWeight > 0))
     throw std::runtime_error("The thickness options must satisfy --thickness-min >= 0 "
                              "and --thickness-weight > 0.");
   if (motionFrames == 0)
@@ -1044,6 +1054,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (geometryOnly && stateOnly)
     throw std::runtime_error("Use either --geometry-only or --state-only, not both.");
   const Real h = configuration.getH();
+  const Real thicknessMinimum = thicknessAbsolute > 0 ? thicknessAbsolute : thicknessFactor * h;
   const Real hilbertLength = regularizationFactor * h;
   const Real dt = stepFactor * h;
   Alert::Info configurationInfo;
@@ -1182,7 +1193,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "eikonal_rotated_jump,projected_rotated_jump,distance_correction,"
              "interface_shift_max,advection_increment,advected_rotated_jump,"
              "min_crossing_fraction,snapped_vertices,reconstruction_scale,"
-             "z_x,z_y,z_z,omega_x,omega_y,omega_z\n";
+             "z_x,z_y,z_z,omega_x,omega_y,omega_z,d_merit_theta\n";
   IO::XDMF xdmf("KelvinBall");
   auto chamber = xdmf.grid("Chamber");
   chamber.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
@@ -1273,6 +1284,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     struct
     {
         Real thicknessPenalty = std::numeric_limits<Real>::quiet_NaN();
+        Real meritSlope = std::numeric_limits<Real>::quiet_NaN();
         Real thicknessViolating = std::numeric_limits<Real>::quiet_NaN();
         Real thicknessDeepest = std::numeric_limits<Real>::quiet_NaN();
         Real eikonalJump = std::numeric_limits<Real>::quiet_NaN();
@@ -1321,7 +1333,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
               << k / determinant << ','
               << (c != 0 ? 2 * M_PI * determinant / std::abs(c) : nan) << ','
               << (c != 0 ? 2 * M_PI * q / std::abs(c) : nan) << ',' << std::sqrt(q / k)
-              << ',' << levelSetPenalty << ',' << thicknessFactor * h << ','
+              << ',' << levelSetPenalty << ',' << thicknessMinimum << ','
               << thicknessWeight << ',' << stageDiagnostics.thicknessPenalty << ','
               << stageDiagnostics.thicknessViolating << ','
               << stageDiagnostics.thicknessDeepest << ',' << stageDiagnostics.eikonalJump
@@ -1337,7 +1349,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         history << ',' << q / determinant * unitForce(component);
       for (Eigen::Index component = 0; component < 3; ++component)
         history << ',' << -c / determinant * unitForce(component);
-      history << '\n';
+      history << ',' << stageDiagnostics.meritSlope << '\n';
       history.flush();
     };
     const auto stage4Start = Clock::now();
@@ -1444,11 +1456,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     // The minimum-thickness penalty enters the ascent direction of
     // rho - weight * P as an additional load of the rho identification.
     Math::Vector<Real> thicknessLoad;
-    if (thicknessFactor > 0)
+    if (thicknessMinimum > 0)
     {
       thicknessLoad = Math::Vector<Real>::Zero(shapeSpace.getSize());
       mesh.getConnectivity().compute(mesh.getDimension() - 1, mesh.getDimension());
-      const KelvinBall::ThicknessPenalty thicknessPenalty(mesh, thicknessFactor * h);
+      const KelvinBall::ThicknessPenalty thicknessPenalty(mesh, thicknessMinimum, thicknessExact);
       const Location::AABB<MMG::Mesh> chamberLocator(mesh);
       const auto thickness = thicknessPenalty.evaluate(
         mesh, chamberLocator, shapeSpace, thicknessWeight, thicknessLoad);
@@ -1457,7 +1469,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       stageDiagnostics.thicknessDeepest = thickness.deepest;
       Alert::Info() << substageHeading("Thickness penalty") << Alert::NewLine
                     << diagnosticLabel("Minimum thickness:")
-                    << Alert::Notation::Number(thicknessFactor * h) << " = "
+                    << Alert::Notation::Number(thicknessMinimum) << "; configured factor "
                     << Alert::Notation::Number(thicknessFactor) << " h" << Alert::NewLine
                     << diagnosticLabel("Weight:")
                     << Alert::Notation::Number(thicknessWeight) << Alert::NewLine
@@ -1471,7 +1483,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
     const GradientDiagnostics rhoGradientDiagnostics =
       identifyGradient(shapeSpace, -rhoDensity, shapeCoupling, rhoGradient, hilbertLength,
-        nitschePenalty, "Rho", thicknessFactor > 0 ? &thicknessLoad : nullptr);
+        nitschePenalty, "Rho", thicknessMinimum > 0 ? &thicknessLoad : nullptr);
     const GradientDiagnostics volumeGradientDiagnostics =
       identifyGradient(shapeSpace, RealFunction{-1}, shapeCoupling, volumeGradient,
         hilbertLength, nitschePenalty, "Volume");
@@ -1495,6 +1507,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     xiRhoNorm = Frobenius(theta);
     const Real thetaInfinityNorm = xiRhoNorm.max();
     const Real dRhoTheta = dRho(theta);
+    stageDiagnostics.meritSlope = dRhoTheta +
+      (thicknessMinimum > 0 ? thicknessLoad.dot(theta.getData()) : Real(0));
     const Real dVolumeTheta = dVolume(theta);
     const Real requiredDVolumeTheta = 0;
     if (boundaryStep)

@@ -43,11 +43,14 @@ namespace KelvinBall
    * a factor of order \f$ \kappa d_{\min} \f$, is omitted as well.
    *
    * The chamber carries only one copy of the interface, and a thin part may lie
-   * across a cut, so the distance is measured to the 24 rotated copies of the
+   * across a cut, so the distance is measured to the symmetry group's rotated copies of the
    * chamber interface, found on a uniform grid of cell size \f$ d_{\min} \f$:
    * the nearest point of a ray point lies within the ray length, since the ray
    * starts on the interface. Whether a ray point lies in the fluid is read from
    * the label of the chamber cell containing its rotated image.
+   * With exactDerivative enabled, differentiates the discrete P1 triangle
+   * quadrature including area and normal variations, and pulls the opposite
+   * point's vector load back through its group rotation. Local affine P1 only.
    */
   class ThicknessPenalty
   {
@@ -58,13 +61,17 @@ namespace KelvinBall
           Real deepest = 0;
           size_t rays = 0;
           size_t violating = 0;
+          size_t crossCut = 0;
       };
 
       template <class ChamberMesh>
-      ThicknessPenalty(const ChamberMesh& mesh, Real minimum)
+      ThicknessPenalty(const ChamberMesh& mesh, Real minimum, bool exactDerivative = false)
         : m_minimum(minimum),
-          m_cell(minimum)
+          m_cell(minimum),
+          m_exactDerivative(exactDerivative)
       {
+        if (!(minimum > 0) || !std::isfinite(minimum))
+          throw std::runtime_error("Minimum thickness must be finite and positive.");
         const auto& rotations = SewedOutput::getCubeRotations();
         const size_t D = mesh.getDimension();
         for (auto face = mesh.getPolytope(D - 1); face; ++face)
@@ -123,6 +130,16 @@ namespace KelvinBall
               load(dofs(component)) += value * barycentric[k] * normal(component);
           }
         };
+        const auto depositVector = [&](Index face, const std::array<Real, 3>& barycentric,
+                                      const Math::SpatialVector<Real>& value) {
+          const auto& vertices = mesh.getPolytope(D - 1, face)->getVertices();
+          for (size_t k = 0; k < 3; ++k)
+          {
+            const auto dofs = space.getDOFs(0, vertices[k]);
+            for (Eigen::Index component = 0; component < 3; ++component)
+              load(dofs(component)) += barycentric[k] * value(component);
+          }
+        };
 
         Result result;
         for (auto face = mesh.getPolytope(D - 1); face; ++face)
@@ -135,9 +152,13 @@ namespace KelvinBall
           const Math::SpatialVector<Real> c = mesh.getVertexCoordinates(vertices[2]);
           Math::SpatialVector<Real> normal = cross(b - a, c - a);
           const Real area = normal.norm() / 2;
+          if (!(area > 0))
+            throw std::runtime_error("Degenerate interface triangle in thickness evaluation.");
           normal /= 2 * area;
+          const Math::SpatialVector<Real> rawNormal = normal;
           if (normal.dot(fluidCentroid(mesh, faceCells.at(face->getIndex())) - a) < 0)
             normal = -normal;
+          const Real orientation = normal.dot(rawNormal);
           for (const auto& point : quadrature)
           {
             const Math::SpatialVector<Real> s =
@@ -148,6 +169,7 @@ namespace KelvinBall
               const Real measure = multiplicity * (area / 3) * weights[j] * m_minimum;
               const Math::SpatialVector<Real> ray = s - xi * normal;
               ++result.rays;
+              if (!inChamber(ray)) ++result.crossCut;
               if (!inFluid(mesh, locator, ray))
                 continue;
               const auto [distance, nearest, triangle, barycentric] = closest(ray, xi);
@@ -157,18 +179,48 @@ namespace KelvinBall
               result.deepest = std::max(result.deepest, distance);
               result.penalty += measure * distance * distance;
               const Math::SpatialVector<Real> gradient = (ray - nearest) / distance;
+              const Triangle& hit = m_triangles[triangle];
+              if (m_exactDerivative)
+              {
+                // Exact derivative of this discrete quadrature, while cell labels
+                // and nearest-point branches are unchanged. Includes both the
+                // triangle measure and rotation of its inward ray normal.
+                const Math::SpatialVector<Real> offset = ray - nearest;
+                depositVector(face->getIndex(), point, -weight * measure * 2 * offset);
+                depositVector(hit.face, barycentric,
+                  weight * measure * 2 * (rotations[hit.rotation].transpose() * offset));
+                const Math::SpatialVector<Real> tangent = offset - offset.dot(normal) * normal;
+                const std::array<Math::SpatialVector<Real>, 3> opposite{b - c, c - a, a - b};
+                for (size_t k = 0; k < 3; ++k)
+                {
+                  const Math::SpatialVector<Real> derivative =
+                    (measure / area) * distance * distance * 0.5 * cross(opposite[k], rawNormal)
+                    - measure * xi * orientation / area * cross(opposite[k], tangent);
+                  std::array<Real, 3> node{0, 0, 0};
+                  node[k] = 1;
+                  depositVector(face->getIndex(), node, -weight * derivative);
+                }
+                continue;
+              }
               // Local part at s: -beta * 2 d (grad d . n) w(s).
               deposit(face->getIndex(), point, normal,
                 -weight * measure * 2 * distance * gradient.dot(normal));
               // Non-local part at the nearest point, returned to the chamber:
               // w(y) = theta(y_c) . n_c, so the load acts on the chamber face.
-              const Triangle& hit = m_triangles[triangle];
               deposit(hit.face, barycentric, faceNormal(mesh, faceCells, hit.face),
                 weight * measure * 2 * distance);
             }
           }
         }
         return result;
+      }
+
+      static bool inChamber(const Math::SpatialVector<Real>& x)
+      {
+        constexpr Real tolerance = 1e-12;
+        return Tetrahedral ? x(0) + tolerance >= std::abs(x(2)) &&
+                              x(1) + tolerance >= std::abs(x(2))
+          : x(0) + tolerance >= x(1) && x(1) + tolerance >= std::abs(x(2));
       }
 
     private:
@@ -248,23 +300,22 @@ namespace KelvinBall
       }
 
       /// Whether a point lies in the fluid, read from the chamber cell that
-      /// contains its rotated image; a point outside the container is fluid.
+      /// contains its rotated image. Missing coverage is an error, not fluid.
       template <class ChamberMesh, class Locator>
       static bool inFluid(const ChamberMesh& mesh, const Locator& locator,
         const Math::SpatialVector<Real>& x)
       {
-        constexpr Real tolerance = 1e-12;
         for (const auto& rotation : SewedOutput::getCubeRotations())
         {
           const Math::SpatialVector<Real> z = rotation.transpose() * x;
-          if (!(z(0) + tolerance >= z(1) && z(1) + tolerance >= std::abs(z(2))))
+          if (!inChamber(z))
             continue;
           const auto located = locator.locate(z);
           if (!located)
-            return true;
+            continue; // A second image on a cut may have valid cell coverage.
           return located->getPolytope().getAttribute() == Fluid;
         }
-        return true;
+        throw std::runtime_error("Thickness ray has no located symmetry image; refusing to classify unknown space as fluid.");
       }
 
       /// Closest point of a triangle (Ericson, Real-Time Collision Detection).
@@ -338,11 +389,14 @@ namespace KelvinBall
                 }
               }
             }
-        return {std::isfinite(best) ? best : Real(0), nearest, triangle, barycentric};
+        if (!std::isfinite(best))
+          throw std::runtime_error("Thickness nearest-interface search has no candidate.");
+        return {best, nearest, triangle, barycentric};
       }
 
       Real m_minimum;
       Real m_cell;
+      bool m_exactDerivative;
       std::vector<Triangle> m_triangles;
       std::unordered_map<long long, std::vector<Index>> m_grid;
   };
