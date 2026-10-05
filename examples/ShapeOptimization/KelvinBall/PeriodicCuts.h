@@ -30,7 +30,7 @@ namespace KelvinBall
         {
           std::map<Key, Index> master;
           std::set<FaceKey> masterFaces, slaveFaces;
-          for (auto face = mesh.getBoundary(); face; ++face)
+          for (auto face = mesh.getPolytope(2); face; ++face)
           {
             if (face->getAttribute() != pair.master) continue;
             FaceKey triangle;
@@ -44,7 +44,7 @@ namespace KelvinBall
             std::sort(triangle.begin(), triangle.end());
             masterFaces.insert(triangle);
           }
-          for (auto face = mesh.getBoundary(); face; ++face)
+          for (auto face = mesh.getPolytope(2); face; ++face)
           {
             if (face->getAttribute() != pair.slave) continue;
             FaceKey triangle;

@@ -435,6 +435,14 @@ namespace KelvinBall
           << " Rotated trace penalty of the level set (default: 1)." << Alert::NewLine
           << Alert::Notation("--thickness-min=<value>")
           << "      Minimum body thickness in h (default: 2)."
+          << Alert::NewLine << Alert::Notation("--periodic-cuts")
+          << " Exact P1 scalar identification and strict closed-interface acceptance (default: off)."
+          << Alert::NewLine << Alert::Notation("--minimum-thickness=<length>")
+          << " Fixed absolute inward-ray thickness constraint (default: 0, off)."
+          << Alert::NewLine << Alert::Notation("--thickness-accept-penalty=<value>")
+          << " Maximum sampled penalty after MMG (default: 1e-6)."
+          << Alert::NewLine << Alert::Notation("--thickness-correction-gain=<value>")
+          << " Active thickness range-correction gain (default: 1)."
           << Alert::NewLine
           << Alert::Notation("--motion-every=<count>")
           << "      Write the rigid motion every count iterates (default: 0, off)."
