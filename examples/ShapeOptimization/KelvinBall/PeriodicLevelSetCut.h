@@ -146,7 +146,7 @@ namespace KelvinBall
       else if (materials.at(key).size()==2) mesh.setAttribute({2,f->getIndex()},Gamma);
     }
     PeriodicCuts(mesh).checkClosedInterface();
-    return MMG::Mesh(mesh);
+    return MMG::Mesh(std::move(mesh));
   }
 }
 #endif
