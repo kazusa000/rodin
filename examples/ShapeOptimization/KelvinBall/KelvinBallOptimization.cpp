@@ -404,6 +404,8 @@ namespace KelvinBall
           << "  Check each MMG candidate with BEM inside the bounded retry (default: off)."
           << Alert::NewLine << Alert::Notation("--bem-update-backtracking")
           << "  Retry rejected BEM updates at half the transport timestep, fixed MMG scale (default: off)."
+          << Alert::NewLine << Alert::Notation("--mmg-replay-mesh=<file> --mmg-replay-sol=<file>")
+          << "  Reconstruct a saved transport input with --geometry-only; save cut and post-adaptation stages, no optimization."
           << Alert::NewLine << Alert::Notation("--n=<points>")
           << "              Background points per edge (default: 13)." << Alert::NewLine
           << Alert::Notation("--h=<size>")
@@ -721,8 +723,19 @@ namespace KelvinBall
       template <class LevelSet>
       MMGReconstruction discretizeLevelSetMMG(MMG::Mesh& mesh, const LevelSet& levelSet,
         Real h, const Sphere& sphere, bool adapt, Real snap,
-        Real requestedWelschScale, bool angleDetection)
+        Real requestedWelschScale, bool angleDetection,
+        const std::string& diagnosticPrefix = {})
       {
+        const auto saveStage = [&](const MMG::Mesh& stage, const char* name) {
+          if (diagnosticPrefix.empty())
+            return;
+          std::ofstream output(diagnosticPrefix + "-" + name + ".mesh");
+          output.precision(17);
+          IO::MeshPrinter<IO::FileFormat::MEDIT, Context::Local>(stage).print(output);
+          if (!output)
+            throw std::runtime_error("Could not save MMG replay stage.");
+        };
+        saveStage(mesh, "input");
         const size_t previousCells = mesh.getCellCount();
         const Real hmin = 0.1 * h;
         const Real hmax = 10 * h;
@@ -898,7 +911,9 @@ namespace KelvinBall
         crossingInfo << Alert::Raise;
         MMG::Mesh reconstructed = discretizer.discretize(sanitized);
 
+        saveStage(reconstructed, "discretized");
         splitSelfPairedCut(reconstructed);
+        saveStage(reconstructed, "cut");
         const MeshDiagnostics reconstructionDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()
@@ -948,6 +963,7 @@ namespace KelvinBall
         }
         const size_t requiredTrianglesAfterOptimization =
           sphere.protectFixedGeometry(reconstructed, false);
+        saveStage(reconstructed, "post");
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()
@@ -1037,6 +1053,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool bemState = false;
   bool bemReconstructionCheck = false;
   bool bemUpdateBacktracking = false;
+  std::string mmgReplayMesh;
+  std::string mmgReplaySol;
   Real regularizationFactor = 4.0;
   Real normalRegularizationFactor = 1.0;
   Real stepFactor = 0.1;
@@ -1103,6 +1121,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       bemReconstructionCheck = true;
     else if (mode == "--bem-update-backtracking")
       bemUpdateBacktracking = true;
+    else if (mode.rfind("--mmg-replay-mesh=", 0) == 0)
+      mmgReplayMesh = std::string(mode.substr(18));
+    else if (mode.rfind("--mmg-replay-sol=", 0) == 0)
+      mmgReplaySol = std::string(mode.substr(17));
     else if (mode == "--help")
     {
       printUsage(argv[0]);
@@ -1112,6 +1134,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       throw std::runtime_error("Unknown KelvinBall option: " + std::string(mode));
   }
   configuration.finalize();
+  if (mmgReplayMesh.empty() != mmgReplaySol.empty())
+    throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
+  const bool mmgReplay = !mmgReplayMesh.empty();
+  if (mmgReplay && (!geometryOnly || stateOnly || bemState ||
+      bemReconstructionCheck || bemUpdateBacktracking || reconstructionMethod != "mmg"))
+    throw std::runtime_error("MMG replay requires --geometry-only and no state or optimization flags.");
   if (bemReconstructionCheck && (!bemState || reconstructionMethod != "mmg"))
     throw std::runtime_error("--bem-reconstruction-check requires BEM states and MMG reconstruction.");
   if (bemUpdateBacktracking && !bemReconstructionCheck)
@@ -1232,6 +1260,24 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     configurationInfo << Alert::NewLine << diagnosticLabel("MMG update angle detection:")
                       << "on (initial sphere unchanged)";
   configurationInfo << Alert::Raise;
+  if (mmgReplay)
+  {
+    // Read-only reconstruction of a saved transport input, not an optimization
+    // restart. Reuse the exact cut/adaptation implementation and retain stages.
+    Sphere replaySphere(configuration);
+    MMG::Mesh replayMesh;
+    replayMesh.load(mmgReplayMesh, IO::FileFormat::MEDIT);
+    P1 replaySpace(replayMesh);
+    GridFunction replayDistance(replaySpace);
+    replayDistance.load(mmgReplaySol, IO::FileFormat::MEDIT);
+    auto replay = discretizeLevelSetMMG(replayMesh, replayDistance, h,
+      replaySphere, configuration.adapt, configuration.mmgSnap,
+      requestedWelschScale, configuration.mmgAngleDetection, "mmg-replay");
+    checkFixedGeometry(replay.mesh, outerRadius);
+    checkMaterials(replay.mesh);
+    reportSphereGeometry(replay.mesh);
+    return 0;
+  }
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
   announce(reconstructionMethod == "wngir"
