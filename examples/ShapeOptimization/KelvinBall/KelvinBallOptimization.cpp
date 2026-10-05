@@ -38,6 +38,7 @@
 #include <Rodin/Geometry.h>
 #include <Rodin/IO/XDMF.h>
 #include <Rodin/MMG.h>
+#include <Rodin/MMG/MeshPrinter.h>
 #include <Rodin/Variational.h>
 
 #include "Configuration.h"
@@ -406,6 +407,8 @@ namespace KelvinBall
           << "  Retry rejected BEM updates at half the transport timestep, fixed MMG scale (default: off)."
           << Alert::NewLine << Alert::Notation("--mmg-replay-mesh=<file> --mmg-replay-sol=<file>")
           << "  Reconstruct a saved transport input with --geometry-only; save cut and post-adaptation stages, no optimization."
+          << Alert::NewLine << Alert::Notation("--mmg-stage-diagnostics")
+          << "  Save each actual update's MMG stages, metadata and input field (default: off)."
           << Alert::NewLine << Alert::Notation("--n=<points>")
           << "              Background points per edge (default: 13)." << Alert::NewLine
           << Alert::Notation("--h=<size>")
@@ -734,8 +737,25 @@ namespace KelvinBall
           IO::MeshPrinter<IO::FileFormat::MEDIT, Context::Local>(stage).print(output);
           if (!output)
             throw std::runtime_error("Could not save MMG replay stage.");
+          // The base MEDIT representation used by BEM omits MMG feature sets.
+          // Retain them separately without changing the original mesh payload.
+          std::ofstream mmgOutput(diagnosticPrefix + "-" + name + ".mmg.mesh");
+          mmgOutput.precision(std::numeric_limits<Real>::max_digits10);
+          MMG::MeshPrinter(stage).print(mmgOutput);
+          if (!mmgOutput)
+            throw std::runtime_error("Could not save MMG stage metadata.");
         };
         saveStage(mesh, "input");
+        if (!diagnosticPrefix.empty())
+        {
+          std::ofstream fieldOutput(diagnosticPrefix + "-input.sol");
+          fieldOutput.precision(std::numeric_limits<Real>::max_digits10);
+          IO::GridFunctionPrinter<IO::FileFormat::MEDIT,
+            std::decay_t<decltype(levelSet.getFiniteElementSpace())>, Math::Vector<Real>>
+            (levelSet).print(fieldOutput);
+          if (!fieldOutput)
+            throw std::runtime_error("Could not save MMG stage input field.");
+        }
         const size_t previousCells = mesh.getCellCount();
         const Real hmin = 0.1 * h;
         const Real hmax = 10 * h;
@@ -1053,6 +1073,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool bemState = false;
   bool bemReconstructionCheck = false;
   bool bemUpdateBacktracking = false;
+  bool mmgStageDiagnostics = false;
   std::string mmgReplayMesh;
   std::string mmgReplaySol;
   Real regularizationFactor = 4.0;
@@ -1121,6 +1142,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       bemReconstructionCheck = true;
     else if (mode == "--bem-update-backtracking")
       bemUpdateBacktracking = true;
+    else if (mode == "--mmg-stage-diagnostics")
+      mmgStageDiagnostics = true;
     else if (mode.rfind("--mmg-replay-mesh=", 0) == 0)
       mmgReplayMesh = std::string(mode.substr(18));
     else if (mode.rfind("--mmg-replay-sol=", 0) == 0)
@@ -1137,6 +1160,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (mmgReplayMesh.empty() != mmgReplaySol.empty())
     throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
   const bool mmgReplay = !mmgReplayMesh.empty();
+  if (mmgStageDiagnostics && (geometryOnly || stateOnly || mmgReplay || reconstructionMethod != "mmg"))
+    throw std::runtime_error("--mmg-stage-diagnostics requires actual MMG updates, not a geometry-only replay.");
   if (mmgReplay && (!geometryOnly || stateOnly || bemState ||
       bemReconstructionCheck || bemUpdateBacktracking || reconstructionMethod != "mmg"))
     throw std::runtime_error("MMG replay requires --geometry-only and no state or optimization flags.");
@@ -2544,13 +2569,16 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       Real scale = h;
       for (size_t attempt = 0;; ++attempt)
       {
+        const std::string diagnosticPrefix = mmgStageDiagnostics
+          ? "mmg-update-" + std::to_string(iteration + 1) + "-" + std::to_string(attempt)
+          : std::string{};
         try
         {
           auto reconstructed = [&]() {
             if (!bemUpdateBacktracking)
               return discretizeLevelSetMMG(mesh, advectedDistance, scale,
                 sphere, configuration.adapt, configuration.mmgSnap,
-                requestedWelschScale, configuration.mmgAngleDetection);
+                requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix);
             // MMG removes the old material partition before cutting. A time
             // retry must leave the transport mesh and its trace operator intact.
             MMG::Mesh trialMesh(mesh);
@@ -2559,7 +2587,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             trialDistance.getData() = advectedDistance.getData();
             return discretizeLevelSetMMG(trialMesh, trialDistance, scale,
               sphere, configuration.adapt, configuration.mmgSnap,
-              requestedWelschScale, configuration.mmgAngleDetection);
+              requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix);
           }();
           try
           {
