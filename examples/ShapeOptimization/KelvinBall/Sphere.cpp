@@ -6,6 +6,7 @@
  */
 #include "Sphere.h"
 #include "PeriodicCuts.h"
+#include "PeriodicLevelSetCut.h"
 
 #include <algorithm>
 #include <cmath>
@@ -219,7 +220,13 @@ namespace KelvinBall
       .setGradation(2)
       .setBoundaryReference(Gamma)
       .setAngleDetection(false);
-    mesh = discretizer.discretize(sphere);
+    if (conformingCuts)
+    {
+      PeriodicCuts(mesh).project(sphere);
+      mesh = periodicLevelSetCut(sphere);
+    }
+    else
+      mesh = discretizer.discretize(sphere);
     splitSelfPairedCut(mesh);
     if (m_configuration.adapt && !conformingCuts)
     {

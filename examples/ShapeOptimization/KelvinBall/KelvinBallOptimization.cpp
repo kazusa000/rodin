@@ -42,6 +42,7 @@
 #include <Rodin/Variational.h>
 
 #include "Configuration.h"
+#include "PeriodicLevelSetCut.h"
 #include "Metrics.h"
 #include "BemState.h"
 #include "RotatedCharacteristicContinuation.h"
@@ -953,7 +954,8 @@ namespace KelvinBall
               throw std::runtime_error("Periodic level set has an all-zero tetrahedron after snapping.");
           }
         }
-        MMG::Mesh reconstructed = discretizer.discretize(sanitized);
+        MMG::Mesh reconstructed = periodicCuts
+          ? periodicLevelSetCut(sanitized) : discretizer.discretize(sanitized);
 
         saveStage(reconstructed, "discretized");
         splitSelfPairedCut(reconstructed);
