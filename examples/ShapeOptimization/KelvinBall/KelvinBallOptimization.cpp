@@ -447,6 +447,8 @@ namespace KelvinBall
           << " Undo conflicting zero snaps on crossed edges and their periodic partners (default: off)."
           << Alert::NewLine << Alert::Notation("--mmg-quality-cut-triangulation")
           << " Select rotation-covariant quad diagonals in update cuts (default: off)."
+          << Alert::NewLine << Alert::Notation("--mmg-replay-uniform-background")
+          << " Diagnostic saved-field transfer to the clean periodic grid; no optimization (default: off)."
           << Alert::NewLine << Alert::Notation("--minimum-thickness=<length>")
           << " Fixed absolute inward-ray thickness constraint (default: 0, off)."
           << Alert::NewLine << Alert::Notation("--thickness-accept-penalty=<value>")
@@ -1135,6 +1137,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool periodicCuts = false;
   bool crossedEdgeSnapGuard = false;
   bool qualityCutTriangulation = false;
+  bool replayUniformBackground = false;
   bool saveCheckpoints = false;
   std::string resumeMesh;
   std::optional<size_t> resumeStep;
@@ -1226,6 +1229,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       crossedEdgeSnapGuard = true;
     else if (mode == "--mmg-quality-cut-triangulation")
       qualityCutTriangulation = true;
+    else if (mode == "--mmg-replay-uniform-background")
+      replayUniformBackground = true;
     else if (mode == "--save-checkpoints")
       saveCheckpoints = true;
     else if (mode.rfind("--resume-mesh=", 0) == 0)
@@ -1263,6 +1268,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (mmgReplayMesh.empty() != mmgReplaySol.empty())
     throw std::runtime_error("MMG replay needs both --mmg-replay-mesh and --mmg-replay-sol.");
   const bool mmgReplay = !mmgReplayMesh.empty();
+  if (replayUniformBackground && (!mmgReplay || !periodicCuts))
+    throw std::runtime_error("Uniform-background replay requires a saved field and periodic geometry-only replay.");
   const bool resume = !resumeMesh.empty();
   if (resume != resumeStep.has_value() || resume != resumeTargetVolume.has_value())
     throw std::runtime_error("Resume requires mesh, absolute step and original target volume together.");
@@ -1413,10 +1420,37 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     P1 replaySpace(replayMesh);
     GridFunction replayDistance(replaySpace);
     replayDistance.load(mmgReplaySol, IO::FileFormat::MEDIT);
-    auto replay = discretizeLevelSetMMG(replayMesh, replayDistance, h,
-      replaySphere, configuration.adapt, configuration.mmgSnap,
-      requestedWelschScale, configuration.mmgAngleDetection, "mmg-replay",
-      periodicCuts, crossedEdgeSnapGuard, qualityCutTriangulation);
+    auto replay = [&]() {
+      if (!replayUniformBackground)
+        return discretizeLevelSetMMG(replayMesh, replayDistance, h,
+          replaySphere, configuration.adapt, configuration.mmgSnap,
+          requestedWelschScale, configuration.mmgAngleDetection, "mmg-replay",
+          periodicCuts, crossedEdgeSnapGuard, qualityCutTriangulation);
+      // Diagnostic only: evaluate the same transported P1 field at the clean
+      // initial quotient grid's nodes. The new P1 representation is not claimed
+      // to preserve its zero surface exactly. No production update uses this.
+      MMG::Mesh background(replaySphere.makeUniformChamber());
+      P1 backgroundSpace(background);
+      GridFunction transferred(backgroundSpace);
+      const Location::AABB<MMG::Mesh> locator(replayMesh);
+      transferred = RealFunction([&](const Geometry::Point& point) {
+        const auto located=locator.locate(3,point.getPhysicalCoordinates());
+        if (!located)
+          throw std::runtime_error("Uniform replay could not locate a background node in the source.");
+        return replayDistance.getValue(*located);
+      });
+      const auto original=transferred.getData();
+      PeriodicCuts(background).project(transferred);
+      const Real shift=(transferred.getData()-original).cwiseAbs().maxCoeff();
+      if (!std::isfinite(shift) || shift>Real(1e-10))
+        throw std::runtime_error("Uniform replay transfer broke the periodic scalar trace.");
+      Alert::Info() << "Uniform background transfer maximum periodic roundoff: "
+                    << Alert::Notation::Number(shift) << Alert::Raise;
+      return discretizeLevelSetMMG(background,transferred,h,
+        replaySphere,configuration.adapt,configuration.mmgSnap,
+        requestedWelschScale,configuration.mmgAngleDetection,"mmg-replay",
+        periodicCuts,crossedEdgeSnapGuard,qualityCutTriangulation);
+    }();
     checkFixedGeometry(replay.mesh, outerRadius);
     checkMaterials(replay.mesh);
     reportSphereGeometry(replay.mesh);

@@ -2,6 +2,10 @@
 #include "Common.h"
 #include "CrossedEdgeSnapGuard.h"
 #include "RotationalQuadDiagonal.h"
+#include "Sphere.h"
+#include "PeriodicCuts.h"
+#include <Rodin/Location.h>
+#include <Rodin/Variational.h>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -20,6 +24,39 @@ void require(bool condition, const char* message)
 
 int main()
 {
+  // Manufactured transfer: on a Cartesian simplex grid, interpolation of
+  // |x|^2 is the sum of its independent 1D linear interpolants. This field
+  // also has exact T/O traces, so periodic projection cannot alter the result.
+  Configuration coarseConfiguration,fineConfiguration;
+  coarseConfiguration.points=5; fineConfiguration.points=9;
+  MMG::Mesh coarse(Sphere(coarseConfiguration).makeUniformChamber());
+  MMG::Mesh fine(Sphere(fineConfiguration).makeUniformChamber());
+  Variational::P1 coarseSpace(coarse),fineSpace(fine);
+  Variational::GridFunction quadratic(coarseSpace),transferred(fineSpace);
+  quadratic=Variational::RealFunction([](const Geometry::Point& point) {
+    return point.getPhysicalCoordinates().squaredNorm();
+  });
+  const Location::AABB<MMG::Mesh> sourceLocator(coarse);
+  transferred=Variational::RealFunction([&](const Geometry::Point& point) {
+    const auto located=sourceLocator.locate(3,point.getPhysicalCoordinates());
+    require(bool(located),"manufactured background transfer missed an interior node");
+    return quadratic.getValue(*located);
+  });
+  PeriodicCuts(fine).project(transferred);
+  const Real coarseH=coarseConfiguration.getH();
+  for (Index vertex=0;vertex<fine.getVertexCount();++vertex) {
+    const auto x=fine.getVertexCoordinates(vertex);
+    Real exact=0;
+    for (size_t j=0;j<3;++j) {
+      const Real left=std::floor(x(j)/coarseH)*coarseH;
+      const Real fraction=(x(j)-left)/coarseH;
+      exact+=(1-fraction)*left*left+fraction*(left+coarseH)*(left+coarseH);
+    }
+    require(std::abs(transferred[vertex]-exact)<1e-12,
+      "background field transfer does not match the manufactured P1 interpolant");
+  }
+  require(!sourceLocator.locate(3,Math::SpatialPoint{3,3,0}),
+    "background transfer accepted a point outside the source domain");
   const std::array<Math::SpatialPoint,4> quad{Math::SpatialPoint{.7,.2,.3},
     Math::SpatialPoint{1.1,.2,.3},Math::SpatialPoint{1.05,.43,.3},
     Math::SpatialPoint{.71,.4,.3}};

@@ -43,7 +43,7 @@ target_link_libraries(KelvinBallTetra PRIVATE ${kelvin_libraries})
 
 foreach(mode IN ITEMS Cubic Tetra)
   add_executable(KelvinBall${mode}GeometryTest EXCLUDE_FROM_ALL
-    SymmetryTest.cpp Common.cpp SewedOutput.cpp)
+    SymmetryTest.cpp Common.cpp SewedOutput.cpp Sphere.cpp Configuration.cpp)
   target_link_libraries(KelvinBall${mode}GeometryTest PRIVATE ${kelvin_libraries})
 endforeach()
 target_compile_definitions(KelvinBallTetraGeometryTest PRIVATE KELVIN_TETRAHEDRAL=1)

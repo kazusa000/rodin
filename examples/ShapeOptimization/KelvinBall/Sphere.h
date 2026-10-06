@@ -100,9 +100,10 @@ namespace KelvinBall
        */
       size_t protectFixedGeometry(MMG::Mesh& mesh, bool cuts) const;
 
-    private:
+      /// Interface-free, congruent quotient grid used by the initial cut.
       Mesh makeUniformChamber() const;
 
+    private:
       const Configuration& m_configuration;
   };
 }
