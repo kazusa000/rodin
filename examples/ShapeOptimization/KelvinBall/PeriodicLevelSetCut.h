@@ -6,16 +6,19 @@
 #include <Eigen/LU>
 #include <fstream>
 #include "PeriodicCuts.h"
+#include "RotationalQuadDiagonal.h"
 
 namespace KelvinBall
 {
-  /** Cut the actual P1 zero set before MMG optimization. Polygon fans use
-   * face barycentres, not orientation-dependent quad diagonals. The paired
-   * input triangles and identified nodal values therefore induce the same
-   * rotated subdivision. No interface point is projected or repaired.
+  /** Cut the actual P1 zero set before MMG optimization. The default uses
+   * face-barycentre fans. Opt-in quad diagonals are rotation covariant and
+   * fall back to the fan if a group symmetry exchanges the diagonals.
+   * Identified input triangles and values induce the same rotated subdivision.
+   * No interface point is projected or repaired.
    */
   template<class Field>
-  MMG::Mesh periodicLevelSetCut(const Field& phi, const std::string& diagnosticPrefix = {})
+  MMG::Mesh periodicLevelSetCut(const Field& phi, const std::string& diagnosticPrefix = {},
+      bool qualityTriangulation = false)
   {
     const auto& source = phi.getFiniteElementSpace().getMesh();
     using Polygon = std::vector<Index>;
@@ -26,6 +29,10 @@ namespace KelvinBall
       points.push_back(source.getVertexCoordinates(i));
     std::map<std::array<Index,2>, Index> intersections;
     std::map<Polygon, Index> centres;
+    std::map<Polygon, std::vector<Triangle>> subdivisions;
+    Real matchingScale=1;
+    for (const auto& x:points) matchingScale=std::max(matchingScale,x.norm());
+    const Real matchingTolerance=Real(1e-11)*matchingScale;
     std::map<Triangle, Attribute> boundary;
     std::map<Triangle, std::set<Attribute>> materials;
     std::vector<std::pair<Tet, Attribute>> cells;
@@ -54,6 +61,19 @@ namespace KelvinBall
       if (polygon.size()<3) return triangles;
       if (polygon.size()==3) { triangles.push_back({polygon[0],polygon[1],polygon[2]}); return triangles; }
       Polygon key=polygon; std::sort(key.begin(),key.end());
+      if (qualityTriangulation && polygon.size()==4) {
+        if (const auto saved=subdivisions.find(key);saved!=subdivisions.end()) return saved->second;
+        const int diagonal=rotationalQuadDiagonal({points[polygon[0]],points[polygon[1]],
+          points[polygon[2]],points[polygon[3]]},matchingTolerance);
+        if (diagonal>=0) {
+          if (diagonal==0) triangles={{polygon[0],polygon[1],polygon[2]},
+                                     {polygon[0],polygon[2],polygon[3]}};
+          else triangles={{polygon[0],polygon[1],polygon[3]},
+                          {polygon[1],polygon[2],polygon[3]}};
+          subdivisions.emplace(key,triangles);
+          return triangles;
+        }
+      }
       auto found=centres.find(key);
       Index centre;
       if (found==centres.end()) {

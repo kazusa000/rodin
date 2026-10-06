@@ -1,6 +1,7 @@
 #include "SewedOutput.h"
 #include "Common.h"
 #include "CrossedEdgeSnapGuard.h"
+#include "RotationalQuadDiagonal.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -19,6 +20,41 @@ void require(bool condition, const char* message)
 
 int main()
 {
+  const std::array<Math::SpatialPoint,4> quad{Math::SpatialPoint{.7,.2,.3},
+    Math::SpatialPoint{1.1,.2,.3},Math::SpatialPoint{1.05,.43,.3},
+    Math::SpatialPoint{.71,.4,.3}};
+  const int chosen=rotationalQuadDiagonal(quad,1e-11);
+  require(chosen>=0,"generic quad unnecessarily retained its centre fan");
+  const auto endpoints=[](const auto& q,int diagonal) {
+    return diagonal==0 ? std::array<Math::SpatialPoint,2>{q[0],q[2]}
+      : std::array<Math::SpatialPoint,2>{q[1],q[3]};
+  };
+  const auto expected=endpoints(quad,chosen);
+  for (const auto& rotation:SewedOutput::getCubeRotations())
+    for (int offset=0;offset<4;++offset)
+      for (const int orientation:{-1,1}) {
+        std::array<Math::SpatialPoint,4> moved;
+        for (int i=0;i<4;++i) moved[i]=rotation*quad[(offset+4+orientation*i)%4];
+        const int selected=rotationalQuadDiagonal(moved,1e-11);
+        require(selected>=0,"rotated generic quad lost its diagonal");
+        const auto actual=endpoints(moved,selected);
+        const Math::SpatialPoint a=rotation*expected[0],b=rotation*expected[1];
+        require(((actual[0]-a).norm()<1e-14 && (actual[1]-b).norm()<1e-14) ||
+          ((actual[0]-b).norm()<1e-14 && (actual[1]-a).norm()<1e-14),
+          "quad diagonal is not rotation/renumbering covariant");
+      }
+  const std::array<Math::SpatialPoint,4> square{Math::SpatialPoint{1,1,0},
+    Math::SpatialPoint{-1,1,0},Math::SpatialPoint{-1,-1,0},Math::SpatialPoint{1,-1,0}};
+  require(rotationalQuadDiagonal(square,1e-11)==-1,
+    "symmetric quad broke diagonal-exchange symmetry");
+  bool invalidQuad=false;
+  try { rotationalQuadDiagonal(quad,0); }
+  catch(const std::runtime_error&) { invalidQuad=true; }
+  require(invalidQuad,"quad diagonal accepted zero tolerance");
+  invalidQuad=false;
+  try { rotationalQuadDiagonal({quad[0],quad[0],quad[0],quad[0]},1e-11); }
+  catch(const std::runtime_error&) { invalidQuad=true; }
+  require(invalidQuad,"quad diagonal accepted degenerate geometry");
   // Regression: independent near-edge snaps must not zero both ends of an
   // originally crossed edge, even when its periodic partners are elsewhere.
   const std::vector<Real> original{-2e-4,6e-5,-2e-4,6e-5,1};

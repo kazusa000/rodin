@@ -445,6 +445,8 @@ namespace KelvinBall
           << " Exact P1 scalar identification and strict closed-interface acceptance (default: off)."
           << Alert::NewLine << Alert::Notation("--mmg-crossed-edge-snap-guard")
           << " Undo conflicting zero snaps on crossed edges and their periodic partners (default: off)."
+          << Alert::NewLine << Alert::Notation("--mmg-quality-cut-triangulation")
+          << " Select rotation-covariant quad diagonals in update cuts (default: off)."
           << Alert::NewLine << Alert::Notation("--minimum-thickness=<length>")
           << " Fixed absolute inward-ray thickness constraint (default: 0, off)."
           << Alert::NewLine << Alert::Notation("--thickness-accept-penalty=<value>")
@@ -748,7 +750,7 @@ namespace KelvinBall
         Real h, const Sphere& sphere, bool adapt, Real snap,
         Real requestedWelschScale, bool angleDetection,
         const std::string& diagnosticPrefix = {}, bool periodicCuts = false,
-        bool crossedEdgeSnapGuard = false)
+        bool crossedEdgeSnapGuard = false, bool qualityCutTriangulation = false)
       {
         const auto saveStage = [&](const MMG::Mesh& stage, const char* name) {
           if (diagnosticPrefix.empty())
@@ -979,7 +981,7 @@ namespace KelvinBall
           }
         }
         MMG::Mesh reconstructed = periodicCuts
-          ? periodicLevelSetCut(sanitized, diagnosticPrefix) : discretizer.discretize(sanitized);
+          ? periodicLevelSetCut(sanitized, diagnosticPrefix, qualityCutTriangulation) : discretizer.discretize(sanitized);
 
         saveStage(reconstructed, "discretized");
         splitSelfPairedCut(reconstructed);
@@ -1132,6 +1134,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool mmgUpdateOptimizer = false;
   bool periodicCuts = false;
   bool crossedEdgeSnapGuard = false;
+  bool qualityCutTriangulation = false;
   bool saveCheckpoints = false;
   std::string resumeMesh;
   std::optional<size_t> resumeStep;
@@ -1221,6 +1224,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       periodicCuts = true;
     else if (mode == "--mmg-crossed-edge-snap-guard")
       crossedEdgeSnapGuard = true;
+    else if (mode == "--mmg-quality-cut-triangulation")
+      qualityCutTriangulation = true;
     else if (mode == "--save-checkpoints")
       saveCheckpoints = true;
     else if (mode.rfind("--resume-mesh=", 0) == 0)
@@ -1246,6 +1251,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("--periodic-cuts requires MMG reconstruction.");
   if (crossedEdgeSnapGuard && (!periodicCuts || reconstructionMethod != "mmg"))
     throw std::runtime_error("Crossed-edge snap guard requires periodic MMG cuts.");
+  if (qualityCutTriangulation && (!periodicCuts || reconstructionMethod != "mmg"))
+    throw std::runtime_error("Quality cut triangulation requires periodic MMG cuts.");
   if (!std::isfinite(minimumThickness) || minimumThickness < 0 ||
       !std::isfinite(thicknessAcceptPenalty) || thicknessAcceptPenalty < 0 ||
       !std::isfinite(thicknessCorrectionGain) || thicknessCorrectionGain <= 0)
@@ -1409,7 +1416,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     auto replay = discretizeLevelSetMMG(replayMesh, replayDistance, h,
       replaySphere, configuration.adapt, configuration.mmgSnap,
       requestedWelschScale, configuration.mmgAngleDetection, "mmg-replay",
-      periodicCuts, crossedEdgeSnapGuard);
+      periodicCuts, crossedEdgeSnapGuard, qualityCutTriangulation);
     checkFixedGeometry(replay.mesh, outerRadius);
     checkMaterials(replay.mesh);
     reportSphereGeometry(replay.mesh);
@@ -2762,7 +2769,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
               return discretizeLevelSetMMG(mesh, advectedDistance, scale,
                 sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
                 requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts,
-                crossedEdgeSnapGuard);
+                crossedEdgeSnapGuard, qualityCutTriangulation);
             // MMG removes the old material partition before cutting. A time
             // retry must leave the transport mesh and its trace operator intact.
             MMG::Mesh trialMesh(mesh);
@@ -2772,7 +2779,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             return discretizeLevelSetMMG(trialMesh, trialDistance, scale,
               sphere, configuration.adapt && !mmgUpdateOptimizer, configuration.mmgSnap,
               requestedWelschScale, configuration.mmgAngleDetection, diagnosticPrefix, periodicCuts,
-              crossedEdgeSnapGuard);
+              crossedEdgeSnapGuard, qualityCutTriangulation);
           }();
           try
           {
