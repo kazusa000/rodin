@@ -5,6 +5,7 @@
  *          https://www.boost.org/LICENSE_1_0.txt)
  */
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cmath>
 
 #include "Rodin/Eikonal/FMM.h"
@@ -23,6 +24,44 @@ namespace Rodin::Tests::Unit
     protected:
       static constexpr Real TOLERANCE = 1e-3;
   };
+
+  // On one simplex the zero-time opposite face is planar. Every seed
+  // permutation must give its perpendicular distance, including reseeding
+  // the same solver and duplicate/out-of-range entries (ignored as before).
+  TEST_F(FMMTest, PlanarFaceSeedOrderAndReseeding)
+  {
+    for (size_t dimension = 1; dimension <= 3; ++dimension)
+    {
+      Mesh<Context::Local>::Builder builder;
+      builder.initialize(3).nodes(dimension + 1).vertex({0, 0, 0}).vertex({2, 0, 0});
+      if (dimension >= 2) builder.vertex({0, 1, 0});
+      if (dimension == 3) builder.vertex({0, 0, 1});
+      if (dimension == 1) builder.polytope(Polytope::Type::Segment, {0, 1});
+      else if (dimension == 2) builder.polytope(Polytope::Type::Triangle, {0, 1, 2});
+      else builder.polytope(Polytope::Type::Tetrahedron, {0, 1, 2, 3});
+      Mesh mesh = builder.finalize();
+      mesh.getConnectivity().compute(dimension, 0);
+      mesh.getConnectivity().compute(0, dimension);
+      mesh.getConnectivity().compute(0, 0);
+      P1 space(mesh);
+      GridFunction field(space);
+      const auto speed = [](const Geometry::Point&) -> Real { return 1; };
+      Eikonal::FMM fmm(field, speed);
+      std::vector<Index> seeds;
+      for (Index i = 1; i <= dimension; ++i) seeds.push_back(i);
+      const Real expected = 1 / std::sqrt(Real(.25) + dimension - 1);
+      do
+      {
+        fmm.seed(seeds).solve();
+        EXPECT_NEAR(field[0], expected, 1e-12);
+        for (const Index seed : seeds) EXPECT_EQ(field[seed], 0);
+      } while (std::next_permutation(seeds.begin(), seeds.end()));
+      seeds.push_back(1);
+      seeds.push_back(mesh.getVertexCount() + 3);
+      fmm.seed(seeds).solve();
+      EXPECT_NEAR(field[0], expected, 1e-12);
+    }
+  }
 
   // Test 1: Basic functionality - single point source on 2D triangular mesh
   /// @brief Verifies single point source 2 D triangle for FMM test by checking false predicates, solver behavior.

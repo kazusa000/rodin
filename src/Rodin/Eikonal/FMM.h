@@ -145,7 +145,15 @@ namespace Rodin::Eikonal
           m_labels[s] = Label::Accepted;
           u[s] = 0.0;
           assert(!std::isnan(u[s]));
+        }
 
+        // All zero-time seeds must be accepted before any trial value is
+        // computed. Otherwise a neighbour considered by an early seed is
+        // never reconsidered when a closer seed is registered later.
+        for (Index s : seed)
+        {
+          if (s >= nV)
+            continue;
           assert(s < conn.getIncidence(0, 0).size());
           const auto& N = conn.getIncidence(0, 0).at(s);
           for (Index nb : N)
