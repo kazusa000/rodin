@@ -1062,7 +1062,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << diagnosticLabel("Symmetry copies:")
                     << Alert::Notation::Number(KelvinBall::ChamberMultiplicity)
                     << Alert::NewLine << diagnosticLabel("Seed perturbation:")
-                    << (KelvinBall::Tetrahedral ? "0.02*(H3+H6)/sqrt(2)" : "none")
+                    << (KelvinBall::Tetrahedral ? "0.02*(H3+H6)/sqrt(2)" :
+                        KelvinBall::CubicChiralSeed ? "0.02*H3*H6 (fixed O24 chiral seed)" : "none")
                     << Alert::NewLine
                     << diagnosticLabel("Grid points:") << Alert::Notation::Number(points)
                     << Alert::NewLine << diagnosticLabel("Outer radius:")

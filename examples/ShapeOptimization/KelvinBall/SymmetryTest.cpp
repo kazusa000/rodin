@@ -49,6 +49,15 @@ int main()
     require(std::abs(second(1)+second(2)) < 1e-14 && second(0)>=second(1),
       "incorrect negative cut pairing");
   }
+  else if (CubicChiralSeed)
+  {
+    const Math::SpatialPoint mirror{-x(0), x(1), x(2)};
+    require(std::abs(initialRadius(x)-initialRadius(mirror)) > 1e-4,
+      "cubic chiral seed retains reflection symmetry");
+    for (const Math::SpatialPoint cut : {Math::SpatialPoint{0.8,0.8,0.3},
+         Math::SpatialPoint{0.8,0.3,0.3}, Math::SpatialPoint{0.8,0.3,-0.3}})
+      require(initialRadius(cut) == 1, "cubic chiral seed changed the cut radius");
+  }
   else
     require(initialRadius(x) == 1, "cubic seed changed");
   std::cout << "PASS group=" << ChamberMultiplicity << " seed and chamber\n";

@@ -50,8 +50,13 @@ namespace KelvinBall
   inline constexpr bool Tetrahedral = false;
 #endif
   inline constexpr size_t ChamberMultiplicity = Tetrahedral ? 12 : 24;
+#ifdef KELVIN_CUBIC_CHIRAL_SEED
+  inline constexpr bool CubicChiralSeed = true;
+#else
+  inline constexpr bool CubicChiralSeed = false;
+#endif
 
-  /// Fixed, unselected T-only perturbation of the unit sphere.
+  /// Fixed, unselected sphere seed; cubic perturbation is separately opt-in.
   Real initialRadius(const Math::SpatialPoint& x);
 
 #ifdef RODIN_USE_MUMPS
