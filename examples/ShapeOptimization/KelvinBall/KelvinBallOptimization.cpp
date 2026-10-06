@@ -2351,6 +2351,27 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                   << Alert::Notation::Number(interfaceShiftRMS / h) << " h"
                   << Alert::Raise;
 
+    if (mmgStageDiagnostics)
+    {
+      // Retain the redistancing and projection inputs separately from the
+      // transported field already saved by the MMG stage diagnostic. These
+      // fields use the original chamber vertex order; recording them does
+      // not change a field, a reconstruction parameter, or an acceptance test.
+      const std::string prefix = "levelset-state-" + std::to_string(iteration);
+      const auto saveField = [&](const auto& field, const char* name) {
+        std::ofstream output(prefix + "-" + name + ".sol");
+        output.precision(std::numeric_limits<Real>::max_digits10);
+        IO::GridFunctionPrinter<IO::FileFormat::MEDIT,
+          std::decay_t<decltype(field.getFiniteElementSpace())>, Math::Vector<Real>>
+          (field).print(output);
+        if (!output)
+          throw std::runtime_error("Could not save level-set stage field.");
+      };
+      saveField(eikonalDistance, "eikonal");
+      saveField(distance, "projected");
+      saveField(theta, "velocity");
+    }
+
     stageSeconds[5] = elapsedSeconds(stage6Start);
     reportStageTiming(6, stageSeconds[5]);
     const auto stage7Start = Clock::now();
