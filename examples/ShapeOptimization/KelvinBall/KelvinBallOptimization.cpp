@@ -1078,7 +1078,58 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   else
   {
     announce("Reading the saved HDF5 chamber for one fixed-geometry evaluation.");
-    initial.mesh.load(replayHdf5, IO::FileFormat::HDF5);
+    // The retained chamber is an XDMF snapshot, not a native restart file.
+    // Restore its exact coordinates and tetrahedra; classify only face labels.
+    const auto file = IO::HDF5::File(H5Fopen(replayHdf5.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+    if (!file)
+      throw std::runtime_error("Cannot open retained chamber snapshot.");
+    const auto coordinates = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+      file.get(), "/Mesh/Geometry/Vertices");
+    const auto topology = IO::HDF5::readVectorDataset<IO::HDF5::U64>(
+      file.get(), "/Mesh/XDMF/Topology");
+    const auto labels = IO::HDF5::readVectorDataset<IO::HDF5::U64>(
+      file.get(), "/Mesh/Attributes/3");
+    if (coordinates.size() % 3 || topology.size() != labels.size() * 5)
+      throw std::runtime_error("Invalid retained tetrahedral snapshot.");
+    KelvinBall::Mesh::Builder builder;
+    builder.initialize(3).nodes(coordinates.size() / 3);
+    for (size_t i = 0; i < coordinates.size(); i += 3)
+      builder.vertex({coordinates[i], coordinates[i + 1], coordinates[i + 2]});
+    for (size_t i = 0; i < labels.size(); ++i)
+    {
+      if (topology[5 * i] != 6 || (labels[i] != Obstacle && labels[i] != Fluid))
+        throw std::runtime_error("Unexpected retained cell type or material.");
+      Index index;
+      IndexArray vertices(4);
+      for (size_t j = 0; j < 4; ++j)
+        vertices(j) = topology[5 * i + j + 1];
+      builder.polytope(Polytope::Type::Tetrahedron, std::move(vertices), index);
+      builder.attribute({3, index}, Attribute{labels[i]});
+    }
+    auto restored = builder.finalize();
+    restored.getConnectivity().compute(2, 3);
+    for (auto face = restored.getFace(); face; ++face)
+    {
+      const auto& cells = restored.getConnectivity().getIncidence({2, 3}, face->getIndex());
+      if (cells.size() == 2)
+      {
+        if (restored.getCell(cells[0])->getAttribute() != restored.getCell(cells[1])->getAttribute())
+          restored.setAttribute({2, face->getIndex()}, Gamma);
+        continue;
+      }
+      if (cells.size() != 1)
+        throw std::runtime_error("Invalid retained face incidence.");
+      const auto c = KelvinBall::centroid(restored, *face);
+      Attribute attribute = 0;
+      constexpr Real tolerance = 1e-8;
+      if (std::abs(c(0) - outerRadius) < tolerance) attribute = Outer;
+      else if (std::abs(c(0) - c(1)) < tolerance) attribute = c(2) < 0 ? SigmaXYMinus : SigmaXYPlus;
+      else if (std::abs(c(1) - c(2)) < tolerance) attribute = SigmaPlus;
+      else if (std::abs(c(1) + c(2)) < tolerance) attribute = SigmaMinus;
+      if (!attribute) throw std::runtime_error("Unclassified retained boundary face.");
+      restored.setAttribute({2, face->getIndex()}, attribute);
+    }
+    initial.mesh = MMG::Mesh(restored);
   }
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   Optional<MMG::Mesh> wngirBackground;
