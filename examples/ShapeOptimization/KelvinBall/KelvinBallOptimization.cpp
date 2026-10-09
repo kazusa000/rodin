@@ -1129,7 +1129,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       if (!attribute) throw std::runtime_error("Unclassified retained boundary face.");
       restored.setAttribute({2, face->getIndex()}, attribute);
     }
-    initial.mesh = MMG::Mesh(restored);
+    initial.mesh = MMG::Mesh(std::move(restored));
   }
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   Optional<MMG::Mesh> wngirBackground;
