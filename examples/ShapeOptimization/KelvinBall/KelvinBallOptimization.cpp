@@ -362,6 +362,9 @@ namespace KelvinBall
           << "                Stop after the first Stokes evaluation." << Alert::NewLine
           << Alert::Notation("--save-mesh")
           << "                 Save KelvinBallInitial.mesh." << Alert::NewLine
+          << Alert::Notation("--replay-hdf5=<path>")
+          << "        Evaluate saved chamber fields once, without a shape update."
+          << Alert::NewLine
           << Alert::Notation("--help") << "                      Show this message."
           << Alert::Raise;
       }
@@ -901,6 +904,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   bool saveMeshDiagnostic = false;
   bool geometryOnly = false;
   bool stateOnly = false;
+  std::string replayHdf5;
   Real regularizationFactor = 4.0;
   Real stepFactor = 0.1;
   Real levelSetPenalty = 1;
@@ -961,6 +965,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       geometryOnly = true;
     else if (mode == "--state-only")
       stateOnly = true;
+    else if (mode.rfind("--replay-hdf5=", 0) == 0)
+      replayHdf5 = std::string(mode.substr(14));
     else if (mode == "--help")
     {
       printUsage(argv[0]);
@@ -970,6 +976,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       throw std::runtime_error("Unknown KelvinBall option: " + std::string(mode));
   }
   configuration.finalize();
+  if (!replayHdf5.empty() && (maxIterations != 1 || reconstructionMethod != "mmg"))
+    throw std::runtime_error("Field replay requires --iterations=1 and --reconstruction=mmg.");
   const size_t points = configuration.points;
   const Real outerRadius = configuration.outerRadius;
   const Real nitschePenalty = configuration.nitschePenalty;
@@ -1062,9 +1070,16 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         "WNGIR."
       : "Stage 1: Discretizing the initial sphere with MMG.");
   Sphere sphere(configuration);
-  SphereDiscretization initial = reconstructionMethod == "wngir"
-    ? sphere.prepareWNGIRBackground()
-    : sphere.discretize();
+  SphereDiscretization initial;
+  if (replayHdf5.empty())
+    initial = reconstructionMethod == "wngir"
+      ? sphere.prepareWNGIRBackground()
+      : sphere.discretize();
+  else
+  {
+    announce("Reading the saved HDF5 chamber for one fixed-geometry evaluation.");
+    initial.mesh.load(replayHdf5, IO::FileFormat::HDF5);
+  }
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   Optional<MMG::Mesh> wngirBackground;
   MMG::Mesh mesh;
