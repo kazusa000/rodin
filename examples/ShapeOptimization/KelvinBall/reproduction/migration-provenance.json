@@ -1,0 +1,212 @@
+{
+  "schema": 1,
+  "scope": "source migration only; imports/path/provenance changed",
+  "old_project03_commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+  "old_rodin_commit": "1d95f3998c8acd316e7c0beafe2c4e7e1627aac5",
+  "definitions": [
+    {
+      "destination": "python/kelvin_bem/bem_kcq_score.py",
+      "source": "scripts/bem_kcq_score.py",
+      "commit": "12f38a9a33dbbb0a1b7c0d0affcfff91620b927a",
+      "original_sha256": "8820f6df752b34bba9034d69cc172eb8d0430a30fdd4ca7dcad45b6de946708d",
+      "unchanged_definitions": {
+        "Panel": "64755d05226cbfa6314e5c154152fc37249ce1055db8c859cc878a9d8b506eaa",
+        "det3": "0f81c52e066d84055b9908c00d151c377d58f855e16b793b2359803d83486fa7",
+        "proper_octahedral_rotations": "48f26bbb01a8571bc6e1997b39e6540671b7c2043377247cbba6c755575067e4",
+        "mat_vec": "b9434c562af76b9902e903c5cd890ed2662fa20c55b7c9de0e4b6dc1348ffdca",
+        "read_gamma_triangles": "11d89d9a5b835cd3d3bd4c72144e84fe115455e698dd077634b7d3e45990ea7b",
+        "subdivide_triangles": "c3add862343b095c910b1f53125d7d88ce5afa8529dce219b3e4934e5ac3c35f",
+        "read_gamma_panels": "06d816c34cf0e65fd7fb8add0972cda75d636e650b97319253c1781ef9b158e2",
+        "triangle_panel": "a77670249f8d2b053e53932f22b6a4cde688d4e380a50abf9beea0833452c484",
+        "downsample_panel_indices": "807e0314aa5cb6462226a02297fd6e766b0d2b3339aec6c4658c696cc2564108",
+        "downsample_panels": "7536f16ba535e98ac18d22ad42665f5c2f239002c76ad8e43fd4ab9fe8a3030e",
+        "_expand_panels": "7834be962ce4569d77014297c8d5b0daaea8ed61862cfd4475107e79586c8ae0",
+        "expand_full24_panels": "9284b1e0a6a4329fa4efcb83389b454438c9e3682f90c99c70c2294c6eb7b906",
+        "expand_full12_panels": "3657b616fccd121e0448b5cf4fb665ba94c0b8f3a36a4c136bddcbb307a33150",
+        "regularized_stokeslet_block": "be118fee9778c6472ad763bc84a8addfc3abcff7d9c27a9637c2c798320788f3",
+        "assemble_regularized_stokeslet_matrix": "ed240faa9d716c451d1a6da965fe73399d960c6b93d88d25565b4219b666e21c",
+        "rigid_rhs": "76bbb516f38100d8506b4833c2cc96c0bc3b09e26d43083e1a04a0e6f47a3325",
+        "integrated_force_torque": "9aa3f498febf478928e4e703da829bbec9d865de69daf6ea948551548b0bd5eb",
+        "cross_matrix": "46b2ad1509540f6fbb7dedfe996b7aef4b0622d6c3814340cbf254ea214f2999",
+        "assemble_quotient_stokeslet_matrix": "7b997b5e9b6e016260b105ff1024bea199b9ac561cdf674f13b670da47c72f2a",
+        "QuotientStokesletOperator": "3fb154c24544133e62b2f86b40c4930ccd48fdba763076ff6d1cc3f7c4050fad",
+        "solve_quotient_cg": "acb5675c63bf4e55ed1cf3c123544c3e4bea63d7587b1d67bd48122edfeaefad",
+        "_quotient_rhs": "cda857913d583e1b60c82ef6d6fd9f142e0549d12bcf5b9692d74638f9a09dce",
+        "_expand_quotient_tractions": "ea04031253f3ad9d79d4cfb5140255e3b1408b93cd48cbde10abe30d8fbf8169",
+        "solve_quotient_tractions": "62f2447303b0de5bd7e0e12ec3c22c0996478ca0087c708cb6555f0f0486b7ba",
+        "anisotropy_error": "2c818adc900567b9f2ab38be1b50995d44e2f6da828529ec25363bb4443a002b",
+        "score_kcq": "d111944ac3e59d62ad24e7423ba2680c1d67824b87ece559c5ee50f2f96534a4",
+        "score_panels": "dca5aa15a4a5f0ce5d0add8261fee9bb46aa3b7b84eb69e5986b11d7630890ac",
+        "write_summary": "5ed53bd3e745bf81f06afc59f5899fb96b560603d8a6098e16ac95e5b48164cb",
+        "parse_args": "7db21608f5f2073484f80a45df08da010841cdf155e9af66c41876f9c7c4690a",
+        "main": "a6504bf17ed17a70a42f4748625d0f68eb9b6a277cc2e19c30c82ab900daa797",
+        "proper_tetrahedral_rotations": "0f6cba59365f997ae7f09666bce6971404696ea199e49ceff89daae6c5cdb5fe"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/bem_cuda_operator.py",
+      "source": "scripts/bem_cuda_operator.py",
+      "commit": "12f38a9a33dbbb0a1b7c0d0affcfff91620b927a",
+      "original_sha256": "15a4d3a0ad6cb29fd5ed26789ad8f0fb8b29d7cf01c6cc4b087c69f29fc92d98",
+      "unchanged_definitions": {
+        "CudaMatmat": "d1bb96205ad6ce23d61cfbbe30e7f44804d13fc45b8637f876261cd28950d23b",
+        "make_cuda_operator": "d605e281540256ee13c54216bb068ea5fafcd04a77c64d02042c40575590a013"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/periodic_interface_geometry.py",
+      "source": "src/periodic_interface_geometry.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "01ae0d2eca10f4d70aa49290ae1d7b29cb86a8e0e969b4265842aa4150a85b6b",
+      "unchanged_definitions": {
+        "TraceComparison": "a2766efd4b248999bf7995282719b322043a74293736175f68c8bb515ad47a71",
+        "Watertightness": "a7d892ca57a4a8b2d943dd5ccb9a15878e2482a496b373adda65e927c207040f",
+        "WeldedSurface": "470c667254be26b3529376a1c5b134b6308bc08c13b212c2797aac458e768c26",
+        "_PointAABBNode": "beb9ab6a4e63c02ac6df8a9975923119dcd402a7f7c2c2667095c319c22c2d38",
+        "_DisjointSet": "7ae463031f0b0c5647acd415833d7f9bf0d398f3ddf4b81bb5e0f5275a7ebb43",
+        "PartitionComparison": "8bf90e8b87389788be9bbef34936b0c9f4152842c03f07a4971809c9830c3898",
+        "PairedTraceProjection": "2fa4c81ac2af37bb7532a0ed52969d95de8b6ae005efae89f7c8568608dbc17c",
+        "TraceCorrectionExtension": "dbd4915a06d1e159707a2642f552467e0a01746af3d84a81592473849315a82c",
+        "PeriodicLevelSetProjection": "090ba654f9d6b0b7d483b86c48a398cbf6892aca536d48d5b7ed1fe76c904373",
+        "apply_matrix": "95032c76e7e3beb9be7ceb34af1c7865253a2bf1c81aa958814f083d4538ca82",
+        "transpose_matrix": "3376324ebeb4417363b8ee51d64e8c2e611eceab36eda83e813951aeaa19cc6d",
+        "proper_octahedral_rotations": "645e943123c2e589fa622e6c468632fd73b35d2f3edc6e96f9f803154dfabcea",
+        "full24_watertightness": "a09cc0b76bf99b21370abc2c2469a40ff4506b8eabf885041983fcbf0bb4f077",
+        "weld_full24_surface": "3a8d77e45c728fe336d4d3b96685cd8ad587b1837cbabc7f189fbefe76106bf6",
+        "_weld_points_by_distance": "d023fbfee398b45dce14d5b8287ac3c9a1d7c9b5fb1be7a6f68cff29caf8aad0",
+        "_build_point_aabb": "70c5479174df8aad6e8fe94122cdc339528527fa459bcd8a1e2c963bb32fc2fd",
+        "_query_point_aabb": "ee2a86d1253b24870f817cfbd866c01de67ffd8ff9ed8ba437aff91b836e22a6",
+        "compare_paired_trace": "ba32b40ab175f307ebf4e193267a00fa3fed9a9735cd29702d45a15d07032b15",
+        "project_paired_trace_values": "b9144f634adf8a4befb37907c9e6c9b8925ec2c823b2d40b7f620964737062ae",
+        "extend_trace_correction_h1": "e544abb08995731cc220e431125629e74782dcf52eb704ff49e1b6acd2fbda83",
+        "project_periodic_levelset_values": "e5eb0440aa1f2a6dc65a31446035b40b8ba7588d421d21374495eb2d7a80888a",
+        "_terra_project_periodic_levelset_values": "bf4f7be093322c715e575b478fb68ba3575a91148b5563e18668641e19c2ac2a",
+        "_project_exact_trace_skeleton_orbits": "3c0a96f1a736eb90462cca214634dce2eb3bba3cb563dada5ecd8466d96420c0",
+        "compare_paired_partition": "afdbed77a4f41ad2dc899fe1dfc13c576379eb0ebf2d3189ae16d3af78d9dcbd",
+        "mapped_zero_contour_hausdorff": "783820b6c9072e1c535d4ee57c596aeb9bad26470e094c983670bcebd7487901",
+        "mapped_segment_hausdorff": "9a36770afcec24ae05a4804888d7f016efe7bc0c695790d85369b56da3b67a1d",
+        "_TraceAccumulator": "e9d094b44cbe4f6d8731c061c62a4b46cb2ac9e8284bd2032bbfec4265d25b9b",
+        "_PartitionAccumulator": "6b9028c7625ad4c642ced9ecc535eb6457d2b5af0bccd2e155bc9e354d91b15f",
+        "_accumulate_trace_direction": "915100c815ba4f62360107dfc807c3344f1f90c3bef346ce0d39a6e5878fffb5",
+        "_accumulate_partition_direction": "986b700e0ce21aee0d47602f5bf64ec7332be14c31161a3a0581bc0721d1b0d4",
+        "_validate_trace_input": "448a9257941fe9c2c2f6c62fcd5a7fea41fe01c068a8dfa7741c2a61023977ab",
+        "_validate_triangles": "cba3388ac2e465378652859277d3e04f077568ae06ff6cf5516fd471bef2e893",
+        "_extract_zero_segments": "f931448fe0eb8613762a3de35108f0dc969c7483282413c9bc4d3c07de872701",
+        "_append_unique_point": "f99542c3eb832aa1ab1275273bbfe975bbcd78b09f39622bbe5e5457341df5cf",
+        "_farthest_pair": "47faa938584ef44fa69a3ea4b5f1ae84b01151c3a76c12919936fb1656a91269",
+        "_directed_endpoint_hausdorff": "7cb2ec41a855019a347071481ada9dfe8c4a53f44bbeb30c468af6daecca7451",
+        "_point_segment_distance": "9bafc3455d6fbc849730ffb30c78d7260243dbdbbf00b88c45ca006261cb561e",
+        "_distance_squared": "bc91c3b3972be9dca4282fa82338a28926e773bc5b24db374af04d6689201308",
+        "_coordinate_extent": "3ba4c4c679fb974e22ed94e123945a39d13e9df5441d16c26bd7c530c3ee0723",
+        "_TraceLocator": "a2550c29de4256727f560db308b4032655ddf81cb39f28dcc343959acf5050ad",
+        "_triangle_barycentric": "db4e42af1d538820fde6b964b3059c9b2a1954cd50da8812a47c9ab3ee424ddd",
+        "_interpolate_point": "3c500ede3c698b7132a086a7a63d7b28d6092fdc2af062f15086edc4fbc061bb",
+        "_interpolate_scalar": "69f68e1dff339097c5650563e04bb78e2c3a025c34ecdb37b8dcd2b107501cdb",
+        "_triangle_area": "4019b5af676fa0f3910776f859243c62b771382912387532a3d14ac193562a6f",
+        "_scalar_sign": "c175166e7d94e4ba49a129eabbb64a7ed1a55efdef437deac77223942b852576",
+        "_add": "8eab062a1cfeb43589124fb02390eed823bd979e044e486d86627185a7fd453f",
+        "_sub": "7a97b5376eef12a9575eba20a92861c8fe9d9e8332e3bc0eda8b7a35b2c423a1",
+        "_scale": "4982530325f53df5a200b39a2b39f7af2976b8313e43f6072a871d551aaefe2e",
+        "_dot": "8e5d529cb4f382fa9e00fa72779f37980517f8d5da68ae05fdc5298340be6611",
+        "_cross": "3a9206f7d84f05c9487df2188b05f46975b69325349a0e8a97e617cc17e01830",
+        "_determinant": "aedeff234c144f6a8da6bbd32a54a5299e536b029249e6854609bf15da755abd",
+        "proper_tetrahedral_rotations": "e952c0c7368cb257165cb5c92a9e8a352395301793d0278e07e64c7ac9dc28ae"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/tetra_solid_connectivity.py",
+      "source": "scripts/tetra_solid_connectivity.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "801d14c0a5723dc6c9bc91bbb4233ae200bf1971035e9a5d2613e9f1e6d2793f",
+      "unchanged_definitions": {
+        "triangle_overlap_area": "0bfeb9f3c1ca61a2cca3eb972a0bec0002738b7b6daceb3d4ab793451e5e5d2e",
+        "solid_connectivity": "ef9eafedd0336e835df4ace125d398b8d5e54392b26e7f3adf50654b3612019f"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/mesh_io.py",
+      "source": "src/fundamental_periodic_chamber_gmsh.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "3895d61301ab77a1ad3c2d0dfcf34252db3b10c3534a6ecd9ede84448f70b2c6",
+      "unchanged_definitions": {
+        "read_medit_mesh": "ddac5d350d11ba49be985436bbd8c40f821ef62d721062083cf7b5efe3f7d359",
+        "write_medit_mesh": "72395a9abee72922fc51dfe04fc7bcb8a110b1702ebaffed8e91973b8341b3fc"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/clement_rho.py",
+      "source": "scripts/clement_rho.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "00af7781e005ea9e59138e94921fbe36457f6d864c527274535b7c14f74c94d3",
+      "unchanged_definitions": {
+        "geometry_diagnostics": "d206c4adab6bf5bf504934ebece25997f1421d6fc8c1a7904e19f4f8039b394b",
+        "armijo": "5be5b3183b2997efe1f9ad7e69cc9cc2446cd79d322459d55e0a052db588b2dc",
+        "thickness_gate": "72b7a88757510cdac64f433eef6307ab3cbfed5c33c67d2e682cef51fac94054",
+        "fragmentation_gate": "64c932ee6084e9598883eb279ce880415586d0c3a23458dad85371285547de25",
+        "step_factors": "02ba099eaeb5c867f813e86d7aeaa7bea87c89df27304189158d14e47d41ddac",
+        "fd_mesh": "3c86474b1c53d154bd7f16789b9cc88da7f24f20e3856c0c7c4059ce28f5572d"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/clement_boundary.py",
+      "source": "scripts/clement_boundary.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "b5c61ac3af5501d4f6f3d17f691985138f1d6e4660a8205f7a87e494e0da3bee",
+      "unchanged_definitions": {
+        "read_mesh": "2f9528d442312d3c9375b1dd24c5d423c07d8ba8dbe2462af729636086abc520",
+        "exterior_velocity": "17566adc06cc08104ad6d3c97b7ae31f94d854b1b5cdc31de3ef7a69ca32715e",
+        "resistance": "8610292af65f9530f4f418497b2dfd1a105b0eafbf9a27a3bb5f87624c990009",
+        "bem_solver_settings": "9d0e85df356611f983233842e925e65484c29b5b6e0ef84a1b63703f5bb7c9f6"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/render_clement_history.py",
+      "source": "scripts/render_clement_history.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "175f3cdb9e848d0ad490bbf72cd4336116a13e1cc9980eb7dc118e8b8a8a43c9",
+      "unchanged_definitions": {
+        "chain_entries": "5f00bee93f2bd0224d288e1415ba28f3eb9abacb8713949d83e0632bdef1aa0b",
+        "collect_frames": "d0310bb0378fbe8295b8224ee973bf7a22f3b630b98d2c20310c9a611bdd330e",
+        "validate_score": "84806a7095d4349240678da4c0de12ee494e857d122a7bde9b0ad72e01ac799a",
+        "pack_data": "7c35fe9984905f153f54b5c33b1a32c74c02b84768699d823d89c08bbdd66eb1",
+        "locality_order": "c695c70f0b852d69d03408ab4dbbdbd8c19a5c5313d82168e730ed3ae66dfd64"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/audit_clement_reconstruction.py",
+      "source": "scripts/audit_clement_reconstruction.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "c4390c0e648dc4570fba186ecc380de5deb368f083f8579a243f97aaa794c31a",
+      "unchanged_definitions": {
+        "quality": "152ceb016edb27d38267f303b9f34bf0b93dbcc188362b7d3899d61217c96874",
+        "evaluate": "70c70e4d0fe447772fbf2243fe6400c68148d52e66ce14fc354021d1fbeed342"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/export_carlos_exact_chamber.py",
+      "source": "scripts/export_carlos_exact_chamber.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "28613f247bbf351f31602d33f6b3e5e723b9535e180bed2df60d030b21ffe041",
+      "unchanged_definitions": {
+        "match": "a12d9ca2f82cca2d7e2dfb35c2b422aec17daede19b00e2ebcbe809d0acbcd3a"
+      }
+    },
+    {
+      "destination": "python/kelvin_bem/export_carlos_interface.py",
+      "source": "scripts/export_carlos_interface.py",
+      "commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+      "original_sha256": "7461c2b3ca12f36b0d6059cab54c43dce797a982d0c6fe0022384f2be88e7993",
+      "unchanged_definitions": {
+        "load_snapshot": "4977de83d0a5c318553130710232158d5d5825a5402e0da54fcbd65ee7aa1836",
+        "material_interface": "8e1da61e5358a594f5039223f19a78cd9b86d822493347238e6dc47b2fc25f5c"
+      }
+    }
+  ],
+  "cuda": {
+    "source": "src/bem_quotient_cuda.cu",
+    "commit": "12f38a9a33dbbb0a1b7c0d0affcfff91620b927a",
+    "original_sha256": "d3e383e427b5558bc2bfc2106c817708a691b455bcb04454f22e113404848cbc",
+    "migrated_sha256": "1e056ccc7420eba2ddc2d3ce27a2d02208d5dc2addba32e94e9061a0079467df",
+    "only_changes": "license header and final whitespace"
+  }
+}

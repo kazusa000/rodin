@@ -1,5 +1,10 @@
 # Kelvin ball
 
+The shared fork bundles the complete BEM/CUDA and MMG/SWIFT workflow in this
+example. See [BEM_WORKFLOW.md](BEM_WORKFLOW.md) for installation, single-checkout
+commands, deployment configuration, validation and source provenance.
+No separate Project03 repository or preinstalled BEM verifier is required.
+
 The fork additionally provides an opt-in, single-candidate BEM interface:
 `--boundary-step --mesh=accepted.mesh --outer-values=outer-values.txt
 --bem-values=coefficients.txt --iterations=1 --reconstruction=mmg|swift`.

@@ -1,0 +1,43 @@
+{
+  "upstream": "https://github.com/cbritopacheco/rodin.git",
+  "upstream_branch": "example/KelvinBall",
+  "baseline_commit": "79718dc7d018cf41c727dc2df2634628b42612c4",
+  "compiler_fixed_commit": "3ae2c0414ffebf11f5814a46510ddf4d8375ba0a",
+  "development_branch": "codex/clement-swift-bem",
+  "validated_numerical_commit": "b697b83e6f205e04d5b95cc9b2dfb56fd2592572",
+  "native_targets": [
+    "KelvinBall",
+    "KelvinBallSphere",
+    "KelvinBallOuterVelocityTest",
+    "KelvinBallPressureGaugeTest",
+    "KelvinBallSeedTest",
+    "KelvinBallSoftThicknessDiagnostic"
+  ],
+  "symmetry": "cubic",
+  "group_order": 24,
+  "epsilon_factor": 0.6,
+  "solver_rtol": 0.000001,
+  "weak_coupling_rtol": 1e-9,
+  "weak_coupling_threshold": 0.0001,
+  "solver_maxiter": 2000,
+  "panel_block_size": 256,
+  "thickness_absolute": 0.06,
+  "thickness_weight": 1,
+  "fragmentation": "positive-area connected solid tetrahedra in full O24",
+  "baseline_targets": [
+    "KelvinBall",
+    "KelvinBallSphere"
+  ],
+  "baseline_arguments": [
+    "--n=13",
+    "--outer-radius=2",
+    "--thickness-min=0",
+    "--iterations=2",
+    "--save-mesh"
+  ],
+  "measurement": "all original panels, free-space regularized BEM diagnostic",
+  "source_model": "one clean Rodin checkout; runtime HEAD is the native and BEM pin",
+  "imported_bem_commit": "12f38a9a33dbbb0a1b7c0d0affcfff91620b927a",
+  "legacy_cuda_sha256": "1fda9410cc300686a435d21d3efb617f6c9f3fd971d4407b13e68e1f301e7b3a",
+  "cuda_source_sha256": "1e056ccc7420eba2ddc2d3ce27a2d02208d5dc2addba32e94e9061a0079467df"
+}

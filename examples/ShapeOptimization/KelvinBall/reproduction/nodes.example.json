@@ -1,0 +1,12 @@
+{
+  "cpu_host": "user@cpu-host",
+  "gpu_host": "gpu-host",
+  "cpu_source": "/path/to/cpu/rodin",
+  "gpu_source": "/path/to/gpu/rodin",
+  "cpu_python": "/path/to/cpu/venv/bin/python",
+  "gpu_python": "/path/to/gpu/venv/bin/python",
+  "build": "/path/outside/source/native-build",
+  "cuda_library": "/path/outside/source/libbem_quotient_cuda.so",
+  "cpu_output": "/path/outside/source/unique-cpu-results",
+  "gpu_output": "/path/outside/source/unique-gpu-results"
+}

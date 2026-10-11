@@ -1,0 +1,218 @@
+<div id="carlos-cubic-reference">
+  <div class="viz-row" style="justify-content:space-between">
+    <span id="carlos-step" class="tabular-nums">原始计算形状</span>
+    <span id="carlos-fem" class="tabular-nums"></span>
+  </div>
+  <div id="carlos-scene" role="img" aria-label="原始表面，可拖动旋转和滚轮缩放"></div>
+  <div class="viz-row" style="justify-content:space-between">
+    <label class="form-label" for="carlos-iteration">迭代检查点 <span id="carlos-index" class="tabular-nums"></span></label>
+    <span id="carlos-bem" class="tabular-nums" aria-live="polite"></span>
+  </div>
+  <input id="carlos-iteration" class="form-range" type="range" min="0" max="0" step="1" value="0" aria-label="选择实际计算的迭代检查点" />
+  <div class="viz-row" style="justify-content:space-between">
+    <label class="form-check"><input id="carlos-edges" class="form-check-input" type="checkbox" /><span class="form-check-label">三角网格</span></label>
+    <span id="carlos-detail" class="text-small tabular-nums"></span>
+  </div>
+  <div id="carlos-error" class="text-destructive" role="alert" hidden></div>
+</div>
+<style>
+  #carlos-cubic-reference { width:100%; }
+  #carlos-cubic-reference #carlos-scene { width:100%; height:460px; position:relative; touch-action:none; overflow:hidden; }
+  #carlos-cubic-reference #carlos-scene canvas { display:block; }
+  @media (max-width:480px) { #carlos-cubic-reference #carlos-scene {height:340px;} }
+</style>
+<script id="carlos-shape-payload" type="application/octet-stream">__CARLOS_PAYLOAD__</script>
+<script src="https://cdn.jsdelivr.net/npm/vtk.js@36.2.1/vtk.js"></script>
+<script>
+(async () => {
+  const root = document.getElementById('carlos-cubic-reference');
+  const scene = root.querySelector('#carlos-scene');
+  const slider = root.querySelector('#carlos-iteration');
+  const edges = root.querySelector('#carlos-edges');
+  const error = root.querySelector('#carlos-error');
+  try {
+    const encoded = document.getElementById('carlos-shape-payload').textContent.trim();
+    const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    const raw = new Uint8Array(await new Response(stream).arrayBuffer());
+    let data;
+    const format = new TextDecoder().decode(raw.slice(0,4));
+    if (['MSH1','MSH2','MSH3'].includes(format)) {
+      const view = new DataView(raw.buffer), size = view.getUint32(4,true);
+      data = JSON.parse(new TextDecoder().decode(raw.slice(8,8+size)));
+      let offset = 8 + size;
+      function array(count,width,method) {
+        let buffer;
+        if (format!=='MSH1') {
+          const values=new Uint8Array(count*width);
+          for(let byte=0;byte<width;byte++) for(let i=0;i<count;i++)
+            values[i*width+byte]=raw[offset+byte*count+i];
+          buffer=new DataView(values.buffer);
+        } else buffer=new DataView(raw.buffer,offset,count*width);
+        offset+=count*width;
+        return Array.from({length:count},(_,i)=>buffer[method](i*width,true));
+      }
+      for (const frame of data.frames) {
+        frame.points = array(frame.pointValues,8,'getFloat64');
+        const width=frame.indexWidth||4;
+        frame.triangles = array(frame.triangleValues,width,width===2?'getUint16':'getUint32');
+        if (format==='MSH3') {
+          let previous=0;
+          for(let i=0;i<frame.triangles.length;i+=3) {
+            const first=previous+frame.triangles[i];
+            frame.triangles[i]=first;
+            frame.triangles[i+1]+=first; frame.triangles[i+2]+=first;
+            previous=first;
+          }
+        }
+        delete frame.pointValues; delete frame.triangleValues; delete frame.indexWidth;
+      }
+      if (offset!==raw.length) throw new Error('形状数据长度不符。');
+    } else {
+      data = JSON.parse(new TextDecoder().decode(raw));
+    }
+    if (typeof vtk === 'undefined') throw new Error('三维组件未加载，请重新打开此视图。');
+    const frames = data.frames;
+    scene.setAttribute('aria-label',`${data.symmetryLabel||'Carlos cubic O(24)'} 原始完整表面，可拖动旋转和滚轮缩放`);
+    const generic = vtk.Rendering.Misc.vtkGenericRenderWindow.newInstance();
+    generic.setContainer(scene);
+    const renderer = generic.getRenderer(), renderWindow = generic.getRenderWindow();
+    const actor = vtk.Rendering.Core.vtkActor.newInstance();
+    const mapper = vtk.Rendering.Core.vtkMapper.newInstance();
+    actor.setMapper(mapper);
+    renderer.addActor(actor);
+    const property = actor.getProperty();
+    property.setAmbient(0.2); property.setDiffuse(0.82);
+    property.setSpecular(0.12); property.setSpecularPower(18);
+    property.setInterpolationToPhong(); property.setLineWidth(0.7);
+    const camera = renderer.getActiveCamera(), cache = new Map();
+    let current = frames.length - 1;
+    slider.max = frames.length - 1;
+
+    function expand(frame) {
+      const points = [], triangles = [], lookup = new Map();
+      for (const rotation of data.rotations) {
+        const labels = [];
+        for (let i = 0; i < frame.points.length; i += 3) {
+          const p = rotation.map(r => r[0]*frame.points[i] + r[1]*frame.points[i+1] + r[2]*frame.points[i+2]);
+          // Merge only exactly coincident coordinates, never displace a seam.
+          const key = p.map(x => x === 0 ? 0 : x).join(',');
+          if (!lookup.has(key)) { lookup.set(key, points.length/3); points.push(...p); }
+          labels.push(lookup.get(key));
+        }
+        for (const index of frame.triangles) triangles.push(labels[index]);
+      }
+      if (triangles.length !== frame.fullTriangles * 3) throw new Error('展开后的三角形数量不符。');
+      const normals = new Float64Array(points.length), polys = [];
+      let signedVolume = 0;
+      for (let i = 0; i < triangles.length; i += 3) {
+        const a = triangles[i], b = triangles[i+1], c = triangles[i+2];
+        const ax=points[3*a], ay=points[3*a+1], az=points[3*a+2];
+        const bx=points[3*b], by=points[3*b+1], bz=points[3*b+2];
+        const cx=points[3*c], cy=points[3*c+1], cz=points[3*c+2];
+        const ux=bx-ax, uy=by-ay, uz=bz-az, vx=cx-ax, vy=cy-ay, vz=cz-az;
+        const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+        if (!(Math.hypot(nx,ny,nz)>0)) throw new Error('存在退化三角形。');
+        for (const j of [a,b,c]) {normals[3*j]+=nx; normals[3*j+1]+=ny; normals[3*j+2]+=nz;}
+        polys.push(3,a,b,c);
+        signedVolume += (ax*(by*cz-bz*cy)+ay*(bz*cx-bx*cz)+az*(bx*cy-by*cx))/6;
+      }
+      // Chamber cuts pass through the origin and contribute zero volume flux.
+      if (Math.abs(signedVolume/frame.volume-1)>1e-7) throw new Error('显示坐标与原始体积核对失败。');
+      for (let i=0;i<normals.length;i+=3) {
+        const length=Math.hypot(normals[i],normals[i+1],normals[i+2]);
+        if (length) for (let j=0;j<3;j++) normals[i+j]/=length;
+      }
+      const poly=vtk.Common.DataModel.vtkPolyData.newInstance();
+      poly.getPoints().setData(Float32Array.from(points),3);
+      poly.getPolys().setData(Uint32Array.from(polys));
+      poly.getPointData().setNormals(vtk.Common.Core.vtkDataArray.newInstance({
+        name:'Normals',numberOfComponents:3,values:Float32Array.from(normals)
+      }));
+      poly.modified();
+      return poly;
+    }
+    function color(value) {
+      const probe=document.createElement('span'); probe.style.color=value; root.appendChild(probe);
+      const text=getComputedStyle(probe).color; probe.remove();
+      const canvas=document.createElement('canvas'); canvas.width=canvas.height=1;
+      const ctx=canvas.getContext('2d'); ctx.fillStyle=text; ctx.fillRect(0,0,1,1);
+      return [...ctx.getImageData(0,0,1,1).data].slice(0,3).map(v=>v/255);
+    }
+    function theme() {
+      renderer.setBackground(...color('var(--background)'));
+      property.setColor(...color('color-mix(in srgb, var(--viz-series-1) 28%, var(--background))'));
+      property.setEdgeColor(...color('color-mix(in srgb, var(--foreground) 45%, var(--background))'));
+      renderWindow.render();
+    }
+    function show(index) {
+      if (!Number.isInteger(index) || !frames[index]) return;
+      current=index;
+      const frame=frames[index];
+      if (!cache.has(index)) cache.set(index,expand(frame));
+      mapper.setInputData(cache.get(index));
+      root.querySelector('#carlos-step').textContent=data.scoreType==='bem'
+        ? `${data.symmetryLabel} · ${frame.label}` : `Carlos · cubic O(24) · 第 ${frame.step} 步`;
+      root.querySelector('#carlos-fem').textContent=data.scoreType==='bem'
+        ? `BEM ρ = ${frame.rho.toPrecision(7)}` : `FEM ρ = ${frame.fem.toPrecision(4)}`;
+      const measured=frame.bem||[];
+      root.querySelector('#carlos-bem').textContent=data.scoreType==='bem'
+        ? `k ${frame.k.toFixed(5)} · c ${frame.c.toPrecision(6)} · q ${frame.q.toFixed(5)}`
+        : measured.length
+          ? `BEM${frame.boundaryEdges ? ' 诊断' : ''} ρ = ${Math.min(...measured).toPrecision(3)}${measured.length>1?' – '+Math.max(...measured).toPrecision(3):''}`
+          : 'BEM：此步未测';
+      root.querySelector('#carlos-index').textContent=frame.step<0?'初始':frame.step;
+      root.querySelector('#carlos-detail').textContent=`${frame.fullTriangles.toLocaleString()} 面 · ${frame.boundaryEdges ? '存在开放拼缝' : '闭合表面'}`;
+      slider.value=index;
+      root.dataset.frame=String(index);
+      root.dataset.step=String(frame.step);
+      root.dataset.panels=String(frame.fullTriangles);
+      renderer.resetCameraClippingRange(); renderWindow.render();
+    }
+    function save() {
+      if (!window.openai?.setWidgetState) return;
+      Promise.resolve(window.openai.setWidgetState({
+        modelContent:data.scoreType==='bem'
+          ? {runId:data.runId,step:frames[current].step,rho:frames[current].rho}
+          : {runId:data.runId,step:frames[current].step,fem:frames[current].fem,bem:frames[current].bem},
+        privateContent:{edges:edges.checked,position:camera.getPosition(),focal:camera.getFocalPoint(),up:camera.getViewUp()}
+      })).catch(()=>{});
+    }
+    function restore(state) {
+      if (state?.modelContent?.runId!==data.runId) return;
+      const index=frames.findIndex(f=>f.step===state.modelContent.step);
+      if (index>=0) show(index);
+      const ui=state.privateContent||{}, valid=x=>Array.isArray(x)&&x.length===3&&x.every(Number.isFinite);
+      edges.checked=Boolean(ui.edges); property.setEdgeVisibility(edges.checked);
+      if(valid(ui.position)&&valid(ui.focal)&&valid(ui.up)) {
+        camera.setPosition(...ui.position); camera.setFocalPoint(...ui.focal); camera.setViewUp(...ui.up);
+        renderer.resetCameraClippingRange();
+      }
+      renderWindow.render();
+    }
+    slider.addEventListener('input',()=>show(Number(slider.value)));
+    slider.addEventListener('change',save);
+    edges.addEventListener('change',()=>{property.setEdgeVisibility(edges.checked);renderWindow.render();save();});
+    scene.addEventListener('pointerup',()=>setTimeout(save,0));
+    let wheelSave;
+    scene.addEventListener('wheel',()=>{clearTimeout(wheelSave);wheelSave=setTimeout(save,250);},{passive:true});
+    window.addEventListener('openai:set_globals',event=>{
+      const globals=event.detail?.globals;
+      if(globals&&'widgetState' in globals) restore(globals.widgetState);
+      theme();
+    });
+    new ResizeObserver(()=>{generic.resize();renderer.resetCameraClippingRange();renderWindow.render();}).observe(scene);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',theme);
+    generic.resize(); show(current);
+    let radius=0;
+    for (const frame of frames) for(let i=0;i<frame.points.length;i+=3)
+      radius=Math.max(radius,Math.hypot(frame.points[i],frame.points[i+1],frame.points[i+2]));
+    const halfAngle=Math.min(25*Math.PI/180,Math.atan(Math.tan(25*Math.PI/180)*scene.clientWidth/scene.clientHeight));
+    const distance=radius/Math.sin(halfAngle)*1.04, direction=[1.7,-2.4,1.6], length=Math.hypot(...direction);
+    camera.setViewAngle(50); camera.setFocalPoint(0,0,0);
+    camera.setPosition(...direction.map(v=>v*distance/length)); camera.setViewUp(0,0,1);
+    renderer.resetCameraClippingRange(); theme(); restore(window.openai?.widgetState);
+    root.dataset.ready='true';
+  } catch(exception) { error.hidden=false; error.textContent=exception.message; }
+})();
+</script>
