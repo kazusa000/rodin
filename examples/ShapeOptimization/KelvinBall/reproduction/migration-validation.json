@@ -1,0 +1,272 @@
+{
+  "passed": true,
+  "executing_commit": "d625db418e4cf7359a044cc1f60913a2e54fdab4",
+  "native_checks": 4,
+  "measurements": [
+    {
+      "stage": "initial",
+      "mesh_sha256": "7f95825378b02bdc6086398a7ebf5d611a009bfb3cd924c923a3396b2cba0fc6",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 4776,
+      "rho": 4.1506460999709566e-8,
+      "cpu_residuals": [
+        1.2262699129176986e-15,
+        1.594639327603571e-15
+      ],
+      "gpu_residuals": [
+        1.2087930638364094e-15,
+        1.5890125843280247e-15
+      ],
+      "k": 18.900282123902453,
+      "c": -9.091897048302011e-7,
+      "q": 25.386879471174282
+    },
+    {
+      "stage": "mmg-trial-0",
+      "mesh_sha256": "fd2d655476209302aa67e6e3c8b54227bca6794ad0710859510168b8ce4cd64c",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 15384,
+      "rho": 5.803767952054189e-8,
+      "cpu_residuals": [
+        8.793145370775298e-10,
+        9.116451035059881e-10
+      ],
+      "gpu_residuals": [
+        8.79314536917435e-10,
+        9.116451012097782e-10
+      ],
+      "k": 19.00870510904699,
+      "c": 0.000001287235733850924,
+      "q": 25.8787658604404
+    },
+    {
+      "stage": "swift-trial-0",
+      "mesh_sha256": "d879cec7adadbac2c147be12e49e86f9a01b9a83b24ad4fa6cc315e78af2f69d",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 5256,
+      "rho": 4.6554504998347627e-7,
+      "cpu_residuals": [
+        1.4572465233081507e-15,
+        1.9475836483442454e-15
+      ],
+      "gpu_residuals": [
+        1.450278643849578e-15,
+        1.9291514901506806e-15
+      ],
+      "k": 19.053075245017933,
+      "c": -0.000010373046723438078,
+      "q": 26.05698476578756
+    },
+    {
+      "stage": "fd-0.01-1",
+      "mesh_sha256": "8412b54cd7a1f6289f877f889cc6d7763b095748177cb68c188777be8e26ad57",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 4776,
+      "rho": 5.6942428939288704e-8,
+      "cpu_residuals": [
+        1.1838849668581912e-15,
+        1.9105278484619858e-15
+      ],
+      "gpu_residuals": [
+        1.1672570433712889e-15,
+        1.9023442632900064e-15
+      ],
+      "k": 18.901232294138556,
+      "c": -0.0000012474421324341815,
+      "q": 25.390936537984583
+    },
+    {
+      "stage": "fd-0.01--1",
+      "mesh_sha256": "1bf6ff0b2f567d4988fcf73ad9df6dcaf0d69c152b19197f32fe82490eb34406",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 4776,
+      "rho": 2.6040746424488202e-8,
+      "cpu_residuals": [
+        1.3488276520377146e-15,
+        1.7010645419999553e-15
+      ],
+      "gpu_residuals": [
+        1.3498936972886297e-15,
+        1.690256166302294e-15
+      ],
+      "k": 18.899490431107267,
+      "c": -5.703669192595513e-7,
+      "q": 25.383511765430104
+    },
+    {
+      "stage": "fd-0.005-1",
+      "mesh_sha256": "71fe79cbab82c7904fa0c2ea7d416805b14c072d118db2228cfa280dbdb22819",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 4776,
+      "rho": 4.922739115235754e-8,
+      "cpu_residuals": [
+        1.0323006019575671e-15,
+        1.6324291647083318e-15
+      ],
+      "gpu_residuals": [
+        1.0304841655147355e-15,
+        1.6182724131451913e-15
+      ],
+      "k": 18.90073739284105,
+      "c": -0.000001078369182697027,
+      "q": 25.388821794027223
+    },
+    {
+      "stage": "fd-0.005--1",
+      "mesh_sha256": "688f6bdd7a2816aaf1b71386a9d56bb1f8e69b034fd627d55b74368f24104fce",
+      "coefficients_bitwise_equal": true,
+      "outer_trace_bitwise_equal": true,
+      "rtol": 1e-9,
+      "panels": 4776,
+      "rho": 3.377807519736379e-8,
+      "cpu_residuals": [
+        1.1307623216132237e-15,
+        1.6463956303141318e-15
+      ],
+      "gpu_residuals": [
+        1.1248627165289525e-15,
+        1.633103305226188e-15
+      ],
+      "k": 18.899866475346382,
+      "c": -7.398672207452322e-7,
+      "q": 25.385109492595323
+    }
+  ],
+  "accepted_steps": [
+    {
+      "method": "mmg",
+      "rho": 5.803767952054189e-8,
+      "penalty": 5.694304508306868e-9,
+      "full_panels": 15384,
+      "original_stokes_residuals": [
+        1.046114198128192e-14,
+        1.0888746377847927e-14
+      ],
+      "acceptance": "actual BEM rho-P Armijo",
+      "same_as_before": true
+    },
+    {
+      "method": "swift",
+      "rho": 4.6554504998347627e-7,
+      "penalty": 0,
+      "full_panels": 5256,
+      "original_stokes_residuals": [
+        1.046114198128192e-14,
+        1.0888746377847927e-14
+      ],
+      "acceptance": "actual BEM rho-P Armijo",
+      "same_as_before": true
+    }
+  ],
+  "finite_differences_unchanged": true,
+  "native_proxy_is_not_exact_bem_gradient": true,
+  "saved_stopping_replay": [
+    {
+      "method": "mmg",
+      "candidate_sha256": "6a977952e0409d445fdcf694b8faf757c8988b76bcc0697b1764ff4db554cfb0",
+      "quality_min": 0.0007620624054099174,
+      "same_as_before": true
+    },
+    {
+      "method": "swift",
+      "candidate_sha256": "aa9ce85368d2d5eebfd774cd074e779c4e912d5edfab6842b53adc051d0bbb5f",
+      "quality_min": 0.005414016514944722,
+      "same_as_before": true
+    }
+  ],
+  "validation_date": "2026-10-11",
+  "test_results": {
+    "mac": {
+      "passed": 102,
+      "skipped": 10,
+      "reason": "CUDA opt-in disabled"
+    },
+    "cpu": {
+      "passed": 102,
+      "skipped": 10,
+      "warnings": 14
+    },
+    "gpu": {
+      "passed": 112,
+      "skipped": 0
+    },
+    "native": {
+      "passed": 4
+    }
+  },
+  "environment": {
+    "cpu": {
+      "node": "28h",
+      "python": "3.12.3",
+      "numpy": "1.26.4",
+      "scipy": "1.11.4",
+      "h5py": "3.11.0",
+      "gcc": "13.3.0",
+      "cmake": "3.28.3",
+      "mumps": "5.6.2",
+      "boost": "1.83",
+      "eigen": "3.4"
+    },
+    "gpu": {
+      "node": "2060",
+      "python": "3.12.3",
+      "numpy": "1.26.4",
+      "scipy": "1.11.4",
+      "h5py": "3.16.0",
+      "cuda": "12.4",
+      "device": "RTX 2060",
+      "cuda_library_sha256": "c3a7bac3364993ed28af9e2c5f7115f4b722853a4bc3e9528cd498192a03ad00",
+      "cuda_source_sha256": "1e056ccc7420eba2ddc2d3ce27a2d02208d5dc2addba32e94e9061a0079467df"
+    }
+  },
+  "native_build_record_sha256": "baf17608f679d437ab9482f2b13cd821311ec0991e4d9708f6dadde40abe595d",
+  "generated_initial_mesh_sha256": "7f95825378b02bdc6086398a7ebf5d611a009bfb3cd924c923a3396b2cba0fc6",
+  "viewer": {
+    "frames": 18,
+    "steps": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17
+    ],
+    "geometry_modified": false,
+    "final_rho": 0.0015002521841784946,
+    "uses_original_result_data": true
+  },
+  "result_directory": "out/project-03/clement-swift/migration-20261011-d625db41",
+  "retained_old_03_commit": "067f8e9b3a42cfe6155c87406733a21122f615e8",
+  "native_cpp_changed": false,
+  "original_code_definitions_preserved": 109,
+  "old_result_sha256": {
+    "cubic_campaign": "ee54c05274d33e1238855f6d980fbf4e1d937177a3d2c3f32af4493f250add2d",
+    "cubic_final_mesh": "aa56acf8a5a0ec2839fed32540f2229146fedcef0a29f77231f59a50eaf78c60",
+    "terra_campaign": "ae8cf478c2a0c9716130810fc65d0dcc13748376564243930b1e90beb830e288",
+    "terra_final_mesh": "8406754e89f9ffa6dfe130e4b1894beee6679ce3c1cd9d6d0b8bf4910e00bf04"
+  }
+}

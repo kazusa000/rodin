@@ -161,3 +161,7 @@ Migration acceptance also requires a same-input native/BEM campaign and old
 saved stopping-case replay, in addition to these tests. Validation results
 and the exact executing commit are recorded separately from subsequent
 documentation-only commits.
+
+The completed migration checks and retained-data comparison are documented in
+[MIGRATION_VALIDATION.md](MIGRATION_VALIDATION.md), with compact public evidence
+in [migration-validation.json](reproduction/migration-validation.json).
