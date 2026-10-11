@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -46,6 +47,8 @@
 #include "RotatedNitscheIntegrator.h"
 #include "SewedOutput.h"
 #include "Thickness.h"
+#include "SoftThickness.h"
+#include <Rodin/MMG/MeshPrinter.h>
 #include "HilbertIdentification.h"
 #include "Sphere.h"
 #include "../../Adaptation/SWIFT/Options.h"
@@ -86,6 +89,11 @@ namespace KelvinBall
           Real normalRegularizationFactor = 1;
           Real stepFactor = 0.1;
           Real minimumThickness = 0;
+          bool boundaryStep = false;
+          bool reconstructOnly = false;
+          Real softThickness = 0;
+          Real softThicknessWeight = 1;
+          std::string inputMesh, outerValues, bemValues, targetValues;
           Math::SpatialVector<Real> motionForce;
           std::string reconstructionMethod = "swift";
 
@@ -106,6 +114,16 @@ namespace KelvinBall
                 stepFactor = std::stod(std::string(mode.substr(7)));
               else if (mode.rfind("--thickness-min=", 0) == 0)
                 minimumThickness = std::stod(std::string(mode.substr(16)));
+              else if (mode == "--boundary-step") boundaryStep = true;
+              else if (mode == "--reconstruct-only") reconstructOnly = true;
+              else if (mode.rfind("--mesh=", 0) == 0) inputMesh = mode.substr(7);
+              else if (mode.rfind("--outer-values=", 0) == 0) outerValues = mode.substr(15);
+              else if (mode.rfind("--bem-values=", 0) == 0) bemValues = mode.substr(13);
+              else if (mode.rfind("--target=", 0) == 0) targetValues = mode.substr(9);
+              else if (mode.rfind("--thickness-absolute=", 0) == 0)
+                softThickness = std::stod(std::string(mode.substr(21)));
+              else if (mode.rfind("--thickness-weight=", 0) == 0)
+                softThicknessWeight = std::stod(std::string(mode.substr(19)));
               else if (mode.rfind("--motion-force=", 0) == 0)
               {
                 std::istringstream components{std::string(mode.substr(15))};
@@ -161,6 +179,18 @@ namespace KelvinBall
             if (geometryOnly && stateOnly)
               throw std::runtime_error(
                 "Use either --geometry-only or --state-only, not both.");
+            if (boundaryStep && (inputMesh.empty() || outerValues.empty() ||
+                bemValues.empty() || maxIterations != 1 || geometryOnly || stateOnly ||
+                minimumThickness > 0 || reconstructOnly))
+              throw std::runtime_error("BEM step needs one update, exact mesh, six outer traces, "
+                "BEM coefficients and disabled Carlos thickness correction.");
+            if (reconstructOnly && (inputMesh.empty() || targetValues.empty() || boundaryStep))
+              throw std::runtime_error("Reconstruction needs the exact source mesh and target sol.");
+            if (!boundaryStep && (!outerValues.empty() || !bemValues.empty() || softThickness > 0))
+              throw std::runtime_error("External BEM and soft thickness require --boundary-step.");
+            if (!std::isfinite(softThickness) || softThickness < 0 ||
+                !std::isfinite(softThicknessWeight) || softThicknessWeight <= 0)
+              throw std::runtime_error("Invalid soft thickness parameters.");
             return true;
           }
       };
@@ -758,6 +788,17 @@ namespace KelvinBall
 
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
+        if (!m_options.inputMesh.empty())
+        {
+          MMG::Mesh loaded;
+          loaded.load(m_options.inputMesh, IO::FileFormat::MEDIT);
+          Optional<MMG::Mesh> background;
+          const Real h = meanElementSize(loaded);
+          if (m_options.reconstructionMethod == "swift") background.emplace(loaded);
+          // Preserve the accepted mesh exactly. SWIFT clears old interior
+          // labels during classification; no initial fit or smoothing here.
+          return {std::move(loaded), std::move(background), h, {}};
+        }
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
@@ -797,8 +838,8 @@ namespace KelvinBall
           backgroundInfo << Alert::Raise;
           P1 sphereSpace(*swiftBackground);
           GridFunction sphereLevelSet(sphereSpace);
-          sphereLevelSet = RealFunction([](const Geometry::Point& point) {
-            return point.getPhysicalCoordinates().norm() - Real(1);
+          sphereLevelSet = RealFunction([&sphere](const Geometry::Point& point) {
+            return sphere.levelSet(point.getPhysicalCoordinates());
           });
           MMG::Mesh classified =
             classifyLevelSetForSWIFT(*swiftBackground, sphereLevelSet);
@@ -1399,6 +1440,24 @@ namespace KelvinBall
         return diagnostics;
       }
 
+      static void saveExact(const MMG::Mesh& mesh, const std::string& path)
+      {
+        std::ofstream output(path);
+        output << std::setprecision(17);
+        MMG::MeshPrinter(mesh).print(output);
+        if (!output) throw std::runtime_error("Failed exporting exact chamber mesh.");
+      }
+
+      template <class Field>
+      static void saveExactField(const Field& field, const std::string& path)
+      {
+        std::ofstream output(path);
+        output << std::setprecision(17);
+        IO::GridFunctionPrinter<IO::FileFormat::MEDIT,
+          typename Field::FESType, typename Field::DataType>(field).print(output);
+        if (!output) throw std::runtime_error("Failed exporting exact target field.");
+      }
+
       int m_argc;
       char** m_argv;
   };
@@ -1443,6 +1502,27 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);
   Real backgroundH = initial.backgroundH;
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
+  if (m_options.reconstructOnly)
+  {
+    P1 targetSpace(mesh);
+    GridFunction target(targetSpace);
+    target.load(m_options.targetValues, IO::FileFormat::MEDIT);
+    SphereDiscretization result = [&]() {
+      if (m_options.reconstructionMethod == "swift")
+      {
+        auto classified = classifyLevelSetForSWIFT(mesh, target);
+        return fitLevelSetSWIFT(classified, target, meanElementSize(mesh), outerRadius);
+      }
+      return discretizeLevelSetMMG(mesh, target, initialGridSpacing,
+        m_options.configuration.hmin, m_options.configuration.hmax, sphere,
+        m_options.configuration.adapt, m_options.configuration.mmgSnap, requestedWelschScale);
+    }();
+    smoothReconstruction(result.mesh);
+    checkFixedGeometry(result.mesh, outerRadius);
+    checkMaterials(result.mesh);
+    saveExact(result.mesh, "candidate.mesh");
+    return 0;
+  }
   Optional<IO::XDMF> reconstructionXdmf;
   Optional<IO::XDMF::Grid> reconstructionOutput;
   if (m_options.reconstructionMethod == "mmg")
@@ -1455,13 +1535,24 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   checkFixedGeometry(mesh, outerRadius);
   checkMaterials(mesh);
   if (m_options.saveMeshDiagnostic)
-    mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
+    saveExact(mesh, "KelvinBallInitial.mesh");
   reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)
     return 0;
   const Real targetVolume = mesh.getVolume(Obstacle);
+  std::array<Real, 3> bodyResistance{};
+  if (m_options.boundaryStep)
+  {
+    std::ifstream values(m_options.bemValues);
+    if (!(values >> bodyResistance[0] >> bodyResistance[1] >> bodyResistance[2]) ||
+        !std::isfinite(bodyResistance[0]) || !std::isfinite(bodyResistance[1]) ||
+        !std::isfinite(bodyResistance[2]) || bodyResistance[0] <= 0 || bodyResistance[2] <= 0 ||
+        bodyResistance[0]*bodyResistance[2] <= bodyResistance[1]*bodyResistance[1])
+      throw std::runtime_error("Invalid positive-definite BEM k,c,q.");
+  }
+  const KelvinBall::OuterVelocity outer(m_options.outerValues);
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1586,6 +1677,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     fluidConnectivity.discover(2, 1);
     fluidConnectivity.restrict(1, 0);
     fluidConnectivity.restrict(2, 3);
+    if (m_options.boundaryStep) fluidConnectivity.discover(0, 0);
 
     VelocitySpace Vh(fluid, 3);
     PressureSpace Qh(fluid);
@@ -1599,20 +1691,21 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const auto stage3Start = Clock::now();
     announce("Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
-    const KelvinBall::Metrics resistanceMetrics(metricParameters);
+    const KelvinBall::Metrics resistanceMetrics(metricParameters,
+      m_options.boundaryStep ? &outer : nullptr);
     const KelvinBall::Values metrics = resistanceMetrics.evaluateChamber(
       Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
     stageSeconds[2] = elapsedSeconds(stage3Start);
     reportStageTiming(3, stageSeconds[2]);
-    const Real k = metrics.k;
-    const Real c = metrics.c;
-    const Real q = metrics.q;
+    const Real k = m_options.boundaryStep ? bodyResistance[0] : metrics.k;
+    const Real c = m_options.boundaryStep ? bodyResistance[1] : metrics.c;
+    const Real q = m_options.boundaryStep ? bodyResistance[2] : metrics.q;
     const Real resistanceDeterminant = k * q - c * c;
     const Math::SpatialVector<Real> motionTranslation =
       (q / resistanceDeterminant) * m_options.motionForce;
     const Math::SpatialVector<Real> motionAngular =
       (-c / resistanceDeterminant) * m_options.motionForce;
-    const Real rho = metrics.rho;
+    const Real rho = m_options.boundaryStep ? std::abs(c)/std::sqrt(k*q) : metrics.rho;
     const Real couplingSymmetry = metrics.couplingSymmetry;
     const Real volume = mesh.getVolume(Obstacle);
     const Real nitscheJump = metrics.nitscheJump;
@@ -1998,6 +2091,16 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                            stageDiagnostics.predictedThicknessChange)
                       << Alert::Raise;
     }
+    Math::Vector<Real> softLoad = Math::Vector<Real>::Zero(shapeSpace.getSize());
+    SoftThicknessPenalty::Result softResult;
+    if (m_options.softThickness > 0)
+    {
+      mesh.getConnectivity().compute(2, 3);
+      const Location::AABB<MMG::Mesh> locator(mesh);
+      const SoftThicknessPenalty penalty(mesh, m_options.softThickness, true);
+      softResult = penalty.evaluate(mesh, locator, shapeSpace,
+        m_options.softThicknessWeight, softLoad);
+    }
     GradientDiagnostics rhoGradientDiagnostics{}, volumeGradientDiagnostics{};
     {
     // Retain the factorization only while identifying the three differentials.
@@ -2022,7 +2125,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                       << Alert::Raise;
       }
       rhoGradientDiagnostics =
-        identifyGradient(identification, -rhoDensity, rhoGradient, "Rho");
+        identifyGradient(identification, -rhoDensity, rhoGradient, "Rho",
+          m_options.softThickness > 0 ? &softLoad : nullptr);
       volumeGradientDiagnostics =
         identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
     }
@@ -2126,6 +2230,31 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const Real thetaInfinityNorm = xiRhoNorm.max();
     const Real dRhoTheta = dRho(theta);
     const Real dVolumeTheta = dVolume(theta);
+    if (m_options.boundaryStep)
+    {
+      std::ofstream direction("direction.txt");
+      direction << std::setprecision(17);
+      for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+      {
+        const auto& x = mesh.getVertexCoordinates(vertex);
+        const auto dofs = shapeSpace.getDOFs(0, vertex);
+        direction << x(0) << ' ' << x(1) << ' ' << x(2);
+        for (Index j = 0; j < 3; ++j) direction << ' ' << theta.getData()(dofs(j));
+        direction << '\n';
+      }
+      std::ofstream diagnostic("boundary-step.json");
+      diagnostic << std::setprecision(17) << "{\"k\":" << k << ",\"c\":" << c
+        << ",\"q\":" << q << ",\"rho\":" << rho << ",\"dt\":" << dt
+        << ",\"d_rho_theta\":" << dRhoTheta << ",\"d_volume_theta\":" << dVolumeTheta
+        << ",\"merit_slope\":" << dRhoTheta + softLoad.dot(theta.getData())
+        << ",\"penalty\":" << softResult.penalty << ",\"deepest\":" << softResult.deepest
+        << ",\"violating\":" << softResult.violating << ",\"rays\":" << softResult.rays
+        << ",\"cross_cut_samples\":" << softResult.crossCut
+        << ",\"rho_gradient_residual\":" << rhoGradientDiagnostics.residual
+        << ",\"volume_gradient_residual\":" << volumeGradientDiagnostics.residual
+        << ",\"group_order\":24,\"exact_discrete_derivative\":true}\n";
+      if (!direction || !diagnostic) throw std::runtime_error("Failed exporting BEM direction.");
+    }
     if (m_options.minimumThickness > 0)
     {
       stageDiagnostics.dThicknessTheta = -thicknessLoad.dot(theta.getData());
@@ -2389,7 +2518,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       sewedFluidOutput.add("Motion", fluidMotion, IO::XDMF::Center::Node);
       sewedInterfaceOutput.add("Motion", bodyMotion, IO::XDMF::Center::Node);
 
-      if (iteration + 1 == m_options.maxIterations)
+      if (iteration + 1 == m_options.maxIterations && !m_options.boundaryStep)
       {
         xdmf.write(static_cast<Real>(iteration)).flush();
         sewedXdmf.write(static_cast<Real>(iteration)).flush();
@@ -2529,6 +2658,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
 
     const auto stage9Start = Clock::now();
+    if (m_options.boundaryStep)
+    {
+      saveExact(advectionMesh, "transport.mesh");
+      saveExactField(advectedDistance, "target.sol");
+    }
     announce(m_options.reconstructionMethod == "swift"
         ? "Stage 9: Fitting the advected interface with SWIFT."
         : "Stage 9: Reconstructing the advected interface with MMG.");
@@ -2623,6 +2757,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
     checkFixedGeometry(result.mesh, outerRadius);
     checkMaterials(result.mesh);
+    if (m_options.boundaryStep) saveExact(result.mesh, "candidate.mesh");
     nextMesh.emplace(std::move(result.mesh));
     stageSeconds[8] = elapsedSeconds(stage9Start);
     reportStageTiming(9, stageSeconds[8]);

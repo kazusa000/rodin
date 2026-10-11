@@ -28,6 +28,8 @@ namespace KelvinBall
       Real outerRadius = 2;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
+      /// Optional fixed O24 chiral radial seed, not a score-selected shape.
+      Real seedAmplitude = 0;
       /// Settings of the initial SWIFT background preparation.
       Real backgroundHausdorff = 0.05;
       Real backgroundGradation = 2;

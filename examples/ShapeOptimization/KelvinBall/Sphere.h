@@ -51,6 +51,9 @@ namespace KelvinBall
     public:
       explicit Sphere(const Configuration& configuration);
 
+      /** Initial unit sphere, optionally with the fixed O24 H3*H6 radial perturbation. */
+      Real levelSet(const Math::SpatialPoint& point) const;
+
       /**
        * @brief Discretizes the initial sphere in the chamber.
        *

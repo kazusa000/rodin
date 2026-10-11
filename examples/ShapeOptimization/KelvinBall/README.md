@@ -1,5 +1,31 @@
 # Kelvin ball
 
+The fork additionally provides an opt-in, single-candidate BEM interface:
+`--boundary-step --mesh=accepted.mesh --outer-values=outer-values.txt
+--bem-values=coefficients.txt --iterations=1 --reconstruction=mmg|swift`.
+The table contains six outer velocity traces; the coefficient file contains
+`k c q` from that same mesh. No nearest-coordinate extrapolation is allowed.
+Stokes equations and the volume null-space direction still use the native
+Carlos pipeline; only actual external BEM measurements may accept a candidate.
+The bounded-domain dissipation is not substituted for BEM resistance.
+
+`--thickness-absolute=0.06 --thickness-weight=1` selects our existing
+discrete soft penalty, with its exact P1 quadrature derivative. It is separate
+from `--thickness-min` and cannot be combined with Carlos' correction in this
+mode. A soft penalty is not a pointwise minimum-thickness guarantee.
+`--seed-amplitude=0.02` selects a fixed O24, reflection-odd H3*H6 radial
+perturbation; zero (the default) is the original sphere.
+
+A step exports full-precision `candidate.mesh`, `direction.txt`,
+`boundary-step.json`, `transport.mesh` and `target.sol`.
+`--reconstruct-only --mesh=transport.mesh --target=target.sol` runs either
+backend on those identical inputs, without recomputing or changing the target.
+When an accepted mesh is supplied, initialization does not fit or smooth it.
+SWIFT classifies a copy of its mesh, clearing old internal face labels, before
+fitting the transported field. Manufactured pressure gauges are applied only
+to enclosed components in BEM mode, and original unpinned equations remain
+subject to the existing residual check.
+
 A rigid body moving through a viscous fluid at vanishing Reynolds number
 responds to a force and a torque through one linear map, its **grand resistance
 tensor**. A **Kelvin ball** is a body for which pushing it also makes it turn:
