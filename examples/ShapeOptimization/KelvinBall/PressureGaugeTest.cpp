@@ -18,6 +18,7 @@ int main()
   }
   auto mesh = builder.finalize();
   prepare(mesh);
+  mesh.getConnectivity().discover(0, 0);
   for (auto face = mesh.getBoundary(); face; ++face)
     mesh.setAttribute({2, face->getIndex()}, Gamma);
   PressureSpace Qh(mesh);
