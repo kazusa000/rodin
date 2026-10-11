@@ -1,5 +1,10 @@
 # Migration validation, 11 October 2026
 
+This document records the completed migration at the executing commit below.
+Later behavior-preserving source cleanup is described separately in
+[SOURCE_CLEANUP.md](docs/SOURCE_CLEANUP.md); the frozen migration evidence has
+not been overwritten.
+
 Executing source: `d625db418e4cf7359a044cc1f60913a2e54fdab4`, clean on Mac, 28h and 2060.
 Later evidence/documentation commits do not change the runtime package or native
 solver. Build and result records retain the executing commit, rather than

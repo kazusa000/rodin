@@ -1,3 +1,8 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# Source documentation, not generated Doxygen/Sphinx output.
+!docs/
+docs/*
+!docs/*.md

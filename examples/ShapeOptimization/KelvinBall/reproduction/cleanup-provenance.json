@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "baseline_commit": "7deabf12c31d56b8f553b259b880e427a51d68ca",
+  "scope": "Behavior-preserving source cleanup; native solver, CUDA arithmetic, numerical preset and old experiments unchanged",
+  "module_renames": {
+    "carlos_reference": "run_support",
+    "clement_boundary": "bem_boundary",
+    "clement_rho": "acceptance",
+    "clement_swift_baseline": "native_baseline",
+    "clement_swift_native": "native_worker",
+    "clement_swift_bem": "bem_worker",
+    "clement_swift_pair": "compare_backends",
+    "audit_clement_reconstruction": "reconstruction_audit",
+    "bem_kcq_score": "bem_solver",
+    "bem_convergence_scan": "convergence_scan",
+    "bem_cuda_operator": "cuda_operator",
+    "build_bem_cuda": "build_cuda",
+    "check_periodic_interface_geometry": "geometry_check",
+    "periodic_interface_geometry": "periodic_geometry",
+    "kelvin_symmetry": "symmetry",
+    "export_carlos_exact_chamber": "export_chamber",
+    "export_carlos_interface": "export_interface",
+    "export_carlos_target": "export_target",
+    "plot_carlos_history": "plot_history",
+    "render_clement_history": "history_viewer",
+    "render_periodic_chamber_full24_views": "render_shape",
+    "tetra_solid_connectivity": "solid_connectivity",
+    "render_mesh_views": "render_support"
+  },
+  "removed_definitions": {
+    "periodic_interface_geometry": [
+      "PairedTraceProjection",
+      "TraceCorrectionExtension",
+      "PeriodicLevelSetProjection",
+      "project_paired_trace_values",
+      "extend_trace_correction_h1",
+      "project_periodic_levelset_values",
+      "_terra_project_periodic_levelset_values",
+      "_project_exact_trace_skeleton_orbits"
+    ],
+    "bem_kcq_score": [
+      "expand_full24_panels",
+      "expand_full12_panels"
+    ]
+  },
+  "reason": "Whole-tree references and package/test dependency analysis found only definitions and their internal calls; no current entry point or test consumes these retired operations.",
+  "original_definitions": 109,
+  "retained_definitions": 99,
+  "preserved_evidence": [
+    "reproduction/migration-provenance.json",
+    "reproduction/migration-validation.json"
+  ],
+  "removed_code_recoverable_from": "7deabf12c31d56b8f553b259b880e427a51d68ca"
+}

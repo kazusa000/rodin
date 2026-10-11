@@ -3,15 +3,14 @@
 # See LICENSE in the Rodin repository root.
 import os
 from pathlib import Path
-import sys
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-from kelvin_bem import bem_kcq_score as bem
-from kelvin_bem import bem_cuda_operator as cuda
+from kelvin_bem import bem_solver as bem
+from kelvin_bem import cuda_operator as cuda
 
 
 def panels():

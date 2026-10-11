@@ -1,6 +1,8 @@
 {
   "cpu_host": "user@cpu-host",
   "gpu_host": "gpu-host",
+  "cpu_tailscale_ip": "100.x.y.z",
+  "gpu_tailscale_ip": "100.a.b.c",
   "cpu_source": "/path/to/cpu/rodin",
   "gpu_source": "/path/to/gpu/rodin",
   "cpu_python": "/path/to/cpu/venv/bin/python",

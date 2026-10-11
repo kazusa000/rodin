@@ -3,12 +3,11 @@
 # See LICENSE in the Rodin repository root.
 
 from pathlib import Path
-import sys
 
 import numpy as np
 import pytest
 
-from kelvin_bem import bem_kcq_score as bem
+from kelvin_bem import bem_solver as bem
 
 
 def panels():

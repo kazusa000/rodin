@@ -1,10 +1,31 @@
-# Single-checkout KelvinBall + BEM workflow
+# KelvinBall + BEM: shared workflow guide
 
 All source belongs to the Rodin fork's `codex/clement-swift-bem` branch.
 The native KelvinBall solver, BEM/CUDA operator, six outer-wall velocity
 families, acceptance controller, diagnostics and viewers are distributed in
 this example. No Project03 checkout, nested BEM repository or binary-only
 dependency is required.
+
+## Choose the right entry point
+
+Use `scripts/kelvin-bem.py`, not individual Python files. Main commands are
+`native`, `bem`, `compare` and `viewer`; setup uses `build-cuda` and
+`baseline`. Advanced tools are grouped under `diagnostics`.
+
+The workflow is:
+
+1. Build the native solver and CUDA operator; run `native checks`.
+2. Generate the fixed sphere with `native initial`, or supply an accepted mesh.
+3. Measure it with `bem`; the outputs are `bem.json` and `outer-values.txt`.
+4. Propose a level-set/MMG or SWIFT candidate with `native step`.
+5. Check its thickness/connectivity and measure the candidate with BEM.
+   Only the actual `rho-P` Armijo decision accepts it.
+6. Render retained accepted histories with `viewer`.
+
+`compare` performs steps 2–5 for **one accepted update per backend** from the
+same input, followed by the existing FD and same-target reconstruction checks.
+It is a validation entry point, not a complete long optimization loop.
+The native proposal and BEM workers do not accept a shape on their own.
 
 ## Source and unchanged method
 
@@ -14,9 +35,12 @@ Python workflows come from Project03 `067f8e9`, while the complete BEM and
 CUDA operator come from the actually used verifier `12f38a9`, not the
 different historical scorer at Project03 HEAD. Source/function checksums are
 in [migration-provenance.json](reproduction/migration-provenance.json).
-109 original numerical definitions retain identical ASTs after removal of
-import declarations; the CUDA arithmetic body is unchanged. Only package
-imports, source/output paths, deployment and source-version bookkeeping change.
+The original migration retained 109 numerical definitions. Subsequent
+source cleanup removed 10 uncalled historical definitions; the 99 retained
+definitions still match their original ASTs, apart from imports and the
+renamed bundled-module filename guard. Native source, CUDA arithmetic and the
+numerical preset remain unchanged. See [SOURCE_CLEANUP.md](docs/SOURCE_CLEANUP.md)
+for the complete rename/deletion record.
 
 The method remains n13 cubic O24, a fixed `0.02 H3 H6` perturbed sphere,
 six BEM wall traces, FEM internal states and strain direction, volume-nullspace
@@ -44,7 +68,18 @@ BEM diagnostics, not closed-body physical or printing acceptance.
 ```text
 KelvinBall/
   *.cpp, *.h                  Existing native Carlos solver and BEM interfaces
-  python/kelvin_bem/          BEM, IO, geometry, acceptance and orchestration
+  python/kelvin_bem/
+    native_worker.py          Native build, checks, initial mesh and one proposal
+    bem_worker.py             BEM measurement and six outer-wall traces
+    compare_backends.py       One-update MMG/SWIFT comparison and acceptance
+    bem_solver.py             Shared CPU BEM solver and residual reference
+    bem_boundary.py           Coefficients and outer-wall velocity evaluation
+    cuda_operator.py          Optional GPU operator binding
+    acceptance.py             Existing merit, thickness and fragmentation gates
+    periodic_geometry.py      Rotation/seam diagnostics (no correction pathway)
+    solid_connectivity.py     Full-group solid connectivity
+    history_viewer.py         Saved-history rotating/slider viewer
+    ...                       IO, exports, audits, scans and rendering support
   cuda/bem_quotient_cuda.cu   Optional FP64 GPU operator source
   scripts/kelvin-bem.py       One entry point, usable from any working directory
   scripts/templates/         Lossless full-resolution rotating/slider viewer
@@ -116,15 +151,18 @@ KELVIN_SYMMETRY=cubic python examples/ShapeOptimization/KelvinBall/scripts/kelvi
 
 For the distributed workflow, copy [nodes.example.json](reproduction/nodes.example.json)
 to an external deployment configuration and set hosts, interpreter/checkouts,
-build and unique output paths. Explicit CLI deployment flags take precedence.
+build, Tailscale node IPs and unique output paths. Replace every placeholder,
+including `cpu_tailscale_ip` and `gpu_tailscale_ip`; these are deployment
+settings, not numerical parameters. Defaults retain the registered 28h/2060
+deployment. Explicit CLI deployment flags take precedence.
 The fixed preset continues to govern the numerical method.
 
 ```sh
-KELVIN_SYMMETRY=cubic python examples/ShapeOptimization/KelvinBall/scripts/kelvin-bem.py paired-check \
+KELVIN_SYMMETRY=cubic python examples/ShapeOptimization/KelvinBall/scripts/kelvin-bem.py compare \
   --nodes-config /path/outside/rodin/nodes.json --output /path/outside/rodin/controller-results
 ```
 
-`paired-check` retains the validated bounded campaign: one BEM-accepted update
+`compare` retains the validated bounded campaign: one BEM-accepted update
 for each backend from a shared input, centered FD diagnostics and same-target
 reconstruction. It is not a long optimization or a T12 migration. `--mesh`
 can supply an existing accepted checkpoint; omitting it generates the fixed
@@ -140,13 +178,20 @@ restart is introduced. Unique outputs retain rejected candidates as evidence.
 
 ## Diagnostics and viewer
 
-`export-chamber` restores exact saved chamber coordinates, `export-target`
-preserves the original saved nodal target, and `audit` compares reconstruction
+`diagnostics export-chamber` restores exact saved chamber coordinates,
+`diagnostics export-target` preserves the original saved nodal target, and
+`diagnostics audit` compares reconstruction
 against that target. `viewer` retains the rotating, iteration-slider HTML
 format and lossless full-panel data. Accepted history chains and old result
 metadata remain readable without importing code from their original 03 tree.
 For remote viewer export, `--reader-source` points to this Rodin checkout,
 not to an old Project03 reader. No HDF5 is downloaded by that viewer workflow.
+
+Run `diagnostics --help` for the export/audit/geometry/scan/plot tools. Old
+`paired-check` and flat diagnostic commands still forward to the same current
+implementations with a naming notice, so published launch commands remain
+usable. There are no duplicate legacy modules. Old T12 history formats remain
+readable; this does not add a T12 native solver to the current cubic workflow.
 
 Each command provides `--help`. Tests run from the single checkout:
 
