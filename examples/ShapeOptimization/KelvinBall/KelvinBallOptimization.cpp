@@ -363,7 +363,7 @@ namespace KelvinBall
         }
         const auto& options = *m_reconstructionOptions;
         MinSTCut classifier(static_cast<const KelvinBall::Mesh&>(classified));
-        decltype(classifier)::Parameters parameters;
+        typename decltype(classifier)::Parameters parameters;
         parameters.fidelity = options.classification.fidelity;
         parameters.smoothing = [&](const Polytope& face) {
           const auto& cells =
