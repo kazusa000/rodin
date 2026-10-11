@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 import numpy as np
 from . import clement_boundary as boundary
+from . import carlos_reference as common
 
 
 def geometry_diagnostics(mesh, symmetry="terra"):

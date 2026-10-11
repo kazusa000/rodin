@@ -50,6 +50,16 @@ def test_source_roots_and_cuda_are_bundled():
             common.external(path)
 
 
+def test_geometry_contract_runs_on_the_versioned_sphere_mesh():
+    from kelvin_bem.clement_rho import geometry_diagnostics
+    mesh = common.EXAMPLE / "input/chamber_1_24_sphere_a8.mesh"
+    result = geometry_diagnostics(mesh, "cubic")
+    assert result["mesh_sha256"] == common.digest(mesh)
+    assert result["volume_full"] > 0 and result["chamber_panels"] > 0
+    assert result["full24"]["triangles"] == 24 * result["chamber_panels"]
+    assert result["solid_connectivity"]["group_order"] == 24
+
+
 @pytest.mark.parametrize("command", ["native", "bem", "paired-check", "build-cuda", "viewer"])
 def test_entry_from_an_unrelated_directory_needs_no_03_checkout(tmp_path, command):
     env = dict(os.environ)
