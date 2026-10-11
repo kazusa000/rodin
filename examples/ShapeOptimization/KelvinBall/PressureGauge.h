@@ -13,7 +13,7 @@ namespace KelvinBall
    * pressure nullspace. Components touching the outer box or rotated cuts
    * are not pinned: their pressure families may be coupled by the cuts.
    * Vertex CCL follows P1 connectivity, including cells sharing a vertex.
-   * Requires vertex adjacency prepared by prepare(). No geometry is changed.
+   * Requires explicitly discovered vertex adjacency (0 -> 0). No geometry is changed.
    */
   inline IndexSet enclosedPressureReferences(const PressureSpace& space)
   {
