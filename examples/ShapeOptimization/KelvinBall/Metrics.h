@@ -361,7 +361,7 @@ namespace KelvinBall
     private:
       auto outerTrace(size_t load) const
       {
-        return VectorFunction([this, load](const Geometry::Point& point) {
+        return VectorFunction(3, [this, load](const Geometry::Point& point) {
           return m_outer ? m_outer->value(point, load) : Math::SpatialVector<Real>{0, 0, 0};
         });
       }
