@@ -1,6 +1,7 @@
 #include "BEM.h"
 #include <Rodin/Solver/PartialPivLU.h>
 #include <map>
+#include <sstream>
 #include <utility>
 
 namespace KelvinBall
@@ -54,7 +55,17 @@ namespace KelvinBall
       auto linear = Integral(rigid, test);
       linear.setOrder(m_order);
       problem = form - linear;
-      if (load == 0) problem.solve(solver);
+      if (load == 0)
+      {
+        problem.solve(solver);
+        const auto& A = problem.getLinearSystem().getOperator();
+        const Real asymmetry = (A-A.transpose()).norm()/std::max(A.norm(), Real(1e-30));
+        if (asymmetry > 1e-12)
+        {
+          std::ostringstream message; message << "BEM operator is not symmetric: " << asymmetry;
+          throw std::runtime_error(message.str());
+        }
+      }
       else
       {
         problem.assemble(AssemblyTarget::RHS);
@@ -73,7 +84,11 @@ namespace KelvinBall
     result.resistance = rhs.transpose() * solution;
     result.reciprocity = (result.resistance - result.resistance.transpose()).norm() /
       std::max(result.resistance.norm(), Real(1));
-    if (result.reciprocity > 1e-9) throw std::runtime_error("BEM reciprocity check failed.");
+    if (result.reciprocity > 1e-9)
+    {
+      std::ostringstream message; message << "BEM reciprocity check failed: " << result.reciprocity;
+      throw std::runtime_error(message.str());
+    }
     result.k = result.resistance.topLeftCorner(3, 3).trace() / 3;
     result.q = result.resistance.bottomRightCorner(3, 3).trace() / 3;
     result.c = (result.resistance.topRightCorner(3, 3).trace() +
@@ -193,7 +208,9 @@ namespace KelvinBall
                                   Math::Vector<Real>& load, bool derivative) const
   {
     SewedOutput full(chamber, {Gamma});
-    const auto solid = full.getMesh().keep(Obstacle);
+    full.getMesh().getConnectivity().compute(2, 3);
+    auto solid = full.getMesh().keep(Obstacle);
+    solid.getConnectivity().compute(2, 3);
     const auto skin = solid.skin();
     const auto surface = skin.keep(Gamma);
     auto result = evaluate(surface, derivative);

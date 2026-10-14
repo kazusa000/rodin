@@ -812,7 +812,7 @@ namespace KelvinBall
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
-          : sphere.discretize(false, requestedWelschScale);
+          : sphere.discretize(m_options.bemGradient, requestedWelschScale);
         ReconstructionDiagnostics reconstruction = initial.diagnostics;
         Optional<MMG::Mesh> swiftBackground;
         Real backgroundH = std::numeric_limits<Real>::quiet_NaN();
