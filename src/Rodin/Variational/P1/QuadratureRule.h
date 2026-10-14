@@ -4473,6 +4473,43 @@ namespace Rodin::Variational
         const auto& testfe = testfes.getFiniteElement(
           tep.getDimension(), tep.getIndex());
 
+        // Smooth nonlocal kernels can be integrated directly on every pair.
+        // The previous singular/collapsed path is unchanged unless the kernel
+        // explicitly declares this property. Geometry supplies mapped points
+        // and measures; finite-element spaces supply the component/DOF layout.
+        if constexpr (requires { KernelType::SmoothKernel; })
+        {
+          if constexpr (KernelType::SmoothKernel && FormLanguage::IsVectorRange<Range>::Value)
+          {
+            const auto& trq = QF::PolytopeQuadratureFormula::get(
+              trg, this->getOrder(trp).value_or(7));
+            const auto& teq = QF::PolytopeQuadratureFormula::get(
+              teg, this->getOrder(tep).value_or(7));
+            const auto& tx = trp.getQuadrature(trq);
+            const auto& ty = tep.getQuadrature(teq);
+            m_matrix.setZero(testfe.getCount(), trialfe.getCount());
+            for (size_t a = 0; a < tx.getSize(); ++a)
+            {
+              for (size_t b = 0; b < ty.getSize(); ++b)
+              {
+                const auto& x = tx.getPoint(a);
+                const auto& y = ty.getPoint(b);
+                kernel(m_mk, x, y);
+                const Real weight = trq.getWeight(a) * teq.getWeight(b) *
+                  x.getDistortion() * y.getDistortion();
+                for (size_t l = 0; l < testfe.getCount(); ++l)
+                  for (size_t m = 0; m < trialfe.getCount(); ++m)
+                    m_matrix(l, m) += weight * Math::dot(
+                      m_mk * trialfe.getBasis(m)(trq.getPoint(a)),
+                      testfe.getBasis(l)(teq.getPoint(b)));
+              }
+            }
+            m_distortion = 1;
+            m_weight = 1;
+            return *this;
+          }
+        }
+
         // The regularised integrand is smooth but not polynomial for the
         // singular kernels this exists for, so the order is an accuracy
         // choice rather than a degree that can be inferred. Seven is exact

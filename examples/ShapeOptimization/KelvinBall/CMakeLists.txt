@@ -1,4 +1,5 @@
 add_library(KelvinBallSupport STATIC EXCLUDE_FROM_ALL
+  BEM.cpp
   Common.cpp
   Configuration.cpp
   LaplacianSmoothing.cpp
@@ -29,3 +30,6 @@ foreach(check OuterVelocityTest PressureGaugeTest SeedTest SoftThicknessDiagnost
   add_executable(KelvinBall${check} EXCLUDE_FROM_ALL ${check}.cpp)
   target_link_libraries(KelvinBall${check} PRIVATE KelvinBallSupport)
 endforeach()
+
+add_executable(KelvinBallBEMValidation EXCLUDE_FROM_ALL BEMValidation.cpp)
+target_link_libraries(KelvinBallBEMValidation PRIVATE KelvinBallSupport)

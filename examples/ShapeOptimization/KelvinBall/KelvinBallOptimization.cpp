@@ -42,6 +42,7 @@
 
 #include "Configuration.h"
 #include "Metrics.h"
+#include "BEM.h"
 #include "RotatedCharacteristicContinuation.h"
 #include "NodalTransport.h"
 #include "RotatedNitscheIntegrator.h"
@@ -90,6 +91,9 @@ namespace KelvinBall
           Real stepFactor = 0.1;
           Real minimumThickness = 0;
           bool boundaryStep = false;
+          bool bemGradient = false;
+          size_t bemOrder = 3;
+          Real bemEpsilonFactor = 0.6;
           bool reconstructOnly = false;
           Real softThickness = 0;
           Real softThicknessWeight = 1;
@@ -115,6 +119,9 @@ namespace KelvinBall
               else if (mode.rfind("--thickness-min=", 0) == 0)
                 minimumThickness = std::stod(std::string(mode.substr(16)));
               else if (mode == "--boundary-step") boundaryStep = true;
+              else if (mode == "--bem-gradient") bemGradient = true;
+              else if (mode.rfind("--bem-order=", 0) == 0) bemOrder = std::stoul(std::string(mode.substr(12)));
+              else if (mode.rfind("--bem-epsilon-factor=", 0) == 0) bemEpsilonFactor = std::stod(std::string(mode.substr(21)));
               else if (mode == "--reconstruct-only") reconstructOnly = true;
               else if (mode.rfind("--mesh=", 0) == 0) inputMesh = mode.substr(7);
               else if (mode.rfind("--outer-values=", 0) == 0) outerValues = mode.substr(15);
@@ -158,6 +165,9 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
+            if (bemGradient && (boundaryStep || reconstructOnly || minimumThickness > 0 ||
+                bemOrder < 2 || !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
+              throw std::runtime_error("Native BEM needs order >= 2, positive epsilon factor, and disabled external states/thickness correction.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
             if (!(regularizationFactor > 0))
@@ -1693,8 +1703,30 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
     const KelvinBall::Metrics resistanceMetrics(metricParameters,
       m_options.boundaryStep ? &outer : nullptr);
-    const KelvinBall::Values metrics = resistanceMetrics.evaluateChamber(
-      Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
+    P1 shapeSpace(mesh, 3);
+    KelvinBall::Values metrics;
+    KelvinBall::BEM::Result bemResult;
+    Math::Vector<Real> bemLoad;
+    if (m_options.bemGradient)
+    {
+      bemResult = BEM(m_options.bemOrder, m_options.bemEpsilonFactor).evaluateChamber(
+        mesh, shapeSpace, bemLoad, !m_options.stateOnly);
+      if (bemResult.openEdges)
+        throw std::runtime_error("Native BEM refuses an open sewn body surface; repair the chamber seam first.");
+      metrics.k = bemResult.k; metrics.c = bemResult.c; metrics.q = bemResult.q;
+      metrics.rho = bemResult.rho; metrics.couplingSymmetry = bemResult.reciprocity;
+      std::ofstream nativeRecord("bem-state-" + std::to_string(iteration) + ".json");
+      nativeRecord << std::setprecision(17) << "{\"k\":" << metrics.k << ",\"c\":" << metrics.c
+        << ",\"q\":" << metrics.q << ",\"rho\":" << metrics.rho
+        << ",\"residual\":" << bemResult.residual << ",\"reciprocity\":" << bemResult.reciprocity
+        << ",\"epsilon\":" << bemResult.epsilon << ",\"panels\":" << bemResult.panels
+        << ",\"open_edges\":" << bemResult.openEdges << "}\n";
+      if (!nativeRecord) throw std::runtime_error("Failed saving native BEM state.");
+      saveExact(mesh, "bem-chamber-" + std::to_string(iteration) + ".mesh");
+    }
+    else
+      metrics = resistanceMetrics.evaluateChamber(
+        Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
     stageSeconds[2] = elapsedSeconds(stage3Start);
     reportStageTiming(3, stageSeconds[2]);
     const Real k = m_options.boundaryStep ? bodyResistance[0] : metrics.k;
@@ -1931,7 +1963,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       signC / std::sqrt(k * q) * cDensity - 0.5 * rho * (kDensity / k + qDensity / q);
 
     P1 levelSetSpace(mesh);
-    P1 shapeSpace(mesh, 3);
     KelvinBall::RotatedNitscheIntegrator shapeCoupling(mesh,
       FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
       rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
@@ -2124,8 +2155,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                       << Alert::Notation::Number(components.tangentialFraction)
                       << Alert::Raise;
       }
-      rhoGradientDiagnostics =
-        identifyGradient(identification, -rhoDensity, rhoGradient, "Rho",
+      if (m_options.bemGradient)
+      {
+        // The level set uses +theta in its material derivative: physical motion is -theta.
+        bemLoad *= -1;
+        rhoGradientDiagnostics = identifyGradient(identification, RealFunction{0},
+          rhoGradient, "Native BEM rho", &bemLoad);
+      }
+      else
+        rhoGradientDiagnostics = identifyGradient(identification, -rhoDensity, rhoGradient, "Rho",
           m_options.softThickness > 0 ? &softLoad : nullptr);
       volumeGradientDiagnostics =
         identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
@@ -2137,6 +2175,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
     dVolume = FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
     dRho.assemble();
+    if (m_options.bemGradient) dRho.getVector() = bemLoad;
     dVolume.assemble();
     const Real volumeMetric = dVolume(volumeGradient);
     if (!(std::isfinite(volumeMetric) && std::abs(volumeMetric) > Real(1e-20)))
@@ -2757,7 +2796,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
     checkFixedGeometry(result.mesh, outerRadius);
     checkMaterials(result.mesh);
-    if (m_options.boundaryStep) saveExact(result.mesh, "candidate.mesh");
+    if (m_options.boundaryStep || m_options.bemGradient) saveExact(result.mesh, "candidate.mesh");
     nextMesh.emplace(std::move(result.mesh));
     stageSeconds[8] = elapsedSeconds(stage9Start);
     reportStageTiming(9, stageSeconds[8]);
