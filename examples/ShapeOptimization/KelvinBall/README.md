@@ -1,3 +1,10 @@
+# Native BEM gradient research entry
+
+The `codex/p03-bem-gradient` branch adds C++/Rodin regularized Galerkin BEM states,
+the exact discrete coordinate derivative and first-update checks. Start with
+[NATIVE_BEM_GRADIENT.md](NATIVE_BEM_GRADIENT.md). The existing default FEM example
+and coupled integration material below retain their own scope.
+
 # KelvinBall: native solver + BEM
 
 This example contains the native Carlos solver, MMG/SWIFT reconstruction,

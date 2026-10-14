@@ -33,3 +33,6 @@ endforeach()
 
 add_executable(KelvinBallBEMValidation EXCLUDE_FROM_ALL BEMValidation.cpp)
 target_link_libraries(KelvinBallBEMValidation PRIVATE KelvinBallSupport)
+
+add_executable(KelvinBallBEMMMGValidation EXCLUDE_FROM_ALL BEMMMGValidation.cpp)
+target_link_libraries(KelvinBallBEMMMGValidation PRIVATE KelvinBallSupport Rodin::Advection)

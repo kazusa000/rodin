@@ -1,5 +1,11 @@
 # KelvinBall + BEM: shared workflow guide
 
+On `codex/p03-bem-gradient`, use [the native BEM gradient entry](NATIVE_BEM_GRADIENT.md)
+for the new C++/Rodin states, discrete derivative and first-update verification.
+The Python/CUDA coupled workflow described below remains historical/integration
+reference for `codex/p03-bem-coupled`; it is not the numerical core of the native
+gradient implementation.
+
 All source belongs to the Rodin fork's `codex/clement-swift-bem` branch.
 The native KelvinBall solver, BEM/CUDA operator, six outer-wall velocity
 families, acceptance controller, diagnostics and viewers are distributed in

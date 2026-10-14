@@ -1,4 +1,4 @@
-#include "Sphere.h"
+#include "Common.h"
 #include "SewedOutput.h"
 #include "RotatedNitscheIntegrator.h"
 #include <iostream>
@@ -9,10 +9,30 @@ int main()
 {
   try
   {
-    Configuration configuration;
-    configuration.points = 5;
-    configuration.finalize();
-    auto mesh = Sphere(configuration).makeUniformChamber();
+    // Two tetrahedra form the canonical O24 chamber, with matching planar traces.
+    KelvinBall::Mesh::Builder builder;
+    builder.initialize(3).nodes(5);
+    for (const Math::SpatialPoint x : std::vector<Math::SpatialPoint>{
+      {0,0,0}, {2,0,0}, {2,2,0}, {2,2,2}, {2,2,-2}}) builder.vertex(x);
+    for (const auto& tetra : std::vector<std::array<Index,4>>{{0,1,2,3},{0,1,4,2}})
+    {
+      IndexArray vertices(4);
+      for (size_t i=0; i<4; ++i) vertices(i)=tetra[i];
+      Index index;
+      builder.polytope(Polytope::Type::Tetrahedron, std::move(vertices), index);
+      builder.attribute({3,index}, Fluid);
+    }
+    auto mesh = builder.finalize();
+    mesh.getConnectivity().compute(2,3);
+    for (auto face=mesh.getBoundary(); face; ++face)
+    {
+      const auto x=centroid(mesh,*face);
+      Attribute attribute;
+      if (std::abs(x(0)-2) < 1e-12) attribute=Outer;
+      else if (std::abs(x(0)-x(1)) < 1e-12) attribute=x(2)<0 ? SigmaXYMinus : SigmaXYPlus;
+      else attribute=x(2)<0 ? SigmaMinus : SigmaPlus;
+      mesh.setAttribute({2,face->getIndex()},attribute);
+    }
     P1 scalarSpace(mesh);
     VelocitySpace vectorSpace(mesh, 3);
     GridFunction scalar(scalarSpace);
@@ -50,7 +70,7 @@ int main()
       FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus}, .01, .25);
     const Real scalarJump = coupling.scalarJump(scalar), vectorJump = coupling.vectorJump(vector);
     if (scalarJump > 1e-11 || vectorJump > 1e-11)
-      throw std::runtime_error("Projected uniform-chamber traces do not match.");
+      throw std::runtime_error("Projected canonical-chamber traces do not match.");
     std::cout << "adjoint_error=" << std::abs(left-right) << " scalar_jump=" << scalarJump
       << " vector_jump=" << vectorJump << '\n';
     return 0;
