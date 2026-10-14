@@ -151,7 +151,7 @@ namespace KelvinBall
 
   Real Configuration::getGradedSize(const Math::SpatialPoint& point, Real h) const
   {
-    const Real extent = point.cwiseAbs().maxCoeff();
+    const Real extent = std::max({std::abs(point(0)), std::abs(point(1)), std::abs(point(2))});
     // A geometric progression of edge lengths yields a size increasing linearly
     // with distance. The entire old box retains its interface target h.
     const Real distance = std::max(Real(0), extent - nearFieldRadius);

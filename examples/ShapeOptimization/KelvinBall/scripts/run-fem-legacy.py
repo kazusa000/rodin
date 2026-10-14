@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--python", type=Path, required=True)
     parser.add_argument("--historical-record", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=6)
+    parser.add_argument("--reuse-build-dir", action="store_true")
     args = parser.parse_args()
     if platform.node() != "28h":
         raise ValueError("This experiment must run entirely on 28h.")
@@ -42,7 +43,7 @@ def main():
         if git(source, "rev-parse", "HEAD") != commit or git(source, "status", "--porcelain", "--untracked-files=all"):
             raise ValueError(f"Require exact clean pinned source: {source}")
     for path in [args.output, args.build_dir]:
-        if path.exists() or path.resolve().is_relative_to(ROOT):
+        if (path.exists() and not (path == args.build_dir and args.reuse_build_dir)) or path.resolve().is_relative_to(ROOT):
             raise ValueError(f"Require a new directory outside source: {path}")
     args.output.mkdir(parents=True)
     build = json.loads(args.build_record.read_text())
