@@ -89,16 +89,18 @@ def main():
     for source, commit in [(ROOT, args.commit), (args.verifier, BEM_COMMIT)]:
         if git(source, "rev-parse", "HEAD") != commit or git(source, "status", "--porcelain", "--untracked-files=all"):
             raise ValueError("Require exact clean pinned controller and verifier.")
-    fem = json.loads(args.fem_campaign.read_text())
+    fem_record = args.fem_campaign.read_bytes()
+    fem = json.loads(fem_record)
     stage = next(s for s in fem["stages"] if s["name"] == "optimization")
     if stage.get("exit_code") != 0 or fem.get("real_updates") != 5:
         raise ValueError("Require five completed native FEM updates before evaluation.")
     simulation = args.fem_campaign.parent / "optimization"
     args.output.mkdir(parents=True, exist_ok=False)
+    (args.output / "native-fem-campaign.json").write_bytes(fem_record)
     env = dict(os.environ, KELVIN_SYMMETRY="cubic", OPENBLAS_NUM_THREADS="1",
                MKL_NUM_THREADS="1", OMP_NUM_THREADS="6", PYTHONDONTWRITEBYTECODE="1")
     record = dict(controller_commit=args.commit, native_fem_commit=fem["commit"],
-                  fem_campaign_sha256=digest(args.fem_campaign), source=str(ROOT),
+                  fem_campaign_sha256=hashlib.sha256(fem_record).hexdigest(), source=str(ROOT),
                   verifier_commit=BEM_COMMIT, device="cpu", host=platform.node(),
                   started_at=time.time(), evaluations=[], state="independent_bem")
 
