@@ -2164,8 +2164,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
       if (m_options.bemGradient)
       {
-        // The level set uses +theta in its material derivative: physical motion is -theta.
-        bemLoad *= -1;
+        // Flow(-dt) pulls back phi: the physical boundary advances along +theta.
         rhoGradientDiagnostics = identifyGradient(identification, RealFunction{0},
           rhoGradient, "Native BEM rho", &bemLoad);
       }

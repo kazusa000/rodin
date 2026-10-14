@@ -30,6 +30,7 @@ foreach(check OuterVelocityTest PressureGaugeTest SeedTest SoftThicknessDiagnost
   add_executable(KelvinBall${check} EXCLUDE_FROM_ALL ${check}.cpp)
   target_link_libraries(KelvinBall${check} PRIVATE KelvinBallSupport)
 endforeach()
+target_link_libraries(KelvinBallQuotientProjectionTest PRIVATE Rodin::Advection)
 
 add_executable(KelvinBallBEMValidation EXCLUDE_FROM_ALL BEMValidation.cpp)
 target_link_libraries(KelvinBallBEMValidation PRIVATE KelvinBallSupport)

@@ -114,7 +114,7 @@ int main()
           DirichletBC(trial,VectorFunction{0,0,0}).on(Outer);
         problem.assemble(AssemblyTarget::RHS);
         auto& system=problem.getLinearSystem();
-        if (state==0) system.getVector()-=physicalLoad;
+        if (state==0) system.getVector()+=physicalLoad;
         else system.getVector()+=volumeForm.getVector();
         problem.solve(solver);
         const Real residual=(system.getOperator()*system.getSolution()-system.getVector()).norm()/
@@ -133,7 +133,7 @@ int main()
     GridFunction magnitude(scalarSpace);
     magnitude=Frobenius(theta);
     theta/=std::max(magnitude.max(),Real(1e-30));
-    const Real slope=-physicalLoad.dot(theta.getData());
+    const Real slope=physicalLoad.dot(theta.getData());
     if (!(slope>0)) throw std::runtime_error("Native BEM transport direction is not ascent.");
     GridFunction distance(scalarSpace);
     Distance::Eikonal(distance).setInterior(Obstacle).setInterface(Gamma).solve().sign();

@@ -2,6 +2,7 @@
 #include "SewedOutput.h"
 #include "RotatedNitscheIntegrator.h"
 #include <iostream>
+#include <Rodin/Advection/Lagrangian.h>
 
 using namespace KelvinBall;
 
@@ -33,6 +34,7 @@ int main()
       else attribute=x(2)<0 ? SigmaMinus : SigmaPlus;
       mesh.setAttribute({2,face->getIndex()},attribute);
     }
+    mesh.getConnectivity().compute(3,2);
     P1 scalarSpace(mesh);
     VelocitySpace vectorSpace(mesh, 3);
     GridFunction scalar(scalarSpace);
@@ -41,6 +43,13 @@ int main()
       scalar.getData()(i) = std::sin(Real(i + 1) * .73);
     for (Eigen::Index i = 0; i < vector.getData().size(); ++i)
       vector.getData()(i) = std::sin(Real(i + 1) * .51);
+    GridFunction coordinate(scalarSpace);
+    coordinate=RealFunction([](const Point& p) { return p.x(); });
+    const auto cell=mesh.getCell();
+    const Point point(*cell,Math::SpatialPoint{.25,.25,.25});
+    const auto backtrace=Flow(Real(-.01),coordinate,VectorFunction{1,0,0},Math::RungeKutta::RK4{});
+    if (std::abs(backtrace.getValue(point)-(point.x()-.01))>1e-11)
+      throw std::runtime_error("Negative-time pullback must advance the boundary along +velocity.");
     const SewedOutput quotient(mesh);
     VelocitySpace fullSpace(quotient.getMesh(), 3);
     GridFunction fullVector(fullSpace);
