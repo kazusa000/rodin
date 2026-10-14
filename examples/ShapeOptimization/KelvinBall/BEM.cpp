@@ -20,13 +20,19 @@ namespace KelvinBall
       if (v.size() != 3) throw std::runtime_error("BEM supports affine triangles only.");
       for (size_t i = 0; i < 3; ++i)
         ++edgeCounts[std::minmax(v(i), v((i + 1) % 3))];
-      totalArea += cell->getVolume();
+      const Math::SpatialVector<Real> a = surface.getVertexCoordinates(v(0));
+      const Math::SpatialVector<Real> b = surface.getVertexCoordinates(v(1));
+      const Math::SpatialVector<Real> c = surface.getVertexCoordinates(v(2));
+      const Real area = (b-a).cross(c-a).norm()/2;
+      if (!(area > 0)) throw std::runtime_error("Degenerate BEM panel.");
+      totalArea += area;
     }
     for (const auto& [edge, count] : edgeCounts)
     {
       if (count > 2) throw std::runtime_error("Nonmanifold BEM surface.");
       if (count != 2) ++result.openEdges;
     }
+    if (result.openEdges) throw std::runtime_error("BEM requires a closed body surface.");
     result.epsilon = m_epsilonFactor * std::sqrt(totalArea / result.panels);
     RegularizedStokeslet kernel(result.epsilon, m_viscosity);
     VelocitySpace space(surface, 3);
@@ -39,12 +45,12 @@ namespace KelvinBall
     Math::Matrix<Real> rhs(space.getSize(), 6), solution(space.getSize(), 6);
     for (size_t load = 0; load < 6; ++load)
     {
-      VectorFunction rigid = [load](const Point& p) {
+      VectorFunction rigid(3, [load](const Point& p) {
         Math::SpatialVector<Real> velocity(3), axis(3);
         axis.setZero(); axis(load % 3) = 1;
         velocity = load < 3 ? axis : Math::SpatialVector<Real>(axis.cross(p.vector()));
         return velocity;
-      };
+      });
       auto linear = Integral(rigid, test);
       linear.setOrder(m_order);
       problem = form - linear;
@@ -121,7 +127,7 @@ namespace KelvinBall
         sample.weight = qf.getWeight(q) * quadrature.getPoint(q).getDistortion();
         sample.density.setZero(3, 6);
         for (size_t i = 0; i < fe.getCount(); ++i)
-          sample.density += fe.getBasis(i)(qf.getPoint(q)) * solution.row(dofs(i));
+          sample.density += fe.getBasis(i)(qf.getPoint(q)).getData() * solution.row(dofs(i));
         for (size_t i = 0; i < 3; ++i)
         {
           sample.vertices[i] = vertices(i);
@@ -137,7 +143,7 @@ namespace KelvinBall
     auto deposit = [&](const Sample& sample, const Math::SpatialVector<Real>& dx, Real dArea) {
       for (size_t i = 0; i < 3; ++i)
         result.gradient.row(sample.vertices[i]) +=
-          (sample.barycentric[i] * dx + dArea * sample.areaGradient[i]).transpose();
+          (sample.barycentric[i] * dx + dArea * sample.areaGradient[i]).getData().transpose();
     };
     for (const auto& x : samples)
     {
@@ -146,11 +152,11 @@ namespace KelvinBall
       for (size_t i = 0; i < 3; ++i)
       {
         Math::SpatialVector<Real> axis(3); axis.setZero(); axis(i) = 1;
-        rigid.col(i + 3) = axis.cross(x.x);
+        rigid.col(i + 3) = axis.cross(x.x).getData();
       }
       const Math::Matrix<Real> P = 2 * x.density * W;
       Math::SpatialVector<Real> dx(3);
-      dx << P(1, 5)-P(2, 4), P(2, 3)-P(0, 5), P(0, 4)-P(1, 3);
+      dx.getData() << P(1, 5)-P(2, 4), P(2, 3)-P(0, 5), P(0, 4)-P(1, 3);
       const Real value = (P.cwiseProduct(rigid)).sum() * x.weight;
       deposit(x, Math::SpatialVector<Real>(dx * x.weight), value / x.area);
       for (const auto& y : samples)
@@ -160,7 +166,7 @@ namespace KelvinBall
         Math::SpatialMatrix<Real> K(3, 3); kernel.evaluate(K, r);
         Math::SpatialVector<Real> dr(3); Real de;
         kernel.differential(r, H, dr, de);
-        const Real value = H.cwiseProduct(K).sum();
+        const Real value = H.getData().cwiseProduct(K.getData()).sum();
         deposit(x, dr, value / x.area);
         deposit(y, Math::SpatialVector<Real>(-dr), value / y.area);
         epsilonGradient += de;
@@ -175,9 +181,9 @@ namespace KelvinBall
       const Math::SpatialVector<Real> b = surface.getVertexCoordinates(v(1));
       const Math::SpatialVector<Real> c = surface.getVertexCoordinates(v(2));
       Math::SpatialVector<Real> n = (b-a).cross(c-a); n.normalize();
-      result.gradient.row(v(0)) += (areaCoefficient * (b-c).cross(n) / 2).transpose();
-      result.gradient.row(v(1)) += (areaCoefficient * (c-a).cross(n) / 2).transpose();
-      result.gradient.row(v(2)) += (areaCoefficient * (a-b).cross(n) / 2).transpose();
+      result.gradient.row(v(0)) += (areaCoefficient * (b-c).cross(n) / 2).getData().transpose();
+      result.gradient.row(v(1)) += (areaCoefficient * (c-a).cross(n) / 2).getData().transpose();
+      result.gradient.row(v(2)) += (areaCoefficient * (a-b).cross(n) / 2).getData().transpose();
     }
     if (!result.gradient.allFinite()) throw std::runtime_error("Nonfinite BEM gradient.");
     return result;

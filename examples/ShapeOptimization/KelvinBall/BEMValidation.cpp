@@ -117,8 +117,8 @@ int main()
     {
       direction[i].resize(3);
       for (size_t j=0; j<3; ++j) direction[i](j)=std::sin(Real(3*i+j+1)*.731);
-      analytic += initial.gradient.row(i).dot(direction[i]);
-      dilation += initial.gradient.row(i).dot(vertices[i]);
+      analytic += initial.gradient.row(i).dot(direction[i].getData());
+      dilation += initial.gradient.row(i).dot(vertices[i].getData());
     }
     require(std::abs(dilation) < 1e-9, "Area-dependent epsilon dilation derivative failed.");
     Real smallestError=1;

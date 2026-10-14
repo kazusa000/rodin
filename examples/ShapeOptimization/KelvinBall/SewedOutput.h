@@ -45,7 +45,9 @@ namespace KelvinBall
 
       static const std::vector<Math::SpatialMatrix<Real>>& getCubeRotations();
 
-      /** Adjoint of the existing representative-averaged coordinate transport. */
+      /** Symmetric pullback for admissible, rotation-compatible coordinate motions.
+       * Shared representatives must describe the same full-vertex motion.
+       */
       template <class Space>
       Math::Vector<Real> pullBackCoordinateGradient(
         const Math::Matrix<Real>& gradient, const Space& space) const
@@ -55,7 +57,7 @@ namespace KelvinBall
           for (const auto& source : m_sources[vertex])
           {
             const Math::SpatialVector<Real> value = m_rotations[source.rotation].transpose() *
-              gradient.row(vertex).transpose() / m_sources[vertex].size();
+              Math::SpatialVector<Real>(gradient.row(vertex).transpose()) / m_sources[vertex].size();
             const auto dofs = space.getDOFs(0, source.vertex);
             for (size_t component = 0; component < 3; ++component)
               load(dofs(component)) += value(component);

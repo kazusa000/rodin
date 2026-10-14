@@ -951,6 +951,12 @@ namespace KelvinBall
           << "  Dimensionless quadratic-hinge weight (default: 10)." << Alert::NewLine
           << Alert::Notation("--swift-model-quality-guard=<fraction>")
           << "  Soft guard fraction for that penalty (default: 0.1)." << Alert::NewLine
+          << Alert::Notation("--bem-gradient")
+          << "              Native regularized P1 Galerkin BEM state and gradient." << Alert::NewLine
+          << Alert::Notation("--bem-order=<order>")
+          << "         Smooth surface tensor quadrature (default 3)." << Alert::NewLine
+          << Alert::Notation("--bem-epsilon-factor=<value>")
+          << " Default 0.6; epsilon follows sqrt(mean panel area)." << Alert::NewLine
           << Alert::Notation("--geometry-only")
           << "             Stop after initial reconstruction." << Alert::NewLine
           << Alert::Notation("--state-only")
@@ -1699,7 +1705,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reportStageTiming(2, stageSeconds[1]);
 
     const auto stage3Start = Clock::now();
-    announce("Stage 3: Solving the translational and rotational Stokes states.");
+    announce(m_options.bemGradient ? "Stage 3: Solving six native BEM states." :
+      "Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
     const KelvinBall::Metrics resistanceMetrics(metricParameters,
       m_options.boundaryStep ? &outer : nullptr);
@@ -2172,7 +2179,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     auto interfaceNormal = FaceNormal(mesh);
     interfaceNormal.traceOf(Fluid);
     LinearForm dRho(testField), dVolume(testField);
-    dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
+    if (m_options.bemGradient)
+      dRho = FaceIntegral(RealFunction{0}, Dot(interfaceNormal, testField)).over(Gamma);
+    else
+      dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
     dVolume = FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
     dRho.assemble();
     if (m_options.bemGradient) dRho.getVector() = bemLoad;
@@ -2402,6 +2412,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
       fluidState.clear();
       fluidState.setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
+      if (!m_options.bemGradient)
+      {
       fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
       fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
       fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
@@ -2420,6 +2432,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         motionAngular(0) * uR0.getData() + motionAngular(1) * uR1.getData() +
         motionAngular(2) * uR2.getData();
       fluidState.add("Motion", chamberMotion, IO::XDMF::Center::Node);
+      }
 
       KelvinBall::SewedOutput sewedDesign(mesh, FlatSet<Attribute>{Gamma, Outer});
       P1 sewedDesignScalar(sewedDesign.getMesh());
@@ -2509,6 +2522,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           "Smoothed_Curvature", sewedInterfaceCurvature, IO::XDMF::Center::Node);
       }
 
+      if (!m_options.bemGradient)
+      {
       KelvinBall::SewedOutput sewedFluid(fluid, FlatSet<Attribute>{Gamma, Outer});
       VelocitySpace sewedVelocitySpace(sewedFluid.getMesh(), 3);
       PressureSpace sewedPressureSpace(sewedFluid.getMesh());
@@ -2555,6 +2570,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         motionAngular(0) * sewedUR0.getData() + motionAngular(1) * sewedUR1.getData() +
         motionAngular(2) * sewedUR2.getData();
       sewedFluidOutput.add("Motion", fluidMotion, IO::XDMF::Center::Node);
+      }
       sewedInterfaceOutput.add("Motion", bodyMotion, IO::XDMF::Center::Node);
 
       if (iteration + 1 == m_options.maxIterations && !m_options.boundaryStep)
