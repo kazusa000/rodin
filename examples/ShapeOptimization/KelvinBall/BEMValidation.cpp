@@ -95,6 +95,13 @@ int main()
   try
   {
     std::cout << std::setprecision(17);
+    Math::SpatialVector<Real> separation(3); separation.getData() << .3, -.5, .7;
+    Math::SpatialMatrix<Real> kernelValue(3,3);
+    RegularizedStokeslet(.2, 1).evaluate(kernelValue, separation);
+    const auto expectedKernel = ((separation.squaredNorm()+.08)*Eigen::Matrix3d::Identity() +
+      separation.getData()*separation.getData().transpose()) /
+      (8*std::acos(Real(-1))*std::pow(separation.squaredNorm()+.04,Real(1.5)));
+    require((kernelValue.getData()-expectedKernel).norm() < 1e-14, "Stokeslet outer-product contract failed.");
     BEM bem;
     auto [vertices, faces] = sphere(3);
     const auto spherical = bem.evaluate(surface(vertices, faces), false);

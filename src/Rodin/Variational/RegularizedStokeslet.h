@@ -38,8 +38,10 @@ namespace Rodin::Variational
         const Real r2 = r.squaredNorm(), e2 = m_epsilon * m_epsilon;
         const Real pi = std::acos(Real(-1));
         out.resize(3, 3);
-        out = ((r2 + 2 * e2) * Math::SpatialMatrix<Real>::Identity(3, 3) +
-               r * r.transpose()) / (8 * pi * m_viscosity * std::pow(r2 + e2, Real(1.5)));
+        const Real factor = 1 / (8 * pi * m_viscosity * std::pow(r2 + e2, Real(1.5)));
+        for (size_t i = 0; i < 3; ++i)
+          for (size_t j = 0; j < 3; ++j)
+            out(i, j) = factor * ((i == j ? r2 + 2 * e2 : 0) + r(i) * r(j));
       }
 
       Real getEpsilon() const { return m_epsilon; }
