@@ -1229,7 +1229,7 @@ namespace KelvinBall
           if (attribute && !fixed.contains(*attribute))
             mesh.setAttribute({mesh.getDimension() - 1, face->getIndex()}, {});
         }
-        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, false);
+        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, m_options.bemGradient);
 
         MMG::LevelSetDiscretizer discretizer;
         // Under RMC, retain the body component attached to the chamber cuts;
@@ -1396,7 +1396,7 @@ namespace KelvinBall
           << Alert::Raise;
 
         const size_t requiredTrianglesBeforeOptimization =
-          sphere.protectFixedGeometry(reconstructed, false);
+          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient);
         if (adapt)
         {
           sphere.adapt(reconstructed, requestedWelschScale);
@@ -1414,7 +1414,7 @@ namespace KelvinBall
           splitSelfPairedCut(reconstructed);
         }
         const size_t requiredTrianglesAfterOptimization =
-          sphere.protectFixedGeometry(reconstructed, false);
+          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient);
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()
@@ -2175,6 +2175,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       volumeGradientDiagnostics =
         identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
     }
+    if (m_options.bemGradient)
+    {
+      const SewedOutput quotient(mesh);
+      quotient.enforceVectorRepresentatives(rhoGradient);
+      quotient.enforceVectorRepresentatives(volumeGradient);
+    }
     TestFunction testField(shapeSpace);
     auto interfaceNormal = FaceNormal(mesh);
     interfaceNormal.traceOf(Fluid);
@@ -2339,6 +2345,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       .setInterface(Gamma)
       .solve()
       .sign();
+    if (m_options.bemGradient) SewedOutput(mesh).enforceScalarRepresentatives(distance);
     stageDiagnostics.eikonalJump = shapeCoupling.scalarJump(distance);
     Alert::Info() << substageHeading("Eikonal redistancing") << Alert::NewLine
                   << diagnosticLabel("Rotated distance jump:")
@@ -2664,6 +2671,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         Math::RungeKutta::RK4{}, rotationalContinuation);
       const KelvinBall::NodalTransport transport(
         advectionMesh, advectionDistance, characteristic, advectedDistance);
+      if (m_options.bemGradient)
+        SewedOutput(advectionMesh).enforceScalarRepresentatives(advectedDistance);
       stageDiagnostics.transportAttempted = transport.getAttemptedCount();
       stageDiagnostics.transportFallback = transport.getFallbackCount();
       Alert::Info() << substageHeading("Transport coverage") << Alert::NewLine
