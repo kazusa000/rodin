@@ -96,7 +96,8 @@ def main():
             head = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
             changed = git("diff", "--name-only", previous["commit"], args.commit).splitlines()
             allowed = {"examples/ShapeOptimization/KelvinBall/scripts/run-fem-domain.py",
-                       "examples/ShapeOptimization/KelvinBall/FEM_DOMAIN.md"}
+                       "examples/ShapeOptimization/KelvinBall/FEM_DOMAIN.md",
+                       "examples/ShapeOptimization/KelvinBall/reproduction/fem-domain-L15-chiral-success-params.json"}
             build = next(stage for stage in previous["stages"] if stage["name"] == "build")
             if (state or head != previous["commit"] or build.get("exit_code") != 0 or
                     str(args.build_dir) not in build["command"] or

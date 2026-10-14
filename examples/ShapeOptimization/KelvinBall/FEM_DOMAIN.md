@@ -63,3 +63,19 @@ The existing fixed-step optimizer does not reject objective decreases; the
 completion certificate counts transported/reconstructed updates, not accepted
 Armijo steps or scientific convergence. Periodic trace and mesh warnings remain
 part of the numerical assessment, and are not fixed by adding a seed.
+
+## Historical parameter control
+
+`reproduction/fem-domain-L15-chiral-success-params.json` restores the successful
+historical `regularization=100` and `step=0.5`, while retaining L15, fixed
+near-field spacing, the 0.02 O24 seed and the current MMG/transport workflow.
+The physical regularization length is `100/6` and time step `0.5/6`.
+This isolates the two optimizer parameters; it does not reproduce the old
+L2 domain, n20 grid, thickness constraint, periodic distance projection or
+L2 transport. Original one-update regression still uses baseline defaults.
+Numerical sources are unchanged, so the runner can reuse the verified chiral
+native build after checking source/dependency identity and its binary hash.
+The allowed reuse differences are restricted to the runner, this document and
+the specifically named parameter-control preset. The compiled and controller
+commits are both recorded; a previous user stop does not invalidate its passed
+native build and preflight checks.
