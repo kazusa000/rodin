@@ -8,6 +8,7 @@
 #define KELVIN_BALL_CONFIGURATION_H
 
 #include <string_view>
+#include <vector>
 
 #include <Rodin/Types.h>
 
@@ -26,6 +27,10 @@ namespace KelvinBall
       Real hmin = 0;
       Real hmax = 0;
       Real outerRadius = 2;
+      /// Coordinate-graded seed; reference h remains independent of box size.
+      bool gradedChamber = false;
+      Real nearFieldRadius = 2;
+      Real chamberGradation = 1.3;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
       /// Settings of the initial SWIFT background preparation.
@@ -49,6 +54,8 @@ namespace KelvinBall
       void finalize();
 
       Real getGridSpacing() const;
+
+      std::vector<Real> getGridCoordinates() const;
   };
 }
 

@@ -22,3 +22,6 @@ target_link_libraries(KelvinBall PRIVATE KelvinBallSupport Rodin::Advection)
 
 add_executable(KelvinBallSphere EXCLUDE_FROM_ALL KelvinBallSphere.cpp)
 target_link_libraries(KelvinBallSphere PRIVATE KelvinBallSupport)
+
+add_executable(KelvinBallGradedChamberTest EXCLUDE_FROM_ALL GradedChamberTest.cpp)
+target_link_libraries(KelvinBallGradedChamberTest PRIVATE KelvinBallSupport)

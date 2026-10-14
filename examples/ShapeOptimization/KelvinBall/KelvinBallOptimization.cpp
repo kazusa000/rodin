@@ -680,6 +680,11 @@ namespace KelvinBall
                           << Alert::Notation::Number(outerRadius) << Alert::NewLine
                           << diagnosticLabel("Reference spacing h0:")
                           << Alert::Notation::Number(initialGridSpacing) << Alert::NewLine
+                          << diagnosticLabel("Coordinate-graded chamber:")
+                          << m_options.configuration.gradedChamber << Alert::NewLine
+                          << diagnosticLabel("Uniform near-field radius:")
+                          << Alert::Notation::Number(m_options.configuration.nearFieldRadius)
+                          << Alert::NewLine
                           << diagnosticLabel("Requested minimum size:")
                           << Alert::Notation::Number(m_options.configuration.hmin)
                           << Alert::NewLine << diagnosticLabel("Requested maximum size:")
@@ -828,6 +833,12 @@ namespace KelvinBall
           << "       Maximum MMG size / reference spacing h0 (default: 10)."
           << Alert::NewLine << Alert::Notation("--outer-radius=<value>")
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
+          << Alert::Notation("--graded-chamber --h=<size>")
+          << " Preserve reference spacing and coarsen the seed away from the sphere."
+          << Alert::NewLine << Alert::Notation("--near-field-radius=<value>")
+          << " Uniform core extent (default: 2)." << Alert::NewLine
+          << Alert::Notation("--chamber-gradation=<value>")
+          << " Seed interval growth factor (default: 1.3)." << Alert::NewLine
           << Alert::Notation("--iterations=<count>")
           << "       Number of evaluated designs (default: 1)." << Alert::NewLine
           << Alert::Notation("--penalty=<value>")
