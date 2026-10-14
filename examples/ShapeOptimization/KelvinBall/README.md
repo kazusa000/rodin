@@ -20,6 +20,13 @@ on CPU on 28h: every original Gamma panel, epsilon factor 0.6, no subdivision,
 and relative solver tolerance `1e-10`. BEM supplies no FEM boundary values,
 coefficients, or gradient. FEM CSV values remain internal diagnostics.
 
+Independent measurements preserve the original HDF5 double coordinates.
+`scripts/evaluate-fem-bem.py` checks the native volume topology against its HDF5
+snapshot and writes a separate 17-digit Medit input without altering the native
+files. This avoids the native text writer's six-digit coordinate rounding.
+The evaluator can also assess a previously completed five-update campaign;
+it records the FEM source commit separately from the evaluation controller.
+
 Historical scripts and presets below document earlier versions; they are not
 the launch entry for this restored pilot. A small-step update checks actual
 transport/reconstruction and pinned Gamma; it is not an exact shape-derivative

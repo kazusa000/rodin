@@ -124,23 +124,14 @@ def main():
                 raise ValueError("A claimed real update did not transport and reconstruct.")
         record.update(real_updates=len(rows)-1, fem_history=rows, state="independent_bem")
         save()
-        for step in preset["bem_evaluated_steps"]:
-            mesh = args.output / "optimization" / f"KelvinBallState-{step:06d}.mesh"
-            destination = args.output / "bem" / f"step-{step:06d}"
-            protocol = preset["bem_protocol"]
-            command = [args.python, "-B", args.verifier / "scripts/bem_convergence_scan.py", mesh,
-                       "--panels", "full", "--subdivision-levels", "0", "--epsilon-factors", "0.6",
-                       "--viscosity", "1", "--center", "0", "0", "0", "--backend", "quotient-cg",
-                       "--solver-rtol", str(protocol["solver_rtol"]), "--solver-maxiter", "6000",
-                       "--preconditioner-panel-block-size", "256", "--matrix-free-row-chunk", "32",
-                       "--solver-progress", "--matrix-free-device", "cpu",
-                       "--json", destination / "scan.json", "--csv", destination / "scan.csv"]
-            run(f"bem_{step}", command, destination, 43200)
-            result = json.loads((destination / "scan.json").read_text())[0]
-            if result.get("status") != "ok" or not result.get("solver_converged"):
-                raise ValueError(f"Independent BEM step {step} did not converge: {result}")
-            record["bem"].append(dict(step=step, mesh=str(mesh), mesh_sha256=digest(mesh), result=result))
-            save()
+        destination = args.output / "independent-bem"
+        run("independent_bem_double", [args.python, "-B", EXAMPLE / "scripts/evaluate-fem-bem.py",
+            "--commit", args.commit, "--fem-campaign", args.output / "campaign.json",
+            "--verifier", args.verifier, "--output", destination], args.output / "bem-launch", 172800)
+        measured = json.loads((destination / "campaign.json").read_text())
+        record["bem"] = measured["evaluations"]
+        record["bem_campaign_sha256"] = digest(destination / "campaign.json")
+        save()
         record["state"] = "completed"
         code = 0
     except Exception as error:
