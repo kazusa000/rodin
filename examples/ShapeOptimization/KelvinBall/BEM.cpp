@@ -108,7 +108,7 @@ namespace KelvinBall
       const Real area = n.norm() / 2;
       if (!(area > 0)) throw std::runtime_error("Degenerate BEM panel.");
       n /= 2 * area;
-      const auto& qf = QF::PolytopeQuadratureFormula::get(cell->getGeometry(), m_order);
+      const auto& qf = QF::PolytopeQuadratureFormula::get(m_order, cell->getGeometry());
       const auto& quadrature = cell->getQuadrature(qf);
       const auto& fe = space.getFiniteElement(2, cell->getIndex());
       const auto& scalarFE = scalarSpace.getFiniteElement(2, cell->getIndex());

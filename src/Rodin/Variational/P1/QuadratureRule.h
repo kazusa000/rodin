@@ -4482,9 +4482,9 @@ namespace Rodin::Variational
           if constexpr (KernelType::SmoothKernel && FormLanguage::IsVectorRange<Range>::Value)
           {
             const auto& trq = QF::PolytopeQuadratureFormula::get(
-              trg, this->getOrder(trp).value_or(7));
+              this->getOrder(trp).value_or(7), trg);
             const auto& teq = QF::PolytopeQuadratureFormula::get(
-              teg, this->getOrder(tep).value_or(7));
+              this->getOrder(tep).value_or(7), teg);
             const auto& tx = trp.getQuadrature(trq);
             const auto& ty = tep.getQuadrature(teq);
             m_matrix.setZero(testfe.getCount(), trialfe.getCount());
