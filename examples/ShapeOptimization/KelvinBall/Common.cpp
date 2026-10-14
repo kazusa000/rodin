@@ -28,11 +28,13 @@ namespace KelvinBall
         rotation(row, column) = *coefficient++;
   }
 
-  Math::SpatialPoint centroid(const Mesh&, const Polytope& face)
+  Math::SpatialPoint centroid(const Mesh& mesh, const Polytope& face)
   {
-    const Geometry::Point point(
-      face, Polytope::Traits(face.getGeometry()).getCentroid());
-    return point.getPhysicalCoordinates();
+    Math::SpatialPoint result(3);
+    result.setZero();
+    for (const Index vertex : face.getVertices())
+      result += mesh.getVertexCoordinates(vertex);
+    return result / static_cast<Real>(face.getVertices().size());
   }
 
   Real cellSize(const Polytope& cell)
@@ -40,24 +42,6 @@ namespace KelvinBall
     // A regular tetrahedron of edge h has measure h^3 / (6 sqrt(2)).
     static const Real scale = std::cbrt(6 * std::sqrt(Real(2)));
     return scale * std::cbrt(cell.getMeasure());
-  }
-
-  Real meanElementSize(const Mesh& mesh)
-  {
-    Real sum = 0;
-    for (auto cell = mesh.getCell(); cell; ++cell)
-    {
-      const auto& vertices = cell->getVertices();
-      if (vertices.size() != 4)
-        throw std::runtime_error("Mean element size requires tetrahedra.");
-      for (size_t i = 0; i < vertices.size(); ++i)
-        for (size_t j = i + 1; j < vertices.size(); ++j)
-          sum += (mesh.getVertexCoordinates(vertices[i]) -
-            mesh.getVertexCoordinates(vertices[j])).norm();
-    }
-    if (mesh.getCellCount() == 0)
-      throw std::runtime_error("Mean element size requires a nonempty mesh.");
-    return sum / (Real(6) * static_cast<Real>(mesh.getCellCount()));
   }
 
   void splitSelfPairedCut(Mesh& mesh)

@@ -101,10 +101,6 @@ namespace KelvinBall
         {
           size_t found = 0;
           size_t missed = 0;
-          Real totalArea = 0;
-          Real missedArea = 0;
-          Math::SpatialPoint firstMiss(3);
-          firstMiss.setZero();
           for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
           {
             if (face->getAttribute() != pair.slave)
@@ -113,44 +109,34 @@ namespace KelvinBall
             const auto& quadrature = face->getQuadrature(qf);
             for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
             {
-              const Real weight =
-                qf.getWeight(qp) * quadrature.getPoint(qp).getDistortion();
-              totalArea += weight;
               if (locator.locate(
                     pair.master, pair.rotation * quadrature.getPoint(qp).vector()))
                 ++found;
               else
-              {
-                if (missed == 0)
-                  firstMiss = pair.rotation * quadrature.getPoint(qp).vector();
                 ++missed;
-                missedArea += weight;
-              }
             }
           }
-          if (missed != 0)
-          {
-            mesh.save("kelvin-cut-coverage-failure.mesh", IO::FileFormat::MEDIT);
-            Alert::Warning() << "The rotated chamber faces do not cover each other for "
-                                "slave attribute " +
-                std::to_string(pair.slave) + " and master attribute " +
-                std::to_string(pair.master) + ": " + std::to_string(found) +
-                " quadrature points located and " + std::to_string(missed) + " missed. " +
-                "First rotated miss: (" + std::to_string(firstMiss(0)) + ", " +
-                std::to_string(firstMiss(1)) + ", " + std::to_string(firstMiss(2)) +
-                "). Saved kelvin-cut-coverage-failure.mesh."
-                             << Alert::NewLine
-                             << "      Policy: Drop unmatched quadrature points."
-                             << Alert::NewLine << "      Missed cut area: "
-                             << Alert::Notation::Number(missedArea) << Alert::NewLine
-                             << "      Missed cut area fraction: "
-                             << Alert::Notation::Number(
-                                  totalArea > 0 ? missedArea / totalArea : 0)
-                             << Alert::NewLine
-                             << "      The chamber coupling is approximate."
-                             << Alert::Raise;
-          }
+          if (found == 0 || missed != 0)
+            throw std::runtime_error(
+              "The rotated chamber faces do not cover each other for slave attribute " +
+              std::to_string(pair.slave) + " and master attribute " +
+              std::to_string(pair.master) + ": " + std::to_string(found) +
+              " quadrature points located and " + std::to_string(missed) + " missed.");
         }
+      }
+
+      template <class Space, class VelocityA, class VelocityB>
+      Real viscousProduct(const Space& space, const VelocityA& a, const VelocityB& b,
+        Real multiplicity) const
+      {
+        TrialFunction u(space);
+        TestFunction v(space);
+        const auto Du = Real(0.5) * (Jacobian(u) + Jacobian(u).T());
+        const auto Dv = Real(0.5) * (Jacobian(v) + Jacobian(v).T());
+        BilinearForm form(u, v);
+        form = Integral(Real(2) * Mu * Du, Dv);
+        form.assemble();
+        return multiplicity * form(a, b);
       }
 
       template <class Rigid0, class Rigid1, class Rigid2, class Velocity0,
@@ -176,25 +162,21 @@ namespace KelvinBall
         const auto tau = m_parameters.cellStabilization();
 
         Problem stokes(u0, p0, u1, p1, u2, p2, v0, q0, v1, q1, v2, q2);
-        const auto trace =
-          coupling.stokesTrace(Tuple(std::cref(u0), std::cref(p0), std::cref(u1),
-                                 std::cref(p1), std::cref(u2), std::cref(p2)),
-            Tuple(std::cref(v0), std::cref(q0), std::cref(v1), std::cref(q1),
-              std::cref(v2), std::cref(q2)),
-            Mu, m_parameters.nitschePenalty, -stabilization);
-        stokes = Integral(Real(2) * Mu * Du0, Dv0) + trace.getBFs() -
-          Integral(p0, Div(v0)) - Integral(Div(u0), q0) -
-          Integral(tau * Grad(p0), Grad(q0)) + Integral(Real(2) * Mu * Du1, Dv1) -
-          Integral(p1, Div(v1)) - Integral(Div(u1), q1) -
-          Integral(tau * Grad(p1), Grad(q1)) + Integral(Real(2) * Mu * Du2, Dv2) -
-          Integral(p2, Div(v2)) - Integral(Div(u2), q2) -
-          Integral(tau * Grad(p2), Grad(q2)) + DirichletBC(u0, rigid0).on(Gamma) +
-          DirichletBC(u1, rigid1).on(Gamma) + DirichletBC(u2, rigid2).on(Gamma) +
+        stokes = Integral(Real(2) * Mu * Du0, Dv0) - Integral(p0, Div(v0)) -
+          Integral(Div(u0), q0) - Integral(tau * Grad(p0), Grad(q0)) +
+          Integral(Real(2) * Mu * Du1, Dv1) - Integral(p1, Div(v1)) -
+          Integral(Div(u1), q1) - Integral(tau * Grad(p1), Grad(q1)) +
+          Integral(Real(2) * Mu * Du2, Dv2) - Integral(p2, Div(v2)) -
+          Integral(Div(u2), q2) - Integral(tau * Grad(p2), Grad(q2)) +
+          DirichletBC(u0, rigid0).on(Gamma) + DirichletBC(u1, rigid1).on(Gamma) +
+          DirichletBC(u2, rigid2).on(Gamma) +
           DirichletBC(u0, VectorFunction{0, 0, 0}).on(Outer) +
           DirichletBC(u1, VectorFunction{0, 0, 0}).on(Outer) +
           DirichletBC(u2, VectorFunction{0, 0, 0}).on(Outer);
         stokes.assemble();
         auto& system = stokes.getLinearSystem();
+        coupling.assembleStokes<1>(Vh, Qh, stokes.getTrialOffsets(), system, Mu,
+          m_parameters.nitschePenalty, -stabilization, FlatSet<Attribute>{Gamma, Outer});
         solveDirect(stokes);
         const Real residual =
           (system.getOperator() * system.getSolution() - system.getVector()).norm() /
@@ -269,13 +251,6 @@ namespace KelvinBall
         const Velocity1& uT1, const Velocity2& uT2, const Rotation0& uR0,
         const Rotation1& uR1, const Rotation2& uR2, Real multiplicity) const
       {
-        TrialFunction u(Vh);
-        TestFunction v(Vh);
-        const auto Du = Real(0.5) * (Jacobian(u) + Jacobian(u).T());
-        const auto Dv = Real(0.5) * (Jacobian(v) + Jacobian(v).T());
-        BilinearForm dissipation(u, v);
-        dissipation = Integral(Real(2) * Mu * Du, Dv);
-        dissipation.assemble();
         const std::array<const Velocity0*, 3> translations{&uT0, &uT1, &uT2};
         const std::array<const Rotation0*, 3> rotations{&uR0, &uR1, &uR2};
         Math::SpatialMatrix<Real> coupling(3, 3);
@@ -283,10 +258,10 @@ namespace KelvinBall
         Real q = 0;
         for (size_t i = 0; i < 3; ++i)
         {
-          k += multiplicity * dissipation(*translations[i], *translations[i]);
-          q += multiplicity * dissipation(*rotations[i], *rotations[i]);
+          k += viscousProduct(Vh, *translations[i], *translations[i], multiplicity);
+          q += viscousProduct(Vh, *rotations[i], *rotations[i], multiplicity);
           for (size_t j = 0; j < 3; ++j)
-            coupling(i, j) = dissipation(*translations[i], *rotations[j]);
+            coupling(i, j) = viscousProduct(Vh, *translations[i], *rotations[j], 1);
         }
         k /= 3;
         q /= 3;

@@ -43,6 +43,8 @@ namespace KelvinBall
 
       Mesh& getMesh();
 
+      const std::vector<Math::SpatialMatrix<Real>>& getRotations() const;
+
       static const std::vector<Math::SpatialMatrix<Real>>& getCubeRotations();
 
       template <class Output, class Input>

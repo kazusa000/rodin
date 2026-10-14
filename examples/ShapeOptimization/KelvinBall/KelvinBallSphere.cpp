@@ -80,7 +80,7 @@ int KelvinBall::SphereValidation::run()
   bool saveMesh = false;
   for (int argument = 1; argument < argc; ++argument)
   {
-    const StringView option(argv[argument]);
+    const std::string_view option(argv[argument]);
     if (configuration.parse(option))
       continue;
     if (option == "--save-mesh")
@@ -90,9 +90,7 @@ int KelvinBall::SphereValidation::run()
       std::cout
         << "Usage: " << argv[0] << " [options]\n"
         << "  --n=<points>              Background points per edge (default: 13).\n"
-        << "  --h=<size>                Requested initial grid spacing; alternative to --n.\n"
-        << "  --hmin-factor=<value>     Minimum MMG size / reference spacing (default: 0.1).\n"
-        << "  --hmax-factor=<value>     Maximum MMG size / reference spacing (default: 10).\n"
+        << "  --h=<size>                Requested mesh size; alternative to --n.\n"
         << "  --outer-radius=<value>    Chamber outer radius (default: 2).\n"
         << "  --penalty=<value>         Rotational Nitsche penalty (default: 320).\n"
         << "  --stabilization=<value>   P1--P1 stabilization factor (default: 0.05).\n"
@@ -104,10 +102,11 @@ int KelvinBall::SphereValidation::run()
   }
   configuration.finalize();
 
+  const Parameters parameters{configuration.getH(), configuration.nitschePenalty,
+    configuration.stabilizationFactor};
+
   auto sphere = Sphere(configuration).discretize(true);
   auto& chamber = sphere.mesh;
-  const Parameters parameters{meanElementSize(chamber), configuration.nitschePenalty,
-    configuration.stabilizationFactor};
   if (saveMesh)
     chamber.save("KelvinBallSphere.mesh", IO::FileFormat::MEDIT);
   prepare(chamber);

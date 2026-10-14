@@ -1,0 +1,34 @@
+{
+  "historical_fem_commit": "9b3dfd7e1a49036f4f1074f3f7fc99f72bbb1f04",
+  "historical_bem_commit": "12f38a9a33dbbb0a1b7c0d0affcfff91620b927a",
+  "host": "28h",
+  "initial_shape": "historical unit sphere; no added seed",
+  "reference_spacing": 0.10526315789473684,
+  "outer_half_width": 15,
+  "uniform_near_field_extent": 2,
+  "interface_target_size": 0.10526315789473684,
+  "far_field_size_cap": 1.0526315789473684,
+  "regularization_length": 10.526315789473683,
+  "advection_step": 0.05263157894736842,
+  "thickness_minimum": 0.21052631578947367,
+  "requested_real_updates": 5,
+  "evaluated_states": 6,
+  "optimization_arguments": [
+    "--outer-radius=15", "--graded-chamber", "--h=0.10526315789473684",
+    "--near-field-radius=2", "--chamber-gradation=1.3", "--seed-amplitude=0",
+    "--regularization=100", "--step=0.5", "--level-set-penalty=1",
+    "--advection-quadrature=3", "--reconstruction=mmg", "--mmg-adapt",
+    "--mmg-adapt-interface-size=1", "--mmg-adapt-far-size=1",
+    "--mmg-adapt-width=3", "--mmg-adapt-gradation=1.3",
+    "--mmg-snap=0.005", "--mmg-retries=2", "--thickness-min=2",
+    "--thickness-weight=1", "--iterations=6", "--save-mesh", "--export-direction"
+  ],
+  "bem_evaluated_steps": [0, 1, 3, 5],
+  "bem_protocol": {
+    "device": "cpu", "backend": "quotient-cg", "panels": "full",
+    "epsilon_factor": 0.6, "subdivision_levels": 0,
+    "solver_rtol": 1e-10, "solver_maxiter": 6000,
+    "preconditioner_panel_block_size": 256, "matrix_free_row_chunk": 32,
+    "viscosity": 1, "center": [0, 0, 0]
+  }
+}

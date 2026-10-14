@@ -38,6 +38,22 @@ int main()
   bool refused = false;
   try { missing.finalize(); } catch (const std::runtime_error&) { refused = true; }
   require(refused, "Missing explicit near-field spacing accepted.");
+  Configuration historical;
+  historical.parse("--graded-chamber");
+  historical.parse("--outer-radius=15");
+  historical.parse("--h=0.10526315789473684");
+  historical.finalize();
+  const Math::SpatialPoint interface{1, Real(0.5), Real(0.2)};
+  const Math::SpatialPoint core{2, 2, 2};
+  const Math::SpatialPoint far{15, 15, 15};
+  require(historical.getGradedSize(interface, historical.getH()) == historical.getH(),
+          "Historical interface target size was not restored.");
+  require(historical.getGradedSize(core, historical.getH()) == historical.getH(),
+          "The old L2 region was coarsened.");
+  require(historical.getGradedSize(far, historical.getH()) == historical.hmax,
+          "Far-field target cap changed.");
+  require(std::abs(historical.getGradedSize(far, historical.getH() / 2) -
+                   historical.hmax / 2) < 1e-14, "MMG retry scale changed.");
   std::cout << "graded_axis_points=" << coordinates.size()
             << " h0=" << graded.getGridSpacing()
             << " hmin=" << graded.hmin << " hmax=" << graded.hmax << '\n';

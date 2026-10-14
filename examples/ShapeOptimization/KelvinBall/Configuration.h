@@ -20,27 +20,30 @@ namespace KelvinBall
   struct Configuration
   {
       size_t points = 13;
-      /// Only controls construction of the initial uniform chamber.
-      Real requestedGridSpacing = 0;
-      Real hminFactor = 0.1;
-      Real hmaxFactor = 10;
-      Real hmin = 0;
-      Real hmax = 0;
+      Real requestedH = 0;
       Real outerRadius = 2;
-      /// Coordinate-graded seed; reference h remains independent of box size.
+      /// Preserve the reference spacing within the old L2 near field.
       bool gradedChamber = false;
       Real nearFieldRadius = 2;
       Real chamberGradation = 1.3;
+      Real seedAmplitude = 0;
+      Real hmin = 0;
+      Real hmax = 0;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
-      /// Fixed O24 reflection-odd radial perturbation; zero keeps the sphere.
-      Real seedAmplitude = 0;
-      /// Settings of the initial SWIFT background preparation.
+      /// Settings of the single MMG optimization of the WNGIR background, the
+      /// sizes in multiples of h.
+      Real backgroundHMin = 0.1;
+      Real backgroundHMax = 1;
       Real backgroundHausdorff = 0.05;
       Real backgroundGradation = 2;
-      /// Optional MMG adaptation after an MMG cut or before SWIFT classification
-      /// and fitting. Its background size map ranges from hmin to hmax.
+      /// Optional MMG adaptation that replaces the optimization pass after each
+      /// level-set cut. The size grows linearly from the interface size on
+      /// Gamma to the far size at the given width; all in multiples of h.
       bool adapt = false;
+      Real adaptInterfaceSize = 1;
+      Real adaptFarSize = 1;
+      Real adaptWidth = 3;
       Real adaptGradation = 1.3;
       /// Crossing fraction below which the MMG cut snaps the near endpoint of
       /// a crossed edge onto the level set; zero disables the snapping.
@@ -49,15 +52,20 @@ namespace KelvinBall
       /// sizes computed from half the previous scale.
       size_t mmgRetries = 2;
       bool pointsSpecified = false;
-      bool gridSpacingSpecified = false;
+      bool hSpecified = false;
 
-      bool parse(StringView option);
+      bool parse(std::string_view option);
 
       void finalize();
 
-      Real getGridSpacing() const;
+      Real getH() const;
+
+      Real getGridSpacing() const { return getH(); }
 
       std::vector<Real> getGridCoordinates() const;
+
+      /** Target size outside the preserved core; @p h includes MMG retry scaling. */
+      Real getGradedSize(const Math::SpatialPoint& point, Real h) const;
   };
 }
 

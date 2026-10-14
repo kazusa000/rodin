@@ -1,3 +1,30 @@
+# FEM-domain branch: historical update restoration
+
+The active FEM-domain workflow restores the MMG update implementation from
+`9b3dfd7e1a49036f4f1074f3f7fc99f72bbb1f04`: rotated trace assembly, Gamma-pinned
+distance projection, L2 characteristic transport, and the original soft
+thickness load. The shared Rodin core remains at this branch's current version.
+The old WNGIR fitting path is not part of this MMG restoration.
+
+Use `reproduction/fem-domain-L15-legacy.json` and `scripts/run-fem-legacy.py`.
+The reference spacing is `2/19`; regularization is `100h`, the step is `0.5h`,
+the thickness threshold is `2h`, and MMG snapping is `0.005`. The initial
+shape is the historical unit sphere. The cube has half-width 15. Both seed
+coordinates and MMG targets preserve the entire old half-width-2 region;
+only the enlarged far field is graded, with growth 1.3 and a size cap of `10h`.
+The MMG interface target is `h`, distinct from its permitted minimum `0.1h`.
+
+The pilot requests five actual updates, six evaluated states. Independent BEM
+measurements use the frozen `12f38a9a33dbbb0a1b7c0d0affcfff91620b927a` verifier
+on CPU on 28h: every original Gamma panel, epsilon factor 0.6, no subdivision,
+and relative solver tolerance `1e-10`. BEM supplies no FEM boundary values,
+coefficients, or gradient. FEM CSV values remain internal diagnostics.
+
+Historical scripts and presets below document earlier versions; they are not
+the launch entry for this restored pilot. A small-step update checks actual
+transport/reconstruction and pinned Gamma; it is not an exact shape-derivative
+certificate for the legacy approximate thickness load.
+
 # Kelvin ball
 
 A rigid body moving through a viscous fluid at vanishing Reynolds number
