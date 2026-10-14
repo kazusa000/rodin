@@ -56,6 +56,36 @@ records real exit codes. Existing results directories are refused. The BEM
 quadrature, epsilon policy, grid, smoothing and reconstruction settings remain
 fixed. All numerical calculations still use the native C++ executable.
 
+## Consecutive accepted full-volume updates
+
+```sh
+KelvinBallBEMMMGValidation --seed-amplitude=0.6 --step-factors=0.03 \
+  --updates=3 --volume-tolerance=0.005 --max-backtracks=6
+```
+
+With `--updates>0`, the fixture recomputes six states and the discrete derivative
+on each accepted shape, rebuilds its H1 system, and starts each update at the
+specified factor. Rejected trials halve the factor, with at most six halvings
+by default. Candidates are accepted only after closed-surface state checks,
+strict rho improvement and weak Armijo gain
+`rho_new >= rho_old + 1e-4 * dt * slope`. Total volume drift is bounded relative
+to the original obstacle volume, not just the preceding iteration. The default
+0.5% volume tolerance is a configurable coarse-mesh experimental policy, not
+exact volume conservation or an accuracy estimate. No post-hoc rescaling or
+geometric snapping is used to obtain acceptance.
+
+Trial fields borrow an independent working copy; rejection preserves the accepted
+mesh. Every attempt retains its candidate mesh and JSON, including volume-only
+rejections where the expensive BEM state is deliberately skipped. Checkpoints
+`accepted-N.mesh` and `bem-mmg-history.json` record accepted progress. Exit zero
+requires all requested updates; exit two means bounded backtracking exhausted
+without accepting a candidate. Other failures exit one. Existing accepted histories
+are refused. `--updates=0` preserves the independent seed/step diagnostic mode.
+
+`scripts/bem-gradient-short-run.sh EXECUTABLE NEW_RESULTS_DIRECTORY` runs this
+three-update configuration. The route still does not enforce O24 symmetry;
+the production quotient seam issue and stability/cost studies remain separate.
+
 The existing chamber optimizer has an opt-in native entry:
 
 ```sh
