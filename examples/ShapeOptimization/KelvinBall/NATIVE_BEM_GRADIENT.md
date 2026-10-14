@@ -38,6 +38,24 @@ It checks a positive first-order direction and reports the fresh objective
 change after remeshing, including whether it improved. It does not enforce O24
 symmetry during meshing/update and is not the production quotient optimizer.
 
+The full-volume fixture also accepts `--seed-amplitude=A` (default `0.02`) and
+`--step-factors=0,0.01,0.03,0.1` (default `0.01`). Actual transport time is
+the factor times the grid spacing. Multiple factors share one initial shape,
+state, H1 direction and signed-distance field; candidates are independent,
+not successive optimization iterations. A zero factor copies the signed-distance
+field without transport and isolates redistancing/reconstruction changes.
+Each candidate has a separate `step-N/` mesh and JSON record. Exit zero means
+the requested reconstruction/state checks ran successfully; `improved` records
+the objective comparison and does not certify volume acceptance or optimization.
+The seed coefficient multiplies `H3 H6`; its maximum radial deformation is
+approximately `0.2963 A`, not `A`.
+
+`scripts/bem-gradient-seed-step-sweep.sh EXECUTABLE NEW_RESULTS_DIRECTORY`
+runs amplitudes `0.02`, `0.2`, `0.6`, each with the four factors above, and
+records real exit codes. Existing results directories are refused. The BEM
+quadrature, epsilon policy, grid, smoothing and reconstruction settings remain
+fixed. All numerical calculations still use the native C++ executable.
+
 The existing chamber optimizer has an opt-in native entry:
 
 ```sh

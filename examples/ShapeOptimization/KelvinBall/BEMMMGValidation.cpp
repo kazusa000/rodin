@@ -10,8 +10,10 @@
 #include <Rodin/Solver/MUMPS.h>
 #endif
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
 using namespace KelvinBall;
 
@@ -58,19 +60,40 @@ namespace
   }
 }
 
-int main()
+int main(int argc, char** argv)
 {
   try
   {
     std::cout << std::setprecision(17);
     constexpr size_t points=13;
-    constexpr Real h=Real(4)/(points-1), dt=.01*h;
+    constexpr Real h=Real(4)/(points-1);
+    Real seedAmplitude=.02;
+    std::vector<Real> stepFactors{.01};
+    for (int argument=1; argument<argc; ++argument)
+    {
+      const std::string option(argv[argument]);
+      if (option.starts_with("--seed-amplitude="))
+        seedAmplitude=std::stod(option.substr(17));
+      else if (option.starts_with("--step-factors="))
+      {
+        stepFactors.clear();
+        std::istringstream values(option.substr(15));
+        std::string value;
+        while (std::getline(values,value,',')) stepFactors.push_back(std::stod(value));
+      }
+      else throw std::runtime_error("Unknown full-domain BEM validation option: "+option);
+    }
+    if (!std::isfinite(seedAmplitude) || seedAmplitude<0 || seedAmplitude>1 || stepFactors.empty())
+      throw std::runtime_error("Use a seed amplitude in [0,1] and at least one step factor.");
+    for (const Real factor:stepFactors)
+      if (!std::isfinite(factor) || factor<0 || factor>1)
+        throw std::runtime_error("Step factors must be in [0,1]; zero is a reconstruction control.");
     auto cube=KelvinBall::Mesh::UniformGrid(Polytope::Type::Tetrahedron,{points,points,points});
     cube.scale(h);
     for (Index i=0; i<cube.getVertexCount(); ++i)
       cube.setVertexCoordinates(i,cube.getVertexCoordinates(i)-Math::SpatialPoint{2,2,2});
     MMG::Mesh background(std::move(cube)); prepare(background);
-    Configuration configuration; configuration.seedAmplitude=.02;
+    Configuration configuration; configuration.seedAmplitude=seedAmplitude;
     const Sphere seed(configuration);
     P1 backgroundSpace(background);
     GridFunction initialPhi(backgroundSpace);
@@ -137,32 +160,47 @@ int main()
     if (!(slope>0)) throw std::runtime_error("Native BEM transport direction is not ascent.");
     GridFunction distance(scalarSpace);
     Distance::Eikonal(distance).setInterior(Obstacle).setInterface(Gamma).solve().sign();
-    GridFunction advected(scalarSpace);
-    const auto flow=Flow(-dt,distance,theta,Math::RungeKutta::RK4{});
-    const NodalTransport transport(mesh,distance,flow,advected);
-    const Real increment=(advected.getData()-distance.getData()).lpNorm<Eigen::Infinity>();
-    if (!(increment>1e-12)) throw std::runtime_error("No actual level-set transport occurred.");
     prepare(mesh);
-    MMG::Mesh candidate=cutter.discretize(advected);
-    save(candidate,"full-updated.mesh");
-    VelocitySpace candidateSpace(candidate,3);
-    Math::Vector<Real> unused;
-    const auto updated=evaluate(candidate,candidateSpace,unused,false);
-    if (std::abs(updated.rho-initial.rho)<1e-12)
-      throw std::runtime_error("Reconstructed BEM design did not change.");
-    std::ofstream record("bem-mmg-validation.json"); record << std::setprecision(17);
-    record << "{\"passed\":true,\"route\":\"full-volume-levelset-mmg\",\"symmetry_enforced\":false,\"points\":" << points
-      << ",\"seed_amplitude\":0.02,\"dt\":" << dt << ",\"initial_rho\":" << initial.rho
-      << ",\"updated_rho\":" << updated.rho << ",\"improved\":" << (updated.rho>initial.rho ? "true":"false")
-      << ",\"predicted_delta_rho\":" << dt*slope << ",\"volume_slope\":" << volumeForm(theta)
-      << ",\"relative_volume_change\":" << candidate.getVolume(Obstacle)/initialVolume-1
-      << ",\"transport_increment\":" << increment << ",\"transport_attempted\":" << transport.getAttemptedCount()
-      << ",\"transport_fallback\":" << transport.getFallbackCount()
-      << ",\"initial_panels\":" << initial.panels << ",\"updated_panels\":" << updated.panels
-      << ",\"initial_epsilon\":" << initial.epsilon << ",\"updated_epsilon\":" << updated.epsilon
-      << ",\"updated_residual\":" << updated.residual << ",\"updated_open_edges\":" << updated.openEdges << "}\n";
-    if (!record) throw std::runtime_error("Cannot save real MMG update evidence.");
-    std::cout << "real_mmg_update rho_before=" << initial.rho << " rho_after=" << updated.rho << std::endl;
+    for (size_t step=0; step<stepFactors.size(); ++step)
+    {
+      const Real dt=stepFactors[step]*h;
+      const std::filesystem::path directory=stepFactors.size()==1 ? "." : "step-"+std::to_string(step);
+      if (stepFactors.size()>1 && !std::filesystem::create_directory(directory))
+        throw std::runtime_error("Refusing to overwrite existing step evidence.");
+      GridFunction advected(scalarSpace);
+      size_t attempted=0, fallback=0;
+      if (dt==0) advected=distance;
+      else
+      {
+        const auto flow=Flow(-dt,distance,theta,Math::RungeKutta::RK4{});
+        const NodalTransport transport(mesh,distance,flow,advected);
+        attempted=transport.getAttemptedCount(); fallback=transport.getFallbackCount();
+      }
+      const Real increment=(advected.getData()-distance.getData()).lpNorm<Eigen::Infinity>();
+      if (dt>0 && !(increment>1e-12)) throw std::runtime_error("No actual level-set transport occurred.");
+      MMG::Mesh candidate=cutter.discretize(advected);
+      save(candidate,(directory/"full-updated.mesh").c_str());
+      VelocitySpace candidateSpace(candidate,3);
+      Math::Vector<Real> unused;
+      const auto updated=evaluate(candidate,candidateSpace,unused,false);
+      std::ofstream record(directory/"bem-mmg-validation.json"); record << std::setprecision(17);
+      record << "{\"passed\":true,\"route\":\"full-volume-levelset-mmg\",\"symmetry_enforced\":false,\"points\":" << points
+        << ",\"seed_amplitude\":" << seedAmplitude << ",\"step_factor\":" << stepFactors[step]
+        << ",\"zero_step_control\":" << (dt==0 ? "true":"false")
+        << ",\"dt\":" << dt << ",\"initial_rho\":" << initial.rho
+        << ",\"initial_c\":" << initial.c << ",\"updated_c\":" << updated.c
+        << ",\"updated_rho\":" << updated.rho << ",\"improved\":" << (updated.rho>initial.rho ? "true":"false")
+        << ",\"predicted_delta_rho\":" << dt*slope << ",\"volume_slope\":" << volumeForm(theta)
+        << ",\"relative_volume_change\":" << candidate.getVolume(Obstacle)/initialVolume-1
+        << ",\"transport_increment\":" << increment << ",\"transport_attempted\":" << attempted
+        << ",\"transport_fallback\":" << fallback
+        << ",\"initial_panels\":" << initial.panels << ",\"updated_panels\":" << updated.panels
+        << ",\"initial_epsilon\":" << initial.epsilon << ",\"updated_epsilon\":" << updated.epsilon
+        << ",\"updated_residual\":" << updated.residual << ",\"updated_open_edges\":" << updated.openEdges << "}\n";
+      if (!record) throw std::runtime_error("Cannot save real MMG update evidence.");
+      std::cout << "real_mmg_update seed=" << seedAmplitude << " dt=" << dt
+        << " rho_before=" << initial.rho << " rho_after=" << updated.rho << std::endl;
+    }
     return 0;
   }
   catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
