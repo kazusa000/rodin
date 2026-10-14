@@ -11,9 +11,9 @@ namespace
   using Vertices = std::vector<Math::SpatialPoint>;
   using Faces = std::vector<std::array<Index, 3>>;
 
-  Mesh surface(const Vertices& vertices, const Faces& faces)
+  KelvinBall::Mesh surface(const Vertices& vertices, const Faces& faces)
   {
-    Mesh::Builder builder;
+    KelvinBall::Mesh::Builder builder;
     builder.initialize(3).nodes(vertices.size());
     for (const auto& x : vertices) builder.vertex(x);
     for (const auto& face : faces)
