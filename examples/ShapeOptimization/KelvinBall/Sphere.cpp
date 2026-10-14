@@ -113,7 +113,7 @@ namespace KelvinBall
     return chamber;
   }
 
-  size_t Sphere::protectFixedGeometry(MMG::Mesh& mesh, bool cuts) const
+  size_t Sphere::protectFixedGeometry(MMG::Mesh& mesh, bool cuts, bool freezeCutVertices) const
   {
     mesh.getRequiredTriangles().clear();
     mesh.getRidges().clear();
@@ -128,6 +128,8 @@ namespace KelvinBall
       if (attribute && (*attribute == Outer || (cuts && fixed.contains(*attribute))))
       {
         mesh.setRequiredTriangle(face->getIndex());
+        if (freezeCutVertices)
+          for (const Index vertex : face->getVertices()) mesh.setRequiredVertex(vertex);
         ++count;
       }
     }
@@ -288,12 +290,12 @@ namespace KelvinBall
   }
 
   SphereDiscretization Sphere::discretize(bool conformingCuts,
-    Real requestedWelschScale) const
+    Real requestedWelschScale, bool freezeCutVertices) const
   {
     MMG::Mesh mesh(makeUniformChamber());
     const Real h = m_configuration.getGridSpacing();
     const size_t cellsBefore = mesh.getCellCount();
-    protectFixedGeometry(mesh, conformingCuts);
+    protectFixedGeometry(mesh, conformingCuts, freezeCutVertices);
     const Real hmin = m_configuration.hmin;
     const Real hmax = m_configuration.hmax;
     const Real hausdorff = 0.1 * h * h;
@@ -319,7 +321,7 @@ namespace KelvinBall
     }
     else
     {
-      protectFixedGeometry(mesh, conformingCuts);
+      protectFixedGeometry(mesh, conformingCuts, freezeCutVertices);
       MMG::Optimizer()
         .setHMin(hmin)
         .setHMax(hmax)
@@ -330,7 +332,7 @@ namespace KelvinBall
       projectFixedGeometry(mesh);
       splitSelfPairedCut(mesh);
     }
-    const size_t requiredTriangles = protectFixedGeometry(mesh, conformingCuts);
+    const size_t requiredTriangles = protectFixedGeometry(mesh, conformingCuts, freezeCutVertices);
     const size_t cellsAfter = mesh.getCellCount();
     return {std::move(mesh),
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};

@@ -64,7 +64,8 @@ namespace KelvinBall
        * every later reconstruction.
        */
       SphereDiscretization discretize(
-        bool conformingCuts = false, Real requestedWelschScale = 0) const;
+        bool conformingCuts = false, Real requestedWelschScale = 0,
+        bool freezeCutVertices = false) const;
 
       /**
        * @brief Prepares the fixed background mesh used by SWIFT.
@@ -129,7 +130,7 @@ namespace KelvinBall
        * becomes a reference edge, and a ridge unless both faces lie in the
        * same plane; every vertex on three or more labels becomes a corner.
        */
-      size_t protectFixedGeometry(MMG::Mesh& mesh, bool cuts) const;
+      size_t protectFixedGeometry(MMG::Mesh& mesh, bool cuts, bool freezeCutVertices = false) const;
 
       /**
        * @brief Orthogonally projects labelled fixed-boundary vertices onto

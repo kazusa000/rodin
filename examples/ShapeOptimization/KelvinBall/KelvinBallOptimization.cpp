@@ -166,7 +166,7 @@ namespace KelvinBall
             }
             configuration.finalize();
             if (bemGradient && (boundaryStep || reconstructOnly || minimumThickness > 0 ||
-                bemOrder < 2 || !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
+                configuration.adapt || bemOrder < 2 || !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
               throw std::runtime_error("Native BEM needs order >= 2, positive epsilon factor, and disabled external states/thickness correction.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
@@ -812,7 +812,7 @@ namespace KelvinBall
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
-          : sphere.discretize(m_options.bemGradient, requestedWelschScale);
+          : sphere.discretize(m_options.bemGradient, requestedWelschScale, m_options.bemGradient);
         ReconstructionDiagnostics reconstruction = initial.diagnostics;
         Optional<MMG::Mesh> swiftBackground;
         Real backgroundH = std::numeric_limits<Real>::quiet_NaN();
@@ -1229,7 +1229,7 @@ namespace KelvinBall
           if (attribute && !fixed.contains(*attribute))
             mesh.setAttribute({mesh.getDimension() - 1, face->getIndex()}, {});
         }
-        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, m_options.bemGradient);
+        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, m_options.bemGradient, m_options.bemGradient);
 
         MMG::LevelSetDiscretizer discretizer;
         // Under RMC, retain the body component attached to the chamber cuts;
@@ -1396,7 +1396,7 @@ namespace KelvinBall
           << Alert::Raise;
 
         const size_t requiredTrianglesBeforeOptimization =
-          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient);
+          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient, m_options.bemGradient);
         if (adapt)
         {
           sphere.adapt(reconstructed, requestedWelschScale);
@@ -1414,7 +1414,7 @@ namespace KelvinBall
           splitSelfPairedCut(reconstructed);
         }
         const size_t requiredTrianglesAfterOptimization =
-          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient);
+          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient, m_options.bemGradient);
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()

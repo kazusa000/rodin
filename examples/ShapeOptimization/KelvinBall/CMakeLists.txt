@@ -26,7 +26,7 @@ target_link_libraries(KelvinBallSphere PRIVATE KelvinBallSupport)
 
 # Opt-in interfaces and focused numerical contracts. The default KelvinBall
 # executable remains the Carlos workflow with zero outer velocity.
-foreach(check OuterVelocityTest PressureGaugeTest SeedTest SoftThicknessDiagnostic)
+foreach(check OuterVelocityTest PressureGaugeTest SeedTest SoftThicknessDiagnostic QuotientProjectionTest)
   add_executable(KelvinBall${check} EXCLUDE_FROM_ALL ${check}.cpp)
   target_link_libraries(KelvinBall${check} PRIVATE KelvinBallSupport)
 endforeach()
