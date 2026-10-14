@@ -25,7 +25,8 @@
   ],
   "bem_evaluated_steps": [0, 1, 3, 5],
   "bem_protocol": {
-    "device": "cpu", "backend": "quotient-cg", "panels": "full",
+    "device": "cpu", "backend": "quotient", "panels": "full",
+    "blas_threads": 6, "accepted_linear_residual_maximum": 1e-10,
     "epsilon_factor": 0.6, "subdivision_levels": 0,
     "solver_rtol": 1e-10, "solver_maxiter": 6000,
     "preconditioner_panel_block_size": 256, "matrix_free_row_chunk": 32,

@@ -83,6 +83,8 @@ def main():
     parser.add_argument("--fem-campaign", type=Path, required=True)
     parser.add_argument("--verifier", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--backend", choices=("quotient", "quotient-cg"), default="quotient")
+    parser.add_argument("--blas-threads", type=int, default=6)
     args = parser.parse_args()
     if platform.node() != "28h":
         raise ValueError("Independent evaluation is explicitly CPU-only on 28h.")
@@ -97,11 +99,15 @@ def main():
     simulation = args.fem_campaign.parent / "optimization"
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "native-fem-campaign.json").write_bytes(fem_record)
-    env = dict(os.environ, KELVIN_SYMMETRY="cubic", OPENBLAS_NUM_THREADS="1",
-               MKL_NUM_THREADS="1", OMP_NUM_THREADS="6", PYTHONDONTWRITEBYTECODE="1")
+    if args.blas_threads < 1:
+        raise ValueError("BLAS threads must be positive.")
+    threads = str(args.blas_threads if args.backend == "quotient" else 1)
+    env = dict(os.environ, KELVIN_SYMMETRY="cubic", OPENBLAS_NUM_THREADS=threads,
+               MKL_NUM_THREADS=threads, OMP_NUM_THREADS="6", PYTHONDONTWRITEBYTECODE="1")
     record = dict(controller_commit=args.commit, native_fem_commit=fem["commit"],
                   fem_campaign_sha256=hashlib.sha256(fem_record).hexdigest(), source=str(ROOT),
-                  verifier_commit=BEM_COMMIT, device="cpu", host=platform.node(),
+                  verifier_commit=BEM_COMMIT, device="cpu", backend=args.backend,
+                  blas_threads=int(threads), host=platform.node(),
                   started_at=time.time(), evaluations=[], state="independent_bem")
 
     def save():
@@ -117,7 +123,8 @@ def main():
                                   simulation / f"KelvinBallState-{step:06d}.mesh", mesh)
             command = [os.sys.executable, "-B", str(args.verifier / "scripts/bem_convergence_scan.py"), str(mesh),
                 "--panels", "full", "--epsilon-factors", "0.6", "--subdivision-levels", "0",
-                "--viscosity", "1", "--center", "0", "0", "0", "--backend", "quotient-cg",
+                "--viscosity", "1", "--center", "0", "0", "0", "--backend", args.backend,
+                "--max-matrix-gib", "12",
                 "--solver-rtol", "1e-10", "--solver-maxiter", "6000", "--preconditioner-panel-block-size", "256",
                 "--matrix-free-row-chunk", "32", "--solver-progress", "--matrix-free-device", "cpu",
                 "--json", str(directory / "scan.json"), "--csv", str(directory / "scan.csv")]
@@ -132,7 +139,8 @@ def main():
             if child.returncode:
                 raise RuntimeError(f"BEM step {step} actual exit {child.returncode}")
             result = json.loads((directory / "scan.json").read_text())[0]
-            if result.get("status") != "ok" or not result.get("solver_converged"):
+            if (result.get("status") != "ok" or not result.get("solver_converged") or
+                    result.get("linear_relative_residual", float("inf")) > 1e-10):
                 raise RuntimeError(f"BEM step {step} did not converge: {result}")
             item["result"] = result
             save()

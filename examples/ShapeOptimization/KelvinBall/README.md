@@ -26,6 +26,12 @@ snapshot and writes a separate 17-digit Medit input without altering the native
 files. This avoids the native text writer's six-digit coordinate rounding.
 The evaluator can also assess a previously completed five-update campaign;
 it records the FEM source commit separately from the evaluation controller.
+The CPU default is the verifier's existing dense weighted-quotient direct
+solver with six BLAS threads and a 12 GiB matrix budget. It represents exactly
+the same operator as quotient CG. Initial and first-update controls compared
+both methods; the direct solution gives a smaller residual and avoids long
+CPU matrix-free iterations. All original panels and physical parameters are
+retained. `--backend quotient-cg` remains available for larger matrices.
 
 Historical scripts and presets below document earlier versions; they are not
 the launch entry for this restored pilot. A small-step update checks actual
