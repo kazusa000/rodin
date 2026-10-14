@@ -3,7 +3,7 @@
 The internship workspace's fixed Carlos reference and three research branches
 are defined in [WORKSPACE_BRANCHES.md](docs/WORKSPACE_BRANCHES.md).
 The active local integration entry is `codex/p03-bem-coupled`; the historical
-`codex/clement-swift-bem` source branch remains retained.
+`codex/clement-swift-bem` source is retained under the historical archive reference.
 
 This example contains the native Carlos solver, MMG/SWIFT reconstruction,
 the BEM/CUDA operator, actual-BEM acceptance and saved-result viewers.

@@ -50,3 +50,20 @@ restore their original paths before replaying them.
 No native build, optimization, remote deployment, numerical parameter change,
 or source merge is performed by this organization. The shared original Rodin
 checkout used by other projects is unchanged.
+
+## Historical-reference archive
+
+The follow-up archive retains old local topic heads and local remote-tracking
+snapshots as exact direct references under `refs/archive/p03/20261014/heads/...`
+and `refs/archive/p03/20261014/remotes/...`. Historical checkouts are detached
+at their original commits. The three `codex/p03-*` research branches and frozen
+Carlos tag remain the current Project03 references; unrelated Rodin branches
+used by other projects are unchanged.
+
+Full pre-archive bundles are in `archive/project-03/history-20261014/git/`.
+The workspace restore map is `metadata/project-03-history-refs.tsv`; material,
+dependency and data checks are in `metadata/project-03-history-20261014.json`.
+Necessary object stores, initialized submodules, environments, current paper/report
+inputs and formal data remain at their original paths. No remote branch,
+numerical source or old dataset is modified. Explicitly restore a historical
+branch from its archived reference before using an old launch command.
