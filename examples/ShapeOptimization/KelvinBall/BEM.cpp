@@ -113,7 +113,7 @@ namespace KelvinBall
       std::array<Index, 3> vertices;
       std::array<Real, 3> barycentric;
       Math::SpatialVector<Real> x;
-      Math::Matrix<Real> density;
+      Math::Matrix<Real> density, weightedDensity;
       Real weight, area;
       std::array<Math::SpatialVector<Real>, 3> areaGradient;
     };
@@ -143,6 +143,7 @@ namespace KelvinBall
         sample.density.setZero(3, 6);
         for (size_t i = 0; i < fe.getCount(); ++i)
           sample.density += fe.getBasis(i)(qf.getPoint(q)).getData() * solution.row(dofs(i));
+        sample.weightedDensity = sample.density * W;
         for (size_t i = 0; i < 3; ++i)
         {
           sample.vertices[i] = vertices(i);
@@ -169,14 +170,16 @@ namespace KelvinBall
         Math::SpatialVector<Real> axis(3); axis.setZero(); axis(i) = 1;
         rigid.col(i + 3) = axis.cross(x.x).getData();
       }
-      const Math::Matrix<Real> P = 2 * x.density * W;
+      const Math::Matrix<Real> P = 2 * x.weightedDensity;
       Math::SpatialVector<Real> dx(3);
       dx.getData() << P(1, 5)-P(2, 4), P(2, 3)-P(0, 5), P(0, 4)-P(1, 3);
       const Real value = (P.cwiseProduct(rigid)).sum() * x.weight;
       deposit(x, Math::SpatialVector<Real>(dx * x.weight), value / x.area);
       for (const auto& y : samples)
       {
-        const Math::SpatialMatrix<Real> H = -x.weight * y.weight * x.density * W * y.density.transpose();
+        const Math::FixedSizeMatrix<Real, 3, 3> contraction =
+          -x.weight * y.weight * x.weightedDensity * y.density.transpose();
+        const Math::SpatialMatrix<Real> H(contraction);
         const Math::SpatialVector<Real> r = x.x - y.x;
         Math::SpatialMatrix<Real> K(3, 3); kernel.evaluate(K, r);
         Math::SpatialVector<Real> dr(3); Real de;

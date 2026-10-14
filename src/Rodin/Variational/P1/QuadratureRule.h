@@ -4492,6 +4492,20 @@ namespace Rodin::Variational
             const auto& teq = quadrature(this->getOrder(tep).value_or(7), teg);
             const auto& tx = trp.getQuadrature(trq);
             const auto& ty = tep.getQuadrature(teq);
+            // Reference P1 basis values depend on rule and range, not cell coordinates.
+            const auto tabulate = [](auto& values, size_t& identity, size_t& count,
+              const auto& fe, const auto& rule) {
+              if (identity != rule.getCacheIdentity() || count != fe.getCount())
+              {
+                identity = rule.getCacheIdentity(); count = fe.getCount();
+                values.resize(rule.getSize() * count);
+                for (size_t q = 0; q < rule.getSize(); ++q)
+                  for (size_t i = 0; i < count; ++i)
+                    values[q * count + i] = fe.getBasis(i)(rule.getPoint(q));
+              }
+            };
+            tabulate(m_smoothTrialBasis, m_smoothTrialIdentity, m_smoothTrialCount, trialfe, trq);
+            tabulate(m_smoothTestBasis, m_smoothTestIdentity, m_smoothTestCount, testfe, teq);
             m_matrix.setZero(testfe.getCount(), trialfe.getCount());
             for (size_t a = 0; a < tx.getSize(); ++a)
             {
@@ -4502,11 +4516,13 @@ namespace Rodin::Variational
                 kernel(m_mk, x, y);
                 const Real weight = trq.getWeight(a) * teq.getWeight(b) *
                   x.getDistortion() * y.getDistortion();
-                for (size_t l = 0; l < testfe.getCount(); ++l)
-                  for (size_t m = 0; m < trialfe.getCount(); ++m)
-                    m_matrix(l, m) += weight * Math::dot(
-                      m_mk * trialfe.getBasis(m)(trq.getPoint(a)),
-                      testfe.getBasis(l)(teq.getPoint(b)));
+                for (size_t m = 0; m < trialfe.getCount(); ++m)
+                {
+                  const auto value = m_mk * m_smoothTrialBasis[a * m_smoothTrialCount + m];
+                  for (size_t l = 0; l < testfe.getCount(); ++l)
+                    m_matrix(l, m) += weight * Math::dot(value,
+                      m_smoothTestBasis[b * m_smoothTestCount + l]);
+                }
               }
             }
             m_distortion = 1;
@@ -5014,6 +5030,9 @@ namespace Rodin::Variational
       ScalarType m_sk;
       KernelValue m_mk;
 
+      std::vector<Range> m_smoothTrialBasis, m_smoothTestBasis;
+      size_t m_smoothTrialIdentity = 0, m_smoothTestIdentity = 0;
+      size_t m_smoothTrialCount = 0, m_smoothTestCount = 0;
       Range m_trv, m_tev;
       KernelValue m_k0, m_k1, m_k2, m_k3, m_k4, m_k5;
 
