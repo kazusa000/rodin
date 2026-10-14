@@ -80,7 +80,10 @@ int main()
       .setHMin(.8*h).setHMax(1.2*h).setHausdorff(.1*h*h)
       .setGradation(2).setAngleDetection(false);
     MMG::Mesh mesh=cutter.discretize(initialPhi);
-    mesh.getConnectivity().compute(2,3);
+    auto& connectivity=mesh.getConnectivity();
+    connectivity.compute(3,2); connectivity.compute(3,1);
+    connectivity.compute(1,0); connectivity.compute(2,0);
+    connectivity.compute(2,3); connectivity.compute(0,0);
     save(mesh,"full-initial.mesh");
     VelocitySpace space(mesh,3);
     Math::Vector<Real> physicalLoad;
