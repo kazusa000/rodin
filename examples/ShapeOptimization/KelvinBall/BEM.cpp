@@ -45,7 +45,7 @@ namespace KelvinBall
     Math::Matrix<Real> rhs(space.getSize(), 6), solution(space.getSize(), 6);
     for (size_t load = 0; load < 6; ++load)
     {
-      VectorFunction rigid(3, [load](const Point& p) {
+      VectorFunction rigid(static_cast<size_t>(3), [load](const Point& p) {
         Math::SpatialVector<Real> velocity(3), axis(3);
         axis.setZero(); axis(load % 3) = 1;
         velocity = load < 3 ? axis : Math::SpatialVector<Real>(axis.cross(p.vector()));
