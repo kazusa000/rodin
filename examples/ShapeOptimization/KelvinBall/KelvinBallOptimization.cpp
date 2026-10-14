@@ -674,6 +674,9 @@ namespace KelvinBall
         const Real initialGridSpacing = m_options.configuration.getGridSpacing();
         Alert::Info configurationInfo;
         configurationInfo << substageHeading("Configuration") << Alert::NewLine
+                          << diagnosticLabel("Initial O24 seed amplitude:")
+                          << Alert::Notation::Number(m_options.configuration.seedAmplitude)
+                          << Alert::NewLine
                           << diagnosticLabel("Grid points:")
                           << Alert::Notation::Number(points) << Alert::NewLine
                           << diagnosticLabel("Outer radius:")
@@ -802,8 +805,8 @@ namespace KelvinBall
           backgroundInfo << Alert::Raise;
           P1 sphereSpace(*swiftBackground);
           GridFunction sphereLevelSet(sphereSpace);
-          sphereLevelSet = RealFunction([](const Geometry::Point& point) {
-            return point.getPhysicalCoordinates().norm() - Real(1);
+          sphereLevelSet = RealFunction([&sphere](const Geometry::Point& point) {
+            return sphere.levelSet(point.getPhysicalCoordinates());
           });
           MMG::Mesh classified =
             classifyLevelSetForSWIFT(*swiftBackground, sphereLevelSet);
@@ -833,6 +836,9 @@ namespace KelvinBall
           << "       Maximum MMG size / reference spacing h0 (default: 10)."
           << Alert::NewLine << Alert::Notation("--outer-radius=<value>")
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
+          << Alert::Notation("--seed-amplitude=<value>")
+          << " Fixed O24 H3 H6 radial perturbation (default: 0, range: [0,0.1])."
+          << Alert::NewLine
           << Alert::Notation("--graded-chamber --h=<size>")
           << " Preserve reference spacing and coarsen the seed away from the sphere."
           << Alert::NewLine << Alert::Notation("--near-field-radius=<value>")
@@ -1071,7 +1077,7 @@ namespace KelvinBall
                       << Alert::Raise;
       }
 
-      void reportSphereGeometry(const LocalMesh& mesh)
+      void reportSphereGeometry(const LocalMesh& mesh, const Sphere& sphere)
       {
         std::set<Index> vertices;
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
@@ -1081,14 +1087,14 @@ namespace KelvinBall
         Real supremum = 0;
         for (const Index vertex : vertices)
         {
-          const Real error = std::abs(mesh.getVertexCoordinates(vertex).norm() - 1.0);
+          const Real error = std::abs(sphere.levelSet(mesh.getVertexCoordinates(vertex)));
           squared += error * error;
           supremum = std::max(supremum, error);
         }
         const Real rms = vertices.empty()
           ? std::numeric_limits<Real>::quiet_NaN()
           : std::sqrt(squared / static_cast<Real>(vertices.size()));
-        Alert::Info() << substageHeading("Sphere geometry") << Alert::NewLine
+        Alert::Info() << substageHeading("Initial seed geometry") << Alert::NewLine
                       << diagnosticLabel("Chamber volume:")
                       << Alert::Notation::Number(mesh.getVolume(Obstacle))
                       << Alert::NewLine << diagnosticLabel("Vertex RMS error:")
@@ -1467,7 +1473,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   checkMaterials(mesh);
   if (m_options.saveMeshDiagnostic)
     mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
-  reportSphereGeometry(mesh);
+  reportSphereGeometry(mesh, sphere);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)

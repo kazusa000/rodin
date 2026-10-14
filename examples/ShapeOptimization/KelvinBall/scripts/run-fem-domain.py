@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--baseline-build-record", type=Path, required=True)
     parser.add_argument("--baseline-campaign", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--preset", type=Path,
+                        default=EXAMPLE / "reproduction/fem-domain-L15.json")
     parser.add_argument("--reuse-native-campaign", type=Path)
     args = parser.parse_args()
     if platform.node() != "28h":
@@ -51,7 +53,7 @@ def main():
                 not (path == args.build_dir and args.reuse_native_campaign)):
             raise ValueError(f"Require new directories outside source: {path}")
     args.output.mkdir(parents=True)
-    preset = json.loads((EXAMPLE / "reproduction/fem-domain-L15.json").read_text())
+    preset = json.loads(args.preset.read_text())
     inherited = json.loads(args.baseline_build_record.read_text())
     env = dict(os.environ, OMP_NUM_THREADS=str(args.threads), OPENBLAS_NUM_THREADS="1",
                MKL_NUM_THREADS="1", KELVIN_SYMMETRY="cubic")
@@ -109,11 +111,13 @@ def main():
             configure[configure.index("-B") + 1] = str(args.build_dir)
             run("configure", configure, args.output / "build-configure", 1800)
             run("build", ["cmake", "--build", args.build_dir, "--target", "KelvinBall",
-                           "KelvinBallGradedChamberTest", "-j", "2"], args.output / "build", 7200)
+                           "KelvinBallGradedChamberTest", "KelvinBallSeedTest", "-j", "2"], args.output / "build", 7200)
             record["native_source_commit"] = args.commit
         test = binary.parent / "KelvinBallGradedChamberTest"
         record["binary_sha256"] = sha(binary)
         run("graded_grid_test", [test], args.output / "graded-grid-test", 60)
+        run("chiral_seed_test", [binary.parent / "KelvinBallSeedTest"],
+            args.output / "chiral-seed-test", 60)
         run("original_regression", [binary, "--n=13", "--outer-radius=2", "--thickness-min=0",
             "--iterations=2", "--reconstruction=mmg", "--save-mesh"], args.output / "original-regression", 1800, threads=2)
         history = list(csv.DictReader((args.output / "original-regression/kelvin-ball.csv").open()))

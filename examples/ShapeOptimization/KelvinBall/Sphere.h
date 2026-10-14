@@ -52,6 +52,13 @@ namespace KelvinBall
       explicit Sphere(const Configuration& configuration);
 
       /**
+       * @brief Evaluates the initial sphere or fixed O24 chiral radial seed.
+       * @param[in] point Physical position relative to the sphere center.
+       * @returns Radius minus the target radius, with H3 H6 angular perturbation.
+       */
+      Real levelSet(const Math::SpatialPoint& point) const;
+
+      /**
        * @brief Discretizes the initial sphere in the chamber.
        *
        * With @p conformingCuts the cut triangles stay required, so paired

@@ -41,6 +41,8 @@ namespace KelvinBall
       nitschePenalty = std::stod(std::string(option.substr(10)));
     else if (option.rfind("--stabilization=", 0) == 0)
       stabilizationFactor = std::stod(std::string(option.substr(16)));
+    else if (option.rfind("--seed-amplitude=", 0) == 0)
+      seedAmplitude = std::stod(std::string(option.substr(17)));
     else if (option.rfind("--background-hausdorff=", 0) == 0)
       backgroundHausdorff = std::stod(std::string(option.substr(23)));
     else if (option.rfind("--background-gradation=", 0) == 0)
@@ -96,6 +98,10 @@ namespace KelvinBall
       throw std::runtime_error("The Nitsche penalty must be positive.");
     if (stabilizationFactor < 0)
       throw std::runtime_error("The pressure stabilization must be nonnegative.");
+    if (!std::isfinite(seedAmplitude) || seedAmplitude < 0 || seedAmplitude > Real(0.1))
+      throw std::runtime_error("The fixed sphere seed amplitude must be in [0,0.1].");
+    if (!(outerRadius > Real(1) + seedAmplitude))
+      throw std::runtime_error("The outer radius must enclose the perturbed seed.");
     if (!(backgroundHausdorff > 0))
       throw std::runtime_error("The background Hausdorff tolerance must be positive.");
     if (!(backgroundGradation > 1))

@@ -23,6 +23,19 @@ namespace KelvinBall
     : m_configuration(configuration)
   {}
 
+  Real Sphere::levelSet(const Math::SpatialPoint& point) const
+  {
+    const Real radius = point.norm();
+    if (m_configuration.seedAmplitude == 0 || radius == 0)
+      return radius - Real(1);
+    const auto direction = point / radius;
+    const Real x = direction(0), y = direction(1), z = direction(2);
+    const Real h3 = Real(3) * std::sqrt(Real(3)) * x * y * z;
+    const Real h6 = Real(6) * std::sqrt(Real(3)) *
+      (x*x-y*y) * (y*y-z*z) * (z*z-x*x);
+    return radius - (Real(1) + m_configuration.seedAmplitude * h3 * h6);
+  }
+
   Mesh Sphere::makeUniformChamber() const
   {
     Mesh cube = Mesh::UniformGrid(Polytope::Type::Tetrahedron,
@@ -296,8 +309,8 @@ namespace KelvinBall
     const Real hausdorff = 0.1 * h * h;
     P1 levelSetSpace(mesh);
     GridFunction sphere(levelSetSpace);
-    sphere = RealFunction([](const Geometry::Point& point) {
-      return point.getPhysicalCoordinates().norm() - Real(1);
+    sphere = RealFunction([this](const Geometry::Point& point) {
+      return levelSet(point.getPhysicalCoordinates());
     });
     MMG::LevelSetDiscretizer discretizer;
     discretizer.split(Fluid, {Obstacle, Fluid})
@@ -356,7 +369,7 @@ namespace KelvinBall
       for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
       {
         const Real distance =
-          std::abs(mesh.getVertexCoordinates(vertex).norm() - Real(1));
+          std::abs(levelSet(mesh.getVertexCoordinates(vertex)));
         size[vertex] =
           farSize - (farSize - interfaceSize) * welsch.getWeight(distance);
       }

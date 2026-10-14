@@ -25,3 +25,6 @@ target_link_libraries(KelvinBallSphere PRIVATE KelvinBallSupport)
 
 add_executable(KelvinBallGradedChamberTest EXCLUDE_FROM_ALL GradedChamberTest.cpp)
 target_link_libraries(KelvinBallGradedChamberTest PRIVATE KelvinBallSupport)
+
+add_executable(KelvinBallSeedTest EXCLUDE_FROM_ALL SeedTest.cpp)
+target_link_libraries(KelvinBallSeedTest PRIVATE KelvinBallSupport)

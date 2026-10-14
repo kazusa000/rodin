@@ -33,6 +33,8 @@ namespace KelvinBall
       Real chamberGradation = 1.3;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
+      /// Fixed O24 reflection-odd radial perturbation; zero keeps the sphere.
+      Real seedAmplitude = 0;
       /// Settings of the initial SWIFT background preparation.
       Real backgroundHausdorff = 0.05;
       Real backgroundGradation = 2;

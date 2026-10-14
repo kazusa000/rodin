@@ -41,3 +41,25 @@ The first validation-only failure is retained. An explicit `--reuse-native-campa
 may reuse its successful native build only after clean source, unchanged numerical
 files, dependency IDs, build path and executable hash are checked. The controller
 and actually compiled numerical commits are recorded separately.
+
+## Fixed chiral initialization
+
+The opt-in `--seed-amplitude=0.02` uses the same fixed reflection-odd O24
+radial seed as the earlier coupled research branch. For unit direction
+`(x,y,z)`, `H3=3 sqrt(3) xyz`,
+`H6=6 sqrt(3) (x²-y²)(y²-z²)(z²-x²)`, and the initial level set is
+`|X| - (1 + amplitude H3 H6)`. Zero remains the original sphere. This is
+a prescribed perturbation, not an initialization selected by measured scores.
+MMG and SWIFT initialization use the same level-set function; initial geometry
+errors are measured against the chosen seed, rather than a unit sphere.
+
+Use `--preset reproduction/fem-domain-L15-chiral.json` with the runner for
+the chiral repeat. Only initialization differs from the original L15 preset;
+box size, near-field sizes, gradation, step, regularization and 20 real updates
+stay fixed. The native seed diagnostic checks all 24 rotations, reflection
+oddness, origin finiteness and the unchanged zero-amplitude sphere. Original
+one-update regression is still performed with amplitude zero and two threads.
+The existing fixed-step optimizer does not reject objective decreases; the
+completion certificate counts transported/reconstructed updates, not accepted
+Armijo steps or scientific convergence. Periodic trace and mesh warnings remain
+part of the numerical assessment, and are not fixed by adding a seed.
