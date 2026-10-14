@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--baseline-build-record", type=Path, required=True)
     parser.add_argument("--baseline-campaign", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--reuse-native-campaign", type=Path)
     args = parser.parse_args()
     if platform.node() != "28h":
         raise ValueError("This campaign is explicitly restricted to 28h.")
@@ -46,7 +47,8 @@ def main():
     if any(line.startswith(("-", "+", "U")) for line in modules.splitlines()):
         raise ValueError("Require the exact initialized dependency submodules.")
     for path in [args.output, args.build_dir]:
-        if path.resolve().is_relative_to(ROOT) or path.exists():
+        if path.resolve().is_relative_to(ROOT) or (path.exists() and
+                not (path == args.build_dir and args.reuse_native_campaign)):
             raise ValueError(f"Require new directories outside source: {path}")
     args.output.mkdir(parents=True)
     preset = json.loads((EXAMPLE / "reproduction/fem-domain-L15.json").read_text())
@@ -60,14 +62,18 @@ def main():
                   stages=[], state="building", started_at=time.time())
     def save():
         (args.output / "campaign.json").write_text(json.dumps(record, indent=2) + "\n")
-    def run(name, command, cwd, timeout):
+    def run(name, command, cwd, timeout, threads=None):
         cwd.mkdir(parents=True, exist_ok=True)
-        stage = dict(name=name, command=[str(x) for x in command], started_at=time.time())
+        child_env = dict(env)
+        if threads is not None:
+            child_env["OMP_NUM_THREADS"] = str(threads)
+        stage = dict(name=name, command=[str(x) for x in command], started_at=time.time(),
+                     omp_threads=child_env["OMP_NUM_THREADS"])
         record["stages"].append(stage)
         save()
         with (cwd / "run.log").open("w") as log:
             try:
-                result = subprocess.run(stage["command"], cwd=cwd, env=env,
+                result = subprocess.run(stage["command"], cwd=cwd, env=child_env,
                                         stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
                 stage["exit_code"] = result.returncode
             except subprocess.TimeoutExpired:
@@ -79,18 +85,37 @@ def main():
             raise RuntimeError(f"{name} failed with actual exit {stage['exit_code']}; see {cwd / 'run.log'}")
     code = 1
     try:
-        configure = list(inherited["commands"][0])
-        configure[configure.index("-S") + 1] = str(ROOT)
-        configure[configure.index("-B") + 1] = str(args.build_dir)
-        run("configure", configure, args.output / "build-configure", 1800)
-        run("build", ["cmake", "--build", args.build_dir, "--target", "KelvinBall",
-                       "KelvinBallGradedChamberTest", "-j", "2"], args.output / "build", 7200)
         binary = args.build_dir / "examples/ShapeOptimization/KelvinBall/KelvinBall"
+        if args.reuse_native_campaign:
+            previous = json.loads(args.reuse_native_campaign.read_text())
+            source = Path(previous["source"])
+            state = subprocess.check_output(["git", "-C", str(source), "status", "--porcelain",
+                                             "--untracked-files=all"], text=True).strip()
+            head = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+            changed = git("diff", "--name-only", previous["commit"], args.commit).splitlines()
+            allowed = {"examples/ShapeOptimization/KelvinBall/scripts/run-fem-domain.py",
+                       "examples/ShapeOptimization/KelvinBall/FEM_DOMAIN.md"}
+            build = next(stage for stage in previous["stages"] if stage["name"] == "build")
+            if (state or head != previous["commit"] or build.get("exit_code") != 0 or
+                    str(args.build_dir) not in build["command"] or
+                    not set(changed).issubset(allowed) or
+                    sha(binary) != previous["binary_sha256"] or modules != previous["submodules"]):
+                raise ValueError("Reused native build/source does not match the unchanged numerical code.")
+            record["native_source_commit"] = previous["commit"]
+            record["reused_native_campaign_sha256"] = sha(args.reuse_native_campaign)
+        else:
+            configure = list(inherited["commands"][0])
+            configure[configure.index("-S") + 1] = str(ROOT)
+            configure[configure.index("-B") + 1] = str(args.build_dir)
+            run("configure", configure, args.output / "build-configure", 1800)
+            run("build", ["cmake", "--build", args.build_dir, "--target", "KelvinBall",
+                           "KelvinBallGradedChamberTest", "-j", "2"], args.output / "build", 7200)
+            record["native_source_commit"] = args.commit
         test = binary.parent / "KelvinBallGradedChamberTest"
         record["binary_sha256"] = sha(binary)
         run("graded_grid_test", [test], args.output / "graded-grid-test", 60)
         run("original_regression", [binary, "--n=13", "--outer-radius=2", "--thickness-min=0",
-            "--iterations=2", "--reconstruction=mmg", "--save-mesh"], args.output / "original-regression", 1800)
+            "--iterations=2", "--reconstruction=mmg", "--save-mesh"], args.output / "original-regression", 1800, threads=2)
         history = list(csv.DictReader((args.output / "original-regression/kelvin-ball.csv").open()))
         baseline = json.loads(args.baseline_campaign.read_text())
         control = next(case for case in baseline["cases"] if case["name"] == "mmg")["summary"]

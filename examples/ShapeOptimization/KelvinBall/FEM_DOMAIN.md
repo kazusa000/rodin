@@ -32,3 +32,12 @@ The launcher `scripts/run-fem-domain.py` requires an exact clean pushed commit,
 new build/output directories and the original 28h baseline build and campaign
 records. It inherits only the verified dependency paths/configuration, not old
 binaries. CPU execution uses four OpenMP threads and one BLAS thread by default.
+
+The historical regression uses two OpenMP threads to match its frozen campaign;
+production uses four. On 28h the frozen and new binaries agree exactly within
+each thread setting, but the first reconstructed shape differs across settings.
+This is retained as an execution-setting dependence, not a numerical-source change.
+The first validation-only failure is retained. An explicit `--reuse-native-campaign`
+may reuse its successful native build only after clean source, unchanged numerical
+files, dependency IDs, build path and executable hash are checked. The controller
+and actually compiled numerical commits are recorded separately.
