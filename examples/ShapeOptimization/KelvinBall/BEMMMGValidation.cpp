@@ -69,7 +69,7 @@ int main()
     cube.scale(h);
     for (Index i=0; i<cube.getVertexCount(); ++i)
       cube.setVertexCoordinates(i,cube.getVertexCoordinates(i)-Math::SpatialPoint{2,2,2});
-    MMG::Mesh background(cube); prepare(background);
+    MMG::Mesh background(std::move(cube)); prepare(background);
     Configuration configuration; configuration.seedAmplitude=.02;
     const Sphere seed(configuration);
     P1 backgroundSpace(background);
