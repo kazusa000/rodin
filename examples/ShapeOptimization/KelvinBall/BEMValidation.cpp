@@ -108,6 +108,7 @@ int main()
     const Real pi = std::acos(Real(-1));
     const Real kError = std::abs(spherical.k/(6*pi)-1), qError = std::abs(spherical.q/(8*pi)-1);
     require(spherical.openEdges == 0 && spherical.panels == 512, "Sphere is not closed.");
+    std::cout << "sphere k=" << spherical.k << " q=" << spherical.q << " rho=" << spherical.rho << " k_error=" << kError << " q_error=" << qError << std::endl;
     require(kError < .2 && qError < .2 && spherical.rho < 1e-10, "Sphere resistance validation failed.");
     std::cout << "sphere k_error=" << kError << " q_error=" << qError
       << " residual=" << spherical.residual << " reciprocity=" << spherical.reciprocity << '\n';

@@ -3,6 +3,9 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <map>
+#include <memory>
+#include "Rodin/QF/WitherdenVincent.h"
 #include "Rodin/Geometry/Point.h"
 #include "Rodin/Math/SpatialMatrix.h"
 
@@ -42,6 +45,20 @@ namespace Rodin::Variational
         for (size_t i = 0; i < 3; ++i)
           for (size_t j = 0; j < 3; ++j)
             out(i, j) = factor * ((i == j ? r2 + 2 * e2 : 0) + r(i) * r(j));
+      }
+
+      /** Stable, permutation-symmetric positive surface quadrature.
+       * Triangle numbering must not introduce spurious chirality.
+       */
+      static const QF::QuadratureFormulaBase& getQuadrature(size_t order, Geometry::Polytope::Type geometry)
+      {
+        if (geometry != Geometry::Polytope::Type::Triangle ||
+            !QF::WitherdenVincent::isAvailable(order, geometry))
+          throw std::invalid_argument("Stokeslet surface quadrature needs a supported triangle order.");
+        static thread_local std::map<size_t, std::unique_ptr<QF::WitherdenVincent>> rules;
+        auto& rule = rules[order];
+        if (!rule) rule = std::make_unique<QF::WitherdenVincent>(order, geometry);
+        return *rule;
       }
 
       Real getEpsilon() const { return m_epsilon; }

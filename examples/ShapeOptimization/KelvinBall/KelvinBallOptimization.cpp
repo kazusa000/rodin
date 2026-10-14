@@ -2522,9 +2522,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           "Smoothed_Curvature", sewedInterfaceCurvature, IO::XDMF::Center::Node);
       }
 
+      KelvinBall::SewedOutput sewedFluid(fluid, FlatSet<Attribute>{Gamma, Outer});
+      sewedFluidOutput.clear();
+      sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
       if (!m_options.bemGradient)
       {
-      KelvinBall::SewedOutput sewedFluid(fluid, FlatSet<Attribute>{Gamma, Outer});
       VelocitySpace sewedVelocitySpace(sewedFluid.getMesh(), 3);
       PressureSpace sewedPressureSpace(sewedFluid.getMesh());
       GridFunction sewedUT0(sewedVelocitySpace), sewedUT1(sewedVelocitySpace),
@@ -2549,8 +2551,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       sewedFluid.setScalarLoad(sewedPR0, rotationPressures, 0);
       sewedFluid.setScalarLoad(sewedPR1, rotationPressures, 1);
       sewedFluid.setScalarLoad(sewedPR2, rotationPressures, 2);
-      sewedFluidOutput.clear();
-      sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
       sewedFluidOutput.add("Translation_0", sewedUT0, IO::XDMF::Center::Node);
       sewedFluidOutput.add("Translation_1", sewedUT1, IO::XDMF::Center::Node);
       sewedFluidOutput.add("Translation_2", sewedUT2, IO::XDMF::Center::Node);

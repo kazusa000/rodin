@@ -4481,10 +4481,15 @@ namespace Rodin::Variational
         {
           if constexpr (KernelType::SmoothKernel && FormLanguage::IsVectorRange<Range>::Value)
           {
-            const auto& trq = QF::PolytopeQuadratureFormula::get(
-              this->getOrder(trp).value_or(7), trg);
-            const auto& teq = QF::PolytopeQuadratureFormula::get(
-              this->getOrder(tep).value_or(7), teg);
+            const auto quadrature = [](size_t order, Geometry::Polytope::Type geometry)
+              -> const QF::QuadratureFormulaBase& {
+              if constexpr (requires { KernelType::getQuadrature(order, geometry); })
+                return KernelType::getQuadrature(order, geometry);
+              else
+                return QF::PolytopeQuadratureFormula::get(order, geometry);
+            };
+            const auto& trq = quadrature(this->getOrder(trp).value_or(7), trg);
+            const auto& teq = quadrature(this->getOrder(tep).value_or(7), teg);
             const auto& tx = trp.getQuadrature(trq);
             const auto& ty = tep.getQuadrature(teq);
             m_matrix.setZero(testfe.getCount(), trialfe.getCount());
