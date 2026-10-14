@@ -15,7 +15,8 @@ int main()
     auto mesh = Sphere(configuration).makeUniformChamber();
     P1 scalarSpace(mesh);
     VelocitySpace vectorSpace(mesh, 3);
-    GridFunction scalar(scalarSpace), vector(vectorSpace);
+    GridFunction scalar(scalarSpace);
+    GridFunction vector(vectorSpace);
     for (Eigen::Index i = 0; i < scalar.getData().size(); ++i)
       scalar.getData()(i) = std::sin(Real(i + 1) * .73);
     for (Eigen::Index i = 0; i < vector.getData().size(); ++i)
