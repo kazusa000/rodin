@@ -22,7 +22,7 @@ int main(int argc, char** argv)
   using namespace KelvinBall;
   if (argc != 2)
     return 2;
-  MMG::Mesh volume;
+  Mesh volume;
   volume.load(argv[1], IO::FileFormat::MEDIT);
   prepare(volume);
   auto fluid = volume.trim(Obstacle);
@@ -79,7 +79,8 @@ int main(int argc, char** argv)
         {
           Math::SpatialPoint reference, projected;
           candidate->getTransformation().inverse(reference, point);
-          const auto& hs = Geometry::Polytope::Traits(candidate->getGeometry()).getHalfSpace();
+          const Geometry::Polytope::Traits traits(candidate->getGeometry());
+          const auto& hs = traits.getHalfSpace();
           Real margin = std::numeric_limits<Real>::infinity();
           for (Eigen::Index i = 0; i < hs.vector.size(); ++i)
             margin = std::min(margin, hs.vector[i] - reference.dot(hs.matrix.row(i).transpose()));
