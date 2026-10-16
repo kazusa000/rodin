@@ -86,6 +86,22 @@ are refused. `--updates=0` preserves the independent seed/step diagnostic mode.
 three-update configuration. The route still does not enforce O24 symmetry;
 the production quotient seam issue and stability/cost studies remain separate.
 
+Long background campaigns may request up to 1000 updates. To continue an accepted
+checkpoint without refitting it, supply `--initial-mesh=ACCEPTED.mesh`,
+`--target-volume=ORIGINAL_VOLUME` and `--expected-rho=ACCEPTED_RHO`. The native
+MMG loader restores mesh metadata; the first fresh BEM solve must reproduce
+the accepted rho to relative `1e-10`. Volume is checked against the supplied
+original target, so restarting does not reset the allowed cumulative drift.
+All other numerical settings and acceptance rules are unchanged. Checkpoints
+in a resumed campaign use local numbering starting at zero; record the prior
+step offset in the campaign record. The update limit is an operational bound,
+not a claim of convergence. Line-search exhaustion still terminates the run.
+
+`scripts/bem-gradient-long-run.sh EXECUTABLE NEW_RESULTS_DIRECTORY ACCEPTED_MESH
+ORIGINAL_VOLUME ACCEPTED_RHO` requests 100 further updates with seed provenance
+`0.6`, factor `0.03`, volume tolerance `0.005`, and six backtracks. The shell
+only launches the native executable and records its real exit status.
+
 The existing chamber optimizer has an opt-in native entry:
 
 ```sh

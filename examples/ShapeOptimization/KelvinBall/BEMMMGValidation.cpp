@@ -5,6 +5,7 @@
 #include <Rodin/Distance/Eikonal.h>
 #include <Rodin/MMG.h>
 #include <Rodin/MMG/MeshPrinter.h>
+#include <Rodin/MMG/MeshLoader.h>
 #include <Rodin/Solver/SparseLU.h>
 #ifdef RODIN_USE_MUMPS
 #include <Rodin/Solver/MUMPS.h>
@@ -68,7 +69,11 @@ int main(int argc, char** argv)
     constexpr size_t points=13;
     constexpr Real h=Real(4)/(points-1);
     Real seedAmplitude=.02, volumeTolerance=.005;
+    Real requestedTargetVolume=0, expectedRho=0;
+    std::string initialMesh;
     size_t updates=0, maxBacktracks=6;
+    // Operational bound for finite background campaigns, not a convergence criterion.
+    constexpr size_t maximumUpdates=1000;
     // Weak Armijo gain and halving follow the existing Rodin globalization policy.
     constexpr Real armijo=1e-4, reduction=.5;
     std::vector<Real> stepFactors{.01};
@@ -80,6 +85,9 @@ int main(int argc, char** argv)
       else if (option.starts_with("--updates=")) updates=std::stoul(option.substr(10));
       else if (option.starts_with("--volume-tolerance=")) volumeTolerance=std::stod(option.substr(19));
       else if (option.starts_with("--max-backtracks=")) maxBacktracks=std::stoul(option.substr(17));
+      else if (option.starts_with("--initial-mesh=")) initialMesh=option.substr(15);
+      else if (option.starts_with("--target-volume=")) requestedTargetVolume=std::stod(option.substr(16));
+      else if (option.starts_with("--expected-rho=")) expectedRho=std::stod(option.substr(15));
       else if (option.starts_with("--step-factors="))
       {
         stepFactors.clear();
@@ -94,34 +102,55 @@ int main(int argc, char** argv)
     for (const Real factor:stepFactors)
       if (!std::isfinite(factor) || factor<0 || factor>1)
         throw std::runtime_error("Step factors must be in [0,1]; zero is a reconstruction control.");
-    if (updates>10 || maxBacktracks>10 || !std::isfinite(volumeTolerance) ||
+    if (updates>maximumUpdates || maxBacktracks>10 || !std::isfinite(volumeTolerance) ||
         volumeTolerance<=0 || volumeTolerance>.05)
-      throw std::runtime_error("Use at most ten updates/backtracks and a volume tolerance in (0,0.05].");
+      throw std::runtime_error("Use at most 1000 updates, ten backtracks and a volume tolerance in (0,0.05].");
+    if (!std::isfinite(requestedTargetVolume) || requestedTargetVolume<0 ||
+        !std::isfinite(expectedRho) || expectedRho<0)
+      throw std::runtime_error("Target volume and expected rho must be finite and nonnegative.");
+    if (!initialMesh.empty() && (requestedTargetVolume<=0 || expectedRho<=0))
+      throw std::runtime_error("Restart requires the original target volume and accepted rho.");
     if (updates>0 && (stepFactors.size()!=1 || stepFactors.front()<=0))
       throw std::runtime_error("Consecutive updates need exactly one positive initial step factor.");
     if (updates>0 && (std::filesystem::exists("bem-mmg-history.json") ||
                      std::filesystem::exists("accepted-0.mesh")))
       throw std::runtime_error("Refusing to overwrite an existing accepted history.");
-    auto cube=KelvinBall::Mesh::UniformGrid(Polytope::Type::Tetrahedron,{points,points,points});
-    cube.scale(h);
-    for (Index i=0; i<cube.getVertexCount(); ++i)
-      cube.setVertexCoordinates(i,cube.getVertexCoordinates(i)-Math::SpatialPoint{2,2,2});
-    MMG::Mesh background(std::move(cube)); prepare(background);
-    Configuration configuration; configuration.seedAmplitude=seedAmplitude;
-    const Sphere seed(configuration);
-    P1 backgroundSpace(background);
-    GridFunction initialPhi(backgroundSpace);
-    initialPhi=RealFunction([&seed](const Point& p) { return seed.levelSet(p.vector()); });
     MMG::LevelSetDiscretizer cutter;
     cutter.split(Fluid,{Obstacle,Fluid}).setBoundaryReference(Gamma)
       .setHMin(.8*h).setHMax(1.2*h).setHausdorff(.1*h*h)
       .setGradation(2).setAngleDetection(false);
-    MMG::Mesh mesh=cutter.discretize(initialPhi);
+    MMG::Mesh mesh;
+    if (initialMesh.empty())
+    {
+      auto cube=KelvinBall::Mesh::UniformGrid(Polytope::Type::Tetrahedron,{points,points,points});
+      cube.scale(h);
+      for (Index i=0; i<cube.getVertexCount(); ++i)
+        cube.setVertexCoordinates(i,cube.getVertexCoordinates(i)-Math::SpatialPoint{2,2,2});
+      MMG::Mesh background(std::move(cube)); prepare(background);
+      Configuration configuration; configuration.seedAmplitude=seedAmplitude;
+      const Sphere seed(configuration);
+      P1 backgroundSpace(background);
+      GridFunction initialPhi(backgroundSpace);
+      initialPhi=RealFunction([&seed](const Point& p) { return seed.levelSet(p.vector()); });
+      mesh=cutter.discretize(initialPhi);
+    }
+    else
+    {
+      std::ifstream input(initialMesh);
+      if (!input) throw std::runtime_error("Cannot read accepted restart mesh.");
+      MMG::MeshLoader(mesh).load(input);
+    }
     save(mesh,"full-initial.mesh");
-    const Real targetVolume=mesh.getVolume(Obstacle);
-    if (!std::isfinite(targetVolume) || targetVolume<=0)
+    const Real startingVolume=mesh.getVolume(Obstacle);
+    const Real targetVolume=requestedTargetVolume>0 ? requestedTargetVolume : startingVolume;
+    if (!std::isfinite(startingVolume) || startingVolume<=0)
       throw std::runtime_error("Initial obstacle volume must be finite and positive.");
-    Real seedRho=0, lastRho=0, lastVolume=targetVolume;
+    if (updates>0 && std::abs(startingVolume/targetVolume-1)>volumeTolerance)
+      throw std::runtime_error("Starting mesh violates the original volume tolerance.");
+    std::cout << "initial_geometry_ready restart=" << (!initialMesh.empty())
+      << " volume=" << startingVolume << " target_volume=" << targetVolume
+      << " expected_rho=" << expectedRho << " requested_updates=" << updates << std::endl;
+    Real seedRho=0, lastRho=0, lastVolume=startingVolume;
     size_t acceptedUpdates=0;
     const auto writeSummary=[&](bool complete, const char* reason)
     {
@@ -132,6 +161,8 @@ int main(int argc, char** argv)
         << ",\"requested_updates\":" << updates << ",\"accepted_updates\":" << acceptedUpdates
         << ",\"seed_rho\":" << seedRho << ",\"last_rho\":" << lastRho
         << ",\"target_volume\":" << targetVolume << ",\"last_volume\":" << lastVolume
+        << ",\"restart\":" << (initialMesh.empty() ? "false":"true")
+        << ",\"starting_volume\":" << startingVolume << ",\"expected_start_rho\":" << expectedRho
         << ",\"volume_tolerance\":" << volumeTolerance << ",\"armijo\":" << armijo
         << ",\"step_reduction\":" << reduction << ",\"max_backtracks\":" << maxBacktracks
         << ",\"stop_reason\":\"" << reason << "\"}\n";
@@ -151,7 +182,12 @@ int main(int argc, char** argv)
       const auto initial=evaluate(domain,space,physicalLoad,true);
       const Real initialVolume=domain.getVolume(Obstacle);
       std::cout << "initial rho=" << initial.rho << " panels=" << initial.panels << std::endl;
-      if (iteration==0) { seedRho=initial.rho; lastRho=initial.rho; }
+      if (iteration==0)
+      {
+        if (expectedRho>0 && std::abs(initial.rho-expectedRho)>1e-10*std::max(expectedRho,Real(1e-30)))
+          throw std::runtime_error("Restart BEM state disagrees with the saved accepted rho.");
+        seedRho=initial.rho; lastRho=initial.rho;
+      }
       else if (std::abs(initial.rho-lastRho)>1e-10*std::max(initial.rho,Real(1e-30)))
         throw std::runtime_error("Fresh BEM state disagrees with the accepted checkpoint.");
       if (updates>0) writeSummary(false,"running");
