@@ -112,7 +112,7 @@ def main():
             child.wait()
 
     checkpoints = sorted({step-args.restart_step for step in [10, 20, 40, 60, 80, 105]
-                          if args.restart_step < step <= args.restart_step+args.updates} | {args.updates})
+                          if args.restart_step <= step <= args.restart_step+args.updates} | {args.updates})
     stage = dict(name="optimization", command=command, started_at=time.time())
     record["stages"].append(stage)
     record.update(state="optimizing", local_bem_checkpoints=checkpoints)
@@ -154,7 +154,7 @@ def main():
                     item["evaluation"] = json.loads(result_path.read_text())
                 bem = None
             attempted = {item["local_step"] for item in record["bem"]}
-            ready = [step for step in checkpoints if step <= record["real_updates"] and step not in attempted]
+            ready = [step for step in checkpoints if rows and step <= record["real_updates"] and step not in attempted]
             # On native failure retain and assess the last fully evaluated geometry too.
             if fem.poll() is not None and record["real_updates"] not in attempted and record["real_updates"] > 0:
                 ready = sorted(set(ready + [record["real_updates"]]))

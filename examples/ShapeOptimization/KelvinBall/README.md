@@ -36,6 +36,8 @@ For a rebuilt numerical version, `--native-commit` must match its successful
 build record and binary SHA-256. `--restart-campaign` and the global
 `--restart-step` can select a later fully evaluated CSV/HDF5 checkpoint, including
 one from a failed run; incomplete saved geometries are rejected as restart states.
+If the restart itself is a scheduled BEM checkpoint, it is evaluated once its
+complete native CSV/HDF5 state is available, before any later checkpoint.
 Pass the clean controller `--commit`, fresh `--output`, pinned `--native-source`,
 `--build-dir`, `--build-record`, `--pilot`, and clean `--verifier`; run with the
 existing HDF5-capable Python on 28h. `--validate-only` checks these prerequisites
