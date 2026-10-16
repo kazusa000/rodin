@@ -22,7 +22,7 @@ int main(int argc, char** argv)
   using namespace KelvinBall;
   if (argc != 2)
     return 2;
-  Mesh volume;
+  KelvinBall::Mesh volume;
   volume.load(argv[1], IO::FileFormat::MEDIT);
   prepare(volume);
   auto fluid = volume.trim(Obstacle);
