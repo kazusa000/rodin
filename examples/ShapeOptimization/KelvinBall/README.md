@@ -1,5 +1,30 @@
 # FEM-domain branch: historical update restoration
 
+`scripts/continue-fem-legacy.py` continues the verified five-update pilot from
+its original HDF5 double coordinates, with the same volume mesh connectivity
+and material tags. It defaults to 100 additional updates (101 evaluated states),
+so local state 0 is global state 5 and local state 100 is global state 105.
+The numerical binary is reused only if its SHA-256 matches the pilot and the
+controller commit changes no C++ or build inputs relative to `df602b5a`.
+Pass the clean controller `--commit`, fresh `--output`, pinned `--native-source`,
+`--build-dir`, `--build-record`, `--pilot`, and clean `--verifier`; run with the
+existing HDF5-capable Python on 28h. `--validate-only` checks these prerequisites
+without starting a job. The native time budget is 72 hours.
+
+The separate serial BEM queue measures global states 10, 20, 40, 60, 80 and 105
+as their CSV rows become available, plus the final evaluated state after a
+native failure. It retains all original panels and the historical kernel.
+`--backend auto` uses the same weighted quotient operator in dense or
+matrix-free form: dense storage is limited to 12 GiB per matrix and requires
+two matrices plus 6 GiB available memory for FEM and other working storage.
+There is at most one BEM measurement running, with a 12-hour budget per state;
+its result never feeds back into the FEM direction or acceptance. BEM failures
+are recorded without interrupting the native update budget. Actual exits,
+checkpoint hashes, global indices, commands and progress are in `campaign.json`.
+The restarted CSV reports its loaded volume as `target_volume`; the original
+pilot reference is also retained in the manifest. This reference is diagnostic:
+the native constraint remains zero first variation of volume.
+
 The active FEM-domain workflow restores the MMG update implementation from
 `9b3dfd7e1a49036f4f1074f3f7fc99f72bbb1f04`: rotated trace assembly, Gamma-pinned
 distance projection, L2 characteristic transport, and the original soft

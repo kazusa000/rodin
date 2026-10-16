@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Assess preserved FEM states with original HDF5 coordinates and independent CPU BEM."""
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -83,8 +84,11 @@ def main():
     parser.add_argument("--fem-campaign", type=Path, required=True)
     parser.add_argument("--verifier", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--backend", choices=("quotient", "quotient-cg"), default="quotient")
+    parser.add_argument("--backend", choices=("quotient", "quotient-cg", "auto"), default="quotient")
     parser.add_argument("--blas-threads", type=int, default=6)
+    parser.add_argument("--steps", type=int, nargs="+", default=[0, 1, 3, 5])
+    parser.add_argument("--allow-running", action="store_true",
+                        help="Evaluate only CSV-committed checkpoints of a live continuation.")
     args = parser.parse_args()
     if platform.node() != "28h":
         raise ValueError("Independent evaluation is explicitly CPU-only on 28h.")
@@ -94,9 +98,14 @@ def main():
     fem_record = args.fem_campaign.read_bytes()
     fem = json.loads(fem_record)
     stage = next(s for s in fem["stages"] if s["name"] == "optimization")
-    if stage.get("exit_code") != 0 or fem.get("real_updates") != 5:
-        raise ValueError("Require five completed native FEM updates before evaluation.")
     simulation = args.fem_campaign.parent / "optimization"
+    with (simulation / "kelvin-ball.csv").open() as stream:
+        rows = list(csv.DictReader(stream))
+    completed = {int(row["iteration"]) for row in rows if None not in row and
+                 row.get("omega_z") not in (None, "")}
+    if (not args.steps or any(step < 0 or step not in completed for step in args.steps) or
+            (not args.allow_running and stage.get("exit_code") != 0)):
+        raise ValueError("Require requested CSV-committed states and a completed run unless --allow-running.")
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "native-fem-campaign.json").write_bytes(fem_record)
     if args.blas_threads < 1:
@@ -115,24 +124,38 @@ def main():
 
     code = 1
     try:
-        for step in [0, 1, 3, 5]:
+        for step in sorted(set(args.steps)):
             directory = args.output / f"step-{step:06d}"
             directory.mkdir()
             mesh = directory / "original-double.mesh"
             certificate = prepare(simulation / f"KelvinBall.Chamber.mesh.{step:06d}.h5",
                                   simulation / f"KelvinBallState-{step:06d}.mesh", mesh)
+            backend = args.backend
+            if backend == "auto":
+                # Same full-panel weighted operator; avoid allocating two dense
+                # matrices when they would compete with the running FEM solve.
+                matrix_bytes = 648 * certificate["gamma_panels"] ** 2
+                memory = {line.split(":")[0]: int(line.split()[1]) * 1024
+                          for line in Path("/proc/meminfo").read_text().splitlines()}
+                backend = ("quotient" if matrix_bytes <= 12 * 1024**3 and
+                           2 * matrix_bytes + 6 * 1024**3 <= memory["MemAvailable"]
+                           else "quotient-cg")
             command = [os.sys.executable, "-B", str(args.verifier / "scripts/bem_convergence_scan.py"), str(mesh),
                 "--panels", "full", "--epsilon-factors", "0.6", "--subdivision-levels", "0",
-                "--viscosity", "1", "--center", "0", "0", "0", "--backend", args.backend,
+                "--viscosity", "1", "--center", "0", "0", "0", "--backend", backend,
                 "--max-matrix-gib", "12",
                 "--solver-rtol", "1e-10", "--solver-maxiter", "6000", "--preconditioner-panel-block-size", "256",
                 "--matrix-free-row-chunk", "32", "--solver-progress", "--matrix-free-device", "cpu",
                 "--json", str(directory / "scan.json"), "--csv", str(directory / "scan.csv")]
-            item = dict(step=step, input=certificate, command=command, started_at=time.time())
+            item = dict(step=step, global_step=fem.get("restart_global_step", 0) + step,
+                        input=certificate, backend=backend, command=command, started_at=time.time())
+            item["blas_threads"] = args.blas_threads if backend == "quotient" else 1
+            step_env = dict(env, OPENBLAS_NUM_THREADS=str(item["blas_threads"]),
+                            MKL_NUM_THREADS=str(item["blas_threads"]))
             record["evaluations"].append(item)
             save()
             with (directory / "run.log").open("w") as log:
-                child = subprocess.run(command, cwd=directory, env=env, stdout=log,
+                child = subprocess.run(command, cwd=directory, env=step_env, stdout=log,
                                        stderr=subprocess.STDOUT, timeout=43200)
             item.update(exit_code=child.returncode, finished_at=time.time())
             (directory / "exit-code.txt").write_text(str(child.returncode) + "\n")
