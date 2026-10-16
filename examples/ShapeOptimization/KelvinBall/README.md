@@ -3,20 +3,26 @@
 The chamber fluid trace has an explicit fallback for a small mismatch between
 the independently triangulated rotated fluid rims. Only a failed original
 location query uses this fallback: its closest master triangle edge is accepted
-within the current MMG Hausdorff budget, `0.1*h*h` (or the smaller recorded
-reconstruction tolerance after a retry). Both physical and reference coordinates
+within a fixed near-field physical band, `0.25*h`, using the historical trace
+reference fraction. This is a compatibility policy for the legacy weakly periodic
+geometry. Both physical and reference coordinates
 then identify that projected point; its complete Nitsche contribution is assembled.
 Queries beyond the absolute budget still fail the coverage check. Projection
 does not depend on the enlarged box size. Native CSV columns
 `cut_projection_hits` (query count, including repeated state/jump evaluations)
-and `cut_projection_max_distance` record its use. Original volume and surface
+and `cut_projection_max_distance`, together with `cut_projection_budget`, record
+its use. Original volume and surface
 coordinates are preserved for output and independent BEM evaluation.
 
 The global-8 regression input contains one unmatched order-4 quadrature point.
 Exhaustive search also misses it: its best master reference margin is
 `-0.26932707427240382`, beyond the historical `-0.25` bound. An independent VTK
 closest-cell query gives a physical gap `0.0005838581729716859`, below the MMG
-budget `0.0011080332409972298`. The earlier core locator could terminate at a
+budget `0.0011080332409972298`. A subsequent two-update regression exposed a
+global-10 gap of `0.0019796431471776187`: weakly identified advected traces are
+not bounded by a single MMG reconstruction tolerance. The fixed `0.25*h`
+band replaces that insufficient first policy and removes thin-face reference
+conditioning from the acceptance criterion. The earlier core locator could terminate at a
 candidate centroid as soon as its physical residual was below a box-scaled
 tolerance, before computing the true inverse coordinates; the current locator
 certifies those coordinates and exposes the mismatch. The project fallback
@@ -50,7 +56,8 @@ native failure. It retains all original panels and the historical kernel.
 matrix-free form: dense storage is limited to 12 GiB per matrix and requires
 two matrices plus 6 GiB available memory for FEM and other working storage.
 There is at most one BEM measurement running, with a 12-hour budget per state;
-its result never feeds back into the FEM direction or acceptance. BEM failures
+its result never feeds back into the FEM direction or acceptance. A rebuilt
+native version also measures its initial resumed state. BEM failures
 are recorded without interrupting the native update budget. Actual exits,
 checkpoint hashes, global indices, commands and progress are in `campaign.json`.
 The restarted CSV reports its loaded volume as `target_volume`; the original

@@ -75,10 +75,10 @@ namespace KelvinBall
 
       static constexpr Real mu = KelvinBall::Mu;
       static constexpr Real remeshGradation = 2.0;
-      /// Historical MMG geometric error budget, also bounding cut-rim projection.
+      /// Historical MMG geometric error budget.
       static constexpr Real remeshHausdorffFactor = 0.1;
-      static constexpr Real rotatedTracePhysicalTolerance = 0.01;
-      static constexpr Real rotatedTraceReferenceTolerance = 0.25;
+      static constexpr Real rotatedTracePhysicalTolerance = DefaultRotatedTracePhysicalTolerance;
+      static constexpr Real rotatedTraceReferenceTolerance = DefaultRotatedTraceReferenceTolerance;
       static constexpr Real linearResidualTolerance = KelvinBall::LinearResidualTolerance;
       static constexpr size_t chamberMultiplicity = KelvinBall::ChamberMultiplicity;
 #ifdef RODIN_USE_OPENMP
@@ -944,7 +944,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "interface_shift_max,advection_increment,advected_rotated_jump,"
              "min_crossing_fraction,snapped_vertices,reconstruction_scale,"
              "z_x,z_y,z_z,omega_x,omega_y,omega_z,"
-             "cut_projection_hits,cut_projection_max_distance\n";
+             "cut_projection_hits,cut_projection_max_distance,cut_projection_budget\n";
   IO::XDMF xdmf("KelvinBall");
   auto chamber = xdmf.grid("Chamber");
   chamber.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
@@ -1005,8 +1005,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     PressureSpace Qh(fluid);
     KelvinBall::RotatedNitscheIntegrator fluidCoupling(
       fluid, MasterCuts, rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance,
-      reconstruction.hausdorffTolerance > 0 ? reconstruction.hausdorffTolerance :
-        remeshHausdorffFactor * h * h);
+      rotatedTraceReferenceTolerance * h);
     GridFunction uT0(Vh), uT1(Vh), uT2(Vh), uR0(Vh), uR1(Vh), uR2(Vh);
     GridFunction pT0(Qh), pT1(Qh), pT2(Qh), pR0(Qh), pR1(Qh), pR2(Qh);
     stageSeconds[1] = elapsedSeconds(stage2Start);
@@ -1105,7 +1104,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       for (Eigen::Index component = 0; component < 3; ++component)
         history << ',' << -c / determinant * unitForce(component);
       history << ',' << fluidCoupling.getLocator().getProjectionHitCount()
-              << ',' << fluidCoupling.getLocator().getMaximumProjectionDistance() << '\n';
+              << ',' << fluidCoupling.getLocator().getMaximumProjectionDistance()
+              << ',' << rotatedTraceReferenceTolerance * h << '\n';
       history.flush();
     };
     const auto stage4Start = Clock::now();

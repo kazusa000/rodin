@@ -72,6 +72,11 @@ int main()
   require(bool(exact) && (exact->vector() - interior).norm() < 1e-15,
     "An exact existing trace point moved.");
   require(projected.getProjectionHitCount() == 1, "An exact hit used the projection fallback.");
+  AttributeFaceLocator physicalBand(mesh, FlatSet<Attribute>{SigmaXYPlus}, 1e-10, 1e-10,
+    DefaultRotatedTraceReferenceTolerance * h);
+  require(bool(physicalBand.locate(SigmaXYPlus, query)), "Near-field physical band rejected the recorded small gap.");
+  const Math::SpatialPoint outsideBand = expected + Math::SpatialVector<Real>{0, 0, -h};
+  require(!physicalBand.locate(SigmaXYPlus, outsideBand), "Projection crossed the fixed near-field physical band.");
   std::cout << "cut_projection_distance=" << projected.getMaximumProjectionDistance()
             << " budget=" << hausdorff << " exact_hit_unchanged=1 outside_rejected=1\n";
   return 0;

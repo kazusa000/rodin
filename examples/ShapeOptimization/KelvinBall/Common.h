@@ -43,6 +43,10 @@ namespace KelvinBall
   inline constexpr Real Mu = 1;
   inline constexpr Real DefaultNitschePenalty = 320;
   inline constexpr Real DefaultStabilizationFactor = 0.05;
+  /// Historical trace tolerances; physical rim projection uses the reference
+  /// fraction times the fixed near-field spacing, independent of box size.
+  inline constexpr Real DefaultRotatedTracePhysicalTolerance = 0.01;
+  inline constexpr Real DefaultRotatedTraceReferenceTolerance = 0.25;
   inline constexpr Real LinearResidualTolerance = 1e-8;
   inline constexpr size_t ChamberMultiplicity = 24;
 

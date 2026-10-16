@@ -44,7 +44,8 @@ namespace KelvinBall
        * @param physicalTolerance Relative AABB residual tolerance.
        * @param referenceTolerance AABB reference-coordinate overshoot tolerance.
        * @param projectionDistance Absolute permitted distance to a master rim;
-       *        zero disables projection. The optimizer uses its MMG Hausdorff tolerance.
+       *        zero disables projection. The optimizer uses its historical reference
+       *        tolerance times the fixed near-field spacing.
        */
       AttributeFaceLocator(const Mesh& mesh, const FlatSet<Attribute>& attributes,
         Real physicalTolerance = 1e-10, Real referenceTolerance = 1e-10,

@@ -112,7 +112,8 @@ def main():
             child.wait()
 
     checkpoints = sorted({step-args.restart_step for step in [10, 20, 40, 60, 80, 105]
-                          if args.restart_step <= step <= args.restart_step+args.updates} | {args.updates})
+                          if args.restart_step <= step <= args.restart_step+args.updates} |
+                         {args.updates} | ({0} if args.native_commit != NATIVE_COMMIT else set()))
     stage = dict(name="optimization", command=command, started_at=time.time())
     record["stages"].append(stage)
     record.update(state="optimizing", local_bem_checkpoints=checkpoints)
