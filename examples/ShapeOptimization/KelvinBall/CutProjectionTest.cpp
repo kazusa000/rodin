@@ -53,8 +53,10 @@ int main()
   const Geometry::Polytope::Traits traits(mapped->getPolytope().getGeometry());
   const auto& halfSpace = traits.getHalfSpace();
   for (Eigen::Index i = 0; i < halfSpace.vector.size(); ++i)
+  {
     require(halfSpace.vector[i] - mapped->getReferenceCoordinates().dot(
       halfSpace.matrix.row(i).transpose()) >= -1e-14, "Projected trace extrapolates outside the face.");
+  }
   P1<Real, KelvinBall::Mesh> space(mesh);
   GridFunction field(space);
   field = F::x + 2 * F::z;

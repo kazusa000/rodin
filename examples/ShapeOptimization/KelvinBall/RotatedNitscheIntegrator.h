@@ -186,6 +186,14 @@ namespace KelvinBall
     public:
       using Locator = AttributeFaceLocator<Mesh>;
 
+      /**
+       * @brief Constructs the mapped master-cut traces used by assembly.
+       * @param mesh Fixed chamber mesh.
+       * @param masterCuts Attributes of the master cuts.
+       * @param physicalTolerance Relative AABB physical residual tolerance.
+       * @param referenceTolerance AABB reference-coordinate overshoot tolerance.
+       * @param projectionDistance Absolute rim projection budget; zero disables it.
+       */
       RotatedNitscheIntegrator(const Mesh& mesh,
         const FlatSet<Attribute>& masterCuts = MasterCuts, Real physicalTolerance = 1e-10,
         Real referenceTolerance = 1e-10, Real projectionDistance = 0);
