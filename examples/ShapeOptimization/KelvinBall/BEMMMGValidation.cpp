@@ -70,6 +70,7 @@ int main(int argc, char** argv)
     constexpr Real h=Real(4)/(points-1);
     Real seedAmplitude=.02, volumeTolerance=.005;
     Real requestedTargetVolume=0, expectedRho=0;
+    bool enforceVolumeTolerance=true;
     std::string initialMesh;
     size_t updates=0, maxBacktracks=6;
     // Operational bound for finite background campaigns, not a convergence criterion.
@@ -84,6 +85,7 @@ int main(int argc, char** argv)
         seedAmplitude=std::stod(option.substr(17));
       else if (option.starts_with("--updates=")) updates=std::stoul(option.substr(10));
       else if (option.starts_with("--volume-tolerance=")) volumeTolerance=std::stod(option.substr(19));
+      else if (option=="--no-volume-rejection") enforceVolumeTolerance=false;
       else if (option.starts_with("--max-backtracks=")) maxBacktracks=std::stoul(option.substr(17));
       else if (option.starts_with("--initial-mesh=")) initialMesh=option.substr(15);
       else if (option.starts_with("--target-volume=")) requestedTargetVolume=std::stod(option.substr(16));
@@ -145,11 +147,12 @@ int main(int argc, char** argv)
     const Real targetVolume=requestedTargetVolume>0 ? requestedTargetVolume : startingVolume;
     if (!std::isfinite(startingVolume) || startingVolume<=0)
       throw std::runtime_error("Initial obstacle volume must be finite and positive.");
-    if (updates>0 && std::abs(startingVolume/targetVolume-1)>volumeTolerance)
+    if (enforceVolumeTolerance && updates>0 && std::abs(startingVolume/targetVolume-1)>volumeTolerance)
       throw std::runtime_error("Starting mesh violates the original volume tolerance.");
     std::cout << "initial_geometry_ready restart=" << (!initialMesh.empty())
       << " volume=" << startingVolume << " target_volume=" << targetVolume
-      << " expected_rho=" << expectedRho << " requested_updates=" << updates << std::endl;
+      << " expected_rho=" << expectedRho << " requested_updates=" << updates
+      << " volume_rejection_enabled=" << enforceVolumeTolerance << std::endl;
     Real seedRho=0, lastRho=0, lastVolume=startingVolume;
     size_t acceptedUpdates=0;
     const auto writeSummary=[&](bool complete, const char* reason)
@@ -163,7 +166,11 @@ int main(int argc, char** argv)
         << ",\"target_volume\":" << targetVolume << ",\"last_volume\":" << lastVolume
         << ",\"restart\":" << (initialMesh.empty() ? "false":"true")
         << ",\"starting_volume\":" << startingVolume << ",\"expected_start_rho\":" << expectedRho
-        << ",\"volume_tolerance\":" << volumeTolerance << ",\"armijo\":" << armijo
+        << ",\"volume_projection_enabled\":true,\"volume_rejection_enabled\":" << (enforceVolumeTolerance ? "true":"false")
+        << ",\"volume_tolerance\":";
+      if (enforceVolumeTolerance) record << volumeTolerance;
+      else record << "null";
+      record << ",\"armijo\":" << armijo
         << ",\"step_reduction\":" << reduction << ",\"max_backtracks\":" << maxBacktracks
         << ",\"stop_reason\":\"" << reason << "\"}\n";
       if (!record) throw std::runtime_error("Cannot save native optimization summary.");
@@ -272,7 +279,7 @@ int main(int argc, char** argv)
           if (!std::isfinite(candidateVolume) || candidateVolume<=0)
             throw std::runtime_error("Candidate obstacle volume must be finite and positive.");
           const Real volumeDrift=candidateVolume/targetVolume-1;
-          if (updates>0 && std::abs(volumeDrift)>volumeTolerance)
+          if (enforceVolumeTolerance && updates>0 && std::abs(volumeDrift)>volumeTolerance)
           {
             std::ofstream rejected(directory/"bem-mmg-validation.json"); rejected << std::setprecision(17);
             rejected << "{\"passed\":false,\"state_solved\":false,\"accepted\":false,"
@@ -312,6 +319,7 @@ int main(int argc, char** argv)
             << ",\"iteration\":" << iteration << ",\"attempt\":" << step
             << ",\"target_volume\":" << targetVolume << ",\"candidate_volume\":" << candidateVolume
             << ",\"cumulative_volume_drift\":" << volumeDrift
+            << ",\"volume_projection_enabled\":true,\"volume_rejection_enabled\":" << (enforceVolumeTolerance ? "true":"false")
             << ",\"armijo_required_rho\":" << initial.rho+armijo*dt*slope
             << ",\"rejection_reason\":\"" << (take ? "none" : (updates>0 ? "insufficient_rho_gain":"diagnostic_only"))
             << "\"}\n";

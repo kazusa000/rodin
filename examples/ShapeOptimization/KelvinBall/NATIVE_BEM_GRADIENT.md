@@ -102,6 +102,19 @@ ORIGINAL_VOLUME ACCEPTED_RHO` requests 100 further updates with seed provenance
 `0.6`, factor `0.03`, volume tolerance `0.005`, and six backtracks. The shell
 only launches the native executable and records its real exit status.
 
+To retain the H1 volume-nullspace projection while disabling volume-based
+rejection, append `no-volume-rejection` to that script invocation. This selects
+`--no-volume-rejection` and factor `0.10` (physical transport time `0.10*h`,
+versus the previous `0.03*h`). The native flag disables only the starting-mesh
+and candidate cumulative volume tolerance guards. The projected H1 direction
+and its two solves are unchanged; no volume penalty, correction or rescaling
+is added. The original target remains a reporting reference, with
+`volume_projection_enabled=true`, `volume_rejection_enabled=false` and
+`volume_tolerance=null` in the history. Positive finite obstacle volume and
+closed-surface/state validity remain necessary to evaluate the objective.
+Strict rho increase, weak Armijo and six halvings remain active. The previous
+volume-rejection mode remains available for replaying earlier experiments.
+
 The existing chamber optimizer has an opt-in native entry:
 
 ```sh
