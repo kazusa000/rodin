@@ -27,3 +27,6 @@ target_link_libraries(KelvinBallGradedChamberTest PRIVATE KelvinBallSupport)
 
 add_executable(KelvinBallSeedTest EXCLUDE_FROM_ALL SeedTest.cpp)
 target_link_libraries(KelvinBallSeedTest PRIVATE KelvinBallSupport)
+
+add_executable(KelvinBallCutCoverage EXCLUDE_FROM_ALL CutCoverage.cpp)
+target_link_libraries(KelvinBallCutCoverage PRIVATE KelvinBallSupport)
