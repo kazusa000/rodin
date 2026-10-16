@@ -13,7 +13,9 @@ namespace KelvinBall
     prepare(fluid);
     VelocitySpace velocitySpace(fluid, 3);
     PressureSpace pressureSpace(fluid);
-    RotatedNitscheIntegrator coupling(fluid, MasterCuts, 0.01, 0.25);
+    // Same geometric budget as the historical MMG level-set reconstruction.
+    const Real projectionDistance = Real(0.1) * m_parameters.h * m_parameters.h;
+    RotatedNitscheIntegrator coupling(fluid, MasterCuts, 0.01, 0.25, projectionDistance);
     GridFunction uT0(velocitySpace), uT1(velocitySpace), uT2(velocitySpace),
       uR0(velocitySpace), uR1(velocitySpace), uR2(velocitySpace);
     GridFunction pT0(pressureSpace), pT1(pressureSpace), pT2(pressureSpace),

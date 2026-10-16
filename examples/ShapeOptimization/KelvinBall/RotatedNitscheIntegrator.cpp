@@ -9,8 +9,9 @@
 namespace KelvinBall
 {
   RotatedNitscheIntegrator::RotatedNitscheIntegrator(const Mesh& mesh,
-    const FlatSet<Attribute>& masterCuts, Real physicalTolerance, Real referenceTolerance)
-    : m_locator(mesh, masterCuts, physicalTolerance, referenceTolerance)
+    const FlatSet<Attribute>& masterCuts, Real physicalTolerance, Real referenceTolerance,
+    Real projectionDistance)
+    : m_locator(mesh, masterCuts, physicalTolerance, referenceTolerance, projectionDistance)
   {}
 
   const RotatedNitscheIntegrator::Locator& RotatedNitscheIntegrator::getLocator() const

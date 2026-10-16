@@ -30,3 +30,6 @@ target_link_libraries(KelvinBallSeedTest PRIVATE KelvinBallSupport)
 
 add_executable(KelvinBallCutCoverage EXCLUDE_FROM_ALL CutCoverage.cpp)
 target_link_libraries(KelvinBallCutCoverage PRIVATE KelvinBallSupport)
+
+add_executable(KelvinBallCutProjectionTest EXCLUDE_FROM_ALL CutProjectionTest.cpp)
+target_link_libraries(KelvinBallCutProjectionTest PRIVATE KelvinBallSupport)

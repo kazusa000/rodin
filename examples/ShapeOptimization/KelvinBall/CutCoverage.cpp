@@ -14,13 +14,13 @@
 /**
  * @brief Audits every rotated cut quadrature point without solving or moving a mesh.
  * @param argc Number of command-line arguments.
- * @param argv Arguments: the preserved volume mesh to inspect.
+ * @param argv Arguments: preserved volume mesh, optional absolute rim projection distance.
  * @returns Zero for complete coverage, one for a miss, two for invalid arguments.
  */
 int main(int argc, char** argv)
 {
   using namespace KelvinBall;
-  if (argc != 2)
+  if (argc != 2 && argc != 3)
     return 2;
   KelvinBall::Mesh volume;
   volume.load(argv[1], IO::FileFormat::MEDIT);
@@ -31,7 +31,8 @@ int main(int argc, char** argv)
   constexpr Real physicalTolerance = 0.01;
   constexpr Real referenceTolerance = 0.25;
   const RotatedNitscheIntegrator coupling(
-    fluid, MasterCuts, physicalTolerance, referenceTolerance);
+    fluid, MasterCuts, physicalTolerance, referenceTolerance,
+    argc == 3 ? std::stod(argv[2]) : Real(0));
   size_t totalMissed = 0;
   std::cout << std::setprecision(17) << "{\"pairs\":[";
   bool firstPair = true;
@@ -116,6 +117,9 @@ int main(int argc, char** argv)
     totalMissed += missed;
     std::cout << "],\"found\":" << found << ",\"missed\":" << missed << '}';
   }
-  std::cout << "],\"total_missed\":" << totalMissed << "}\n";
+  std::cout << "],\"total_missed\":" << totalMissed
+            << ",\"projection_hits\":" << coupling.getLocator().getProjectionHitCount()
+            << ",\"maximum_projection_distance\":"
+            << coupling.getLocator().getMaximumProjectionDistance() << "}\n";
   return totalMissed ? 1 : 0;
 }

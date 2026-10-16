@@ -1,11 +1,41 @@
 # FEM-domain branch: historical update restoration
 
+The chamber fluid trace has an explicit fallback for a small mismatch between
+the independently triangulated rotated fluid rims. Only a failed original
+location query uses this fallback: its closest master triangle edge is accepted
+within the current MMG Hausdorff budget, `0.1*h*h` (or the smaller recorded
+reconstruction tolerance after a retry). Both physical and reference coordinates
+then identify that projected point; its complete Nitsche contribution is assembled.
+Queries beyond the absolute budget still fail the coverage check. Projection
+does not depend on the enlarged box size. Native CSV columns
+`cut_projection_hits` (query count, including repeated state/jump evaluations)
+and `cut_projection_max_distance` record its use. Original volume and surface
+coordinates are preserved for output and independent BEM evaluation.
+
+The global-8 regression input contains one unmatched order-4 quadrature point.
+Exhaustive search also misses it: its best master reference margin is
+`-0.26932707427240382`, beyond the historical `-0.25` bound. An independent VTK
+closest-cell query gives a physical gap `0.0005838581729716859`, below the MMG
+budget `0.0011080332409972298`. The earlier core locator could terminate at a
+candidate centroid as soon as its physical residual was below a box-scaled
+tolerance, before computing the true inverse coordinates; the current locator
+certifies those coordinates and exposes the mismatch. The project fallback
+makes the small-rim treatment explicit without changing the shared AABB solver.
+`KelvinBallCutProjectionTest` checks this recorded thin triangle against the VTK
+point, exact unchanged hits, consistent P1 trace coordinates, and rejection
+below the measured gap. `KelvinBallCutCoverage <mesh> [absolute-budget]` audits
+all paired-cut points, with zero budget as the original-policy control.
+
 `scripts/continue-fem-legacy.py` continues the verified five-update pilot from
 its original HDF5 double coordinates, with the same volume mesh connectivity
 and material tags. It defaults to 100 additional updates (101 evaluated states),
 so local state 0 is global state 5 and local state 100 is global state 105.
 The numerical binary is reused only if its SHA-256 matches the pilot and the
 controller commit changes no C++ or build inputs relative to `df602b5a`.
+For a rebuilt numerical version, `--native-commit` must match its successful
+build record and binary SHA-256. `--restart-campaign` and the global
+`--restart-step` can select a later fully evaluated CSV/HDF5 checkpoint, including
+one from a failed run; incomplete saved geometries are rejected as restart states.
 Pass the clean controller `--commit`, fresh `--output`, pinned `--native-source`,
 `--build-dir`, `--build-record`, `--pilot`, and clean `--verifier`; run with the
 existing HDF5-capable Python on 28h. `--validate-only` checks these prerequisites

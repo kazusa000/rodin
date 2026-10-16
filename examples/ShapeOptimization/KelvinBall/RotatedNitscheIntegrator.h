@@ -8,6 +8,7 @@
 #define KELVIN_BALL_ROTATED_NITSCHE_INTEGRATOR_H
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -36,10 +37,22 @@ namespace KelvinBall
   class AttributeFaceLocator
   {
     public:
+      /**
+       * @brief Locates cut traces, optionally projecting small unmatched rims.
+       * @param mesh Fixed mesh whose cut faces are indexed.
+       * @param attributes Master cut attributes to search.
+       * @param physicalTolerance Relative AABB residual tolerance.
+       * @param referenceTolerance AABB reference-coordinate overshoot tolerance.
+       * @param projectionDistance Absolute permitted distance to a master rim;
+       *        zero disables projection. The optimizer uses its MMG Hausdorff tolerance.
+       */
       AttributeFaceLocator(const Mesh& mesh, const FlatSet<Attribute>& attributes,
-        Real physicalTolerance = 1e-10, Real referenceTolerance = 1e-10)
-        : m_mesh(mesh)
+        Real physicalTolerance = 1e-10, Real referenceTolerance = 1e-10,
+        Real projectionDistance = 0)
+        : m_mesh(mesh), m_projectionDistance(projectionDistance)
       {
+        if (!std::isfinite(projectionDistance) || projectionDistance < 0)
+          throw std::runtime_error("Cut projection distance must be finite and nonnegative.");
         const size_t faceDimension = mesh.getDimension() - 1;
         for (const Attribute attribute : attributes)
         {
@@ -87,8 +100,58 @@ namespace KelvinBall
           ++m_relaxedHits;
           return toParent(*mapped);
         }
+        if (m_projectionDistance > 0)
+        {
+          // An unmatched in-plane point lies outside the master fluid patch.
+          // Its closest point is on a triangle edge. Search only on a miss;
+          // never extrapolate a trace or enlarge the general AABB tolerances.
+          Optional<Geometry::Point> projected;
+          Real bestSquared = m_projectionDistance * m_projectionDistance;
+          for (auto face = surface.getPolytope(surface.getDimension()); face; ++face)
+          {
+            if (face->getGeometry() != Geometry::Polytope::Type::Triangle ||
+                face->getTransformation().getOrder() > 1)
+              throw std::runtime_error("Cut rim projection requires affine triangles.");
+            const auto& vertices = face->getVertices();
+            const Geometry::Polytope::Traits traits(face->getGeometry());
+            for (size_t edge = 0; edge < 3; ++edge)
+            {
+              const size_t next = (edge + 1) % 3;
+              const auto& a = surface.getVertexCoordinates(vertices[edge]);
+              const auto& b = surface.getVertexCoordinates(vertices[next]);
+              const Math::SpatialVector<Real> tangent = b - a;
+              const Real lengthSquared = tangent.squaredNorm();
+              if (!(lengthSquared > 0))
+                continue;
+              const Real t = std::clamp((point - a).dot(tangent) / lengthSquared,
+                Real(0), Real(1));
+              const Math::SpatialPoint closest = a + t * tangent;
+              const Real squared = (point - closest).squaredNorm();
+              if (squared <= bestSquared)
+              {
+                const Math::SpatialPoint reference =
+                  (1 - t) * traits.getVertex(edge) + t * traits.getVertex(next);
+                projected.emplace(*face, reference, closest);
+                bestSquared = squared;
+              }
+            }
+          }
+          if (projected)
+          {
+            ++m_projectionHits;
+            m_maximumProjectionDistance =
+              std::max(m_maximumProjectionDistance, std::sqrt(bestSquared));
+            return toParent(*projected);
+          }
+        }
         return {};
       }
+
+      /// @returns Number of queries resolved by a bounded rim projection.
+      size_t getProjectionHitCount() const { return m_projectionHits; }
+
+      /// @returns Largest absolute physical displacement of a projected query.
+      Real getMaximumProjectionDistance() const { return m_maximumProjectionDistance; }
 
       size_t getRelaxedHitCount() const
       {
@@ -104,8 +167,11 @@ namespace KelvinBall
       };
 
       std::reference_wrapper<const Mesh> m_mesh;
+      Real m_projectionDistance;
       std::map<Attribute, Surface> m_surfaces;
       mutable size_t m_relaxedHits = 0;
+      mutable size_t m_projectionHits = 0;
+      mutable Real m_maximumProjectionDistance = 0;
   };
 
   /**
@@ -122,7 +188,7 @@ namespace KelvinBall
 
       RotatedNitscheIntegrator(const Mesh& mesh,
         const FlatSet<Attribute>& masterCuts = MasterCuts, Real physicalTolerance = 1e-10,
-        Real referenceTolerance = 1e-10);
+        Real referenceTolerance = 1e-10, Real projectionDistance = 0);
 
       const Locator& getLocator() const;
 

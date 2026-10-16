@@ -75,6 +75,8 @@ namespace KelvinBall
 
       static constexpr Real mu = KelvinBall::Mu;
       static constexpr Real remeshGradation = 2.0;
+      /// Historical MMG geometric error budget, also bounding cut-rim projection.
+      static constexpr Real remeshHausdorffFactor = 0.1;
       static constexpr Real rotatedTracePhysicalTolerance = 0.01;
       static constexpr Real rotatedTraceReferenceTolerance = 0.25;
       static constexpr Real linearResidualTolerance = KelvinBall::LinearResidualTolerance;
@@ -441,7 +443,7 @@ namespace KelvinBall
         const size_t previousCells = mesh.getCellCount();
         const Real hmin = 0.1 * h;
         const Real hmax = 10 * h;
-        const Real hausdorff = 0.1 * h * h;
+        const Real hausdorff = remeshHausdorffFactor * h * h;
         // A retried reconstruction receives the mesh the failed attempt already
         // reduced to a single material, so the input need not be partitioned.
         const MeshDiagnostics inputDiagnostics = getMeshDiagnostics(mesh, false);
@@ -941,7 +943,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "eikonal_rotated_jump,projected_rotated_jump,distance_correction,"
              "interface_shift_max,advection_increment,advected_rotated_jump,"
              "min_crossing_fraction,snapped_vertices,reconstruction_scale,"
-             "z_x,z_y,z_z,omega_x,omega_y,omega_z\n";
+             "z_x,z_y,z_z,omega_x,omega_y,omega_z,"
+             "cut_projection_hits,cut_projection_max_distance\n";
   IO::XDMF xdmf("KelvinBall");
   auto chamber = xdmf.grid("Chamber");
   chamber.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
@@ -1001,7 +1004,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     VelocitySpace Vh = makeVelocitySpace(fluid);
     PressureSpace Qh(fluid);
     KelvinBall::RotatedNitscheIntegrator fluidCoupling(
-      fluid, MasterCuts, rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
+      fluid, MasterCuts, rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance,
+      reconstruction.hausdorffTolerance > 0 ? reconstruction.hausdorffTolerance :
+        remeshHausdorffFactor * h * h);
     GridFunction uT0(Vh), uT1(Vh), uT2(Vh), uR0(Vh), uR1(Vh), uR2(Vh);
     GridFunction pT0(Qh), pT1(Qh), pT2(Qh), pR0(Qh), pR1(Qh), pR2(Qh);
     stageSeconds[1] = elapsedSeconds(stage2Start);
@@ -1099,7 +1104,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         history << ',' << q / determinant * unitForce(component);
       for (Eigen::Index component = 0; component < 3; ++component)
         history << ',' << -c / determinant * unitForce(component);
-      history << '\n';
+      history << ',' << fluidCoupling.getLocator().getProjectionHitCount()
+              << ',' << fluidCoupling.getLocator().getMaximumProjectionDistance() << '\n';
       history.flush();
     };
     const auto stage4Start = Clock::now();

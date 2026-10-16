@@ -97,6 +97,7 @@ namespace KelvinBall
       void checkPairs(const Mesh& mesh, const RotatedNitscheIntegrator& coupling) const
       {
         const auto& locator = coupling.getLocator();
+        const size_t projectionsBefore = locator.getProjectionHitCount();
         for (const RotationPair& pair : RotationPairs)
         {
           size_t found = 0;
@@ -123,6 +124,11 @@ namespace KelvinBall
               std::to_string(pair.master) + ": " + std::to_string(found) +
               " quadrature points located and " + std::to_string(missed) + " missed.");
         }
+        if (locator.getProjectionHitCount() != projectionsBefore)
+          Alert::Info() << "Rotated cut rim projections: "
+                        << locator.getProjectionHitCount() - projectionsBefore
+                        << "; maximum displacement: "
+                        << locator.getMaximumProjectionDistance() << Alert::Raise;
       }
 
       template <class Space, class VelocityA, class VelocityB>
