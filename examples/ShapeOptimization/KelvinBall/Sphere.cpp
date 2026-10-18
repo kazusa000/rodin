@@ -274,7 +274,9 @@ namespace KelvinBall
     protectFixedGeometry(mesh, false);
     MMG::Adapt()
       .setHMin(0.1 * h)
-      .setHMax(m_configuration.gradedChamber ? Real(10) * h : std::max(interfaceSize, farSize))
+      .setHMax(m_configuration.gradedChamber
+        ? m_configuration.getGradedSize(Math::SpatialPoint{m_configuration.outerRadius, 0, 0}, h)
+        : std::max(interfaceSize, farSize))
       .setHausdorff(0.1 * h * h)
       .setGradation(m_configuration.adaptGradation)
       .setAngleDetection(false)

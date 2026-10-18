@@ -42,6 +42,12 @@ int main()
   require(graded.getGradedSize(near, old.getH()) == old.getH(), "Core target coarsened.");
   require(graded.getGradedSize(far, old.getH()) == 10 * old.getH(), "Far target cap changed.");
   require(graded.getGradedSize(far, old.getH() / 2) == 5 * old.getH(), "MMG retry scaling changed.");
+  Configuration limiting = graded;
+  limiting.outerRadius = 2;
+  limiting.finalize();
+  require(limiting.getGridCoordinates() == core, "Limiting box coordinates changed.");
+  require(limiting.getGradedSize(near, old.getH()) == old.getH(),
+          "Limiting box MMG size ceiling differs from the original uniform box.");
   Configuration missing;
   missing.parse("--graded-chamber");
   bool rejected = false;
