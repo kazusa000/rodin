@@ -7,11 +7,26 @@
 #include "BEM.h"
 #include "Sphere.h"
 #include "ChamberSymmetry.h"
+#include <Rodin/Math/SpatialTensor.h>
 #include <Rodin/MMG/MeshLoader.h>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 using namespace KelvinBall;
+namespace
+{
+  // A separable, non-symmetric-in-points kernel detects a target/source swap.
+  struct TargetSourceKernel
+  {
+    static constexpr bool SmoothKernel=true;
+    void operator()(Math::SpatialTensor<Real,4>& out,const Point& target,const Point& source) const
+    {
+      out.resize({3,3,3,3});out.setZero();
+      for (size_t i=0;i<3;++i) for (size_t j=0;j<3;++j)
+        out(i,j,i,j)=1+target.x()+2*source.x();
+    }
+  };
+}
 int main(int argc,char** argv)
 {
   try
@@ -29,6 +44,30 @@ int main(int argc,char** argv)
     else mesh=Sphere(configuration).discretize(true,0,true).mesh;
     prepare(mesh);
     VelocitySpace space(mesh,3);Math::Vector<Real> load;
+    // Independent moment-product oracle for the nonlocal integral convention.
+    auto contractSolid=mesh.keep(Obstacle);contractSolid.getConnectivity().compute(2,3);
+    const auto contractSkin=contractSolid.skin();const auto contractSurface=contractSkin.keep(Gamma);
+    P1 scalar(contractSurface);TestFunction scalarTest(scalar);
+    LinearForm mass(scalarTest),firstMoment(scalarTest);
+    mass=Integral(RealFunction{1},scalarTest);mass.assemble();
+    firstMoment=Integral(RealFunction([](const Point& p){return p.x();}),scalarTest);firstMoment.assemble();
+    P1 tensorSpace(contractSurface,3,3);TrialFunction tensorTrial(tensorSpace);TestFunction tensorTest(tensorSpace);
+    const TargetSourceKernel targetSource;
+    auto testForm=Integral(Potential(targetSource,tensorTrial),tensorTest);testForm.setOrder(3);
+    DenseProblem convention(tensorTrial,tensorTest);convention=testForm;convention.assemble();
+    const auto& matrix=convention.getLinearSystem().getOperator();Real conventionError=0;
+    for (Index i=0;i<contractSurface.getVertexCount();++i)
+      for (Index j=0;j<contractSurface.getVertexCount();++j)
+      {
+        const Index si=scalar.getDOFs(0,i)(0),sj=scalar.getDOFs(0,j)(0);
+        const Real expected=mass.getVector()(si)*mass.getVector()(sj)+
+          firstMoment.getVector()(si)*mass.getVector()(sj)+2*mass.getVector()(si)*firstMoment.getVector()(sj);
+        const auto& ti=tensorSpace.getDOFs(0,i);const auto& tj=tensorSpace.getDOFs(0,j);
+        for (size_t a=0;a<9;++a) for (size_t b=0;b<9;++b)
+          conventionError=std::max(conventionError,std::abs(matrix(ti(a),tj(b))-(a==b ? expected : 0)));
+      }
+    if (conventionError>1e-11) throw std::runtime_error("Nonlocal target/source convention failed.");
+    std::cout<<std::setprecision(17)<<"kernel_convention_error="<<conventionError<<std::endl;
     const auto result=BEM().evaluateChamber(mesh,space,load,true);
     Real referenceError=0;
     if (reference)

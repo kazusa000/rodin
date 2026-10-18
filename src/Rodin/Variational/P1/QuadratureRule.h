@@ -4514,7 +4514,8 @@ namespace Rodin::Variational
               {
                 const auto& x = tx.getPoint(a);
                 const auto& y = ty.getPoint(b);
-                kernel(m_mk, x, y);
+                // Potential uses target/test first, source/trial second.
+                kernel(m_mk, y, x);
                 const Real weight = trq.getWeight(a) * teq.getWeight(b) *
                   x.getDistortion() * y.getDistortion();
                 for (size_t m = 0; m < trialfe.getCount(); ++m)
