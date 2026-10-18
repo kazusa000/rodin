@@ -49,8 +49,9 @@ int main(int argc,char** argv)
     const auto contractSkin=contractSolid.skin();const auto contractSurface=contractSkin.keep(Gamma);
     P1 scalar(contractSurface);TestFunction scalarTest(scalar);
     LinearForm mass(scalarTest),firstMoment(scalarTest);
-    mass=Integral(RealFunction{1},scalarTest);mass.assemble();
-    firstMoment=Integral(RealFunction([](const Point& p){return p.x();}),scalarTest);firstMoment.assemble();
+    auto massForm=Integral(RealFunction{1},scalarTest);massForm.setOrder(3);
+    auto momentForm=Integral(RealFunction([](const Point& p){return p.x();}),scalarTest);momentForm.setOrder(3);
+    mass=massForm;mass.assemble();firstMoment=momentForm;firstMoment.assemble();
     P1 tensorSpace(contractSurface,3,3);TrialFunction tensorTrial(tensorSpace);TestFunction tensorTest(tensorSpace);
     const TargetSourceKernel targetSource;
     auto testForm=Integral(Potential(targetSource,tensorTrial),tensorTest);testForm.setOrder(3);
@@ -66,8 +67,8 @@ int main(int argc,char** argv)
         for (size_t a=0;a<9;++a) for (size_t b=0;b<9;++b)
           conventionError=std::max(conventionError,std::abs(matrix(ti(a),tj(b))-(a==b ? expected : 0)));
       }
-    if (conventionError>1e-11) throw std::runtime_error("Nonlocal target/source convention failed.");
     std::cout<<std::setprecision(17)<<"kernel_convention_error="<<conventionError<<std::endl;
+    if (conventionError>1e-11) throw std::runtime_error("Nonlocal target/source convention failed.");
     const auto result=BEM().evaluateChamber(mesh,space,load,true);
     Real referenceError=0;
     if (reference)
