@@ -126,3 +126,21 @@ second-step seam accuracy, numerical stability or computational cost.
 Remote evidence (retained in place):
 `/home/profil/p90318/work/main/m2_internship/out/project-03/bem-gradient/native-chamber-20261018-379bd613`.
 Earlier failed candidates and diagnostic snapshots are preserved separately.
+
+## Bounded continuation
+
+`scripts/bem-gradient-chamber-run.py --executable ABSOLUTE_KELVINBALL
+--results NEW_ABSOLUTE_RESULTS --checkpoint ACCEPTED_CHAMBER_MESH
+--expected-rho ACCEPTED_RHO --updates 20` continues from an accepted chamber
+checkpoint. Each child process performs exactly one native update with the
+validated n=13, step=0.10, MMG/snap parameters. The Python driver only launches
+native processes, checks their JSON/CSV outputs and copies accepted meshes.
+It neither solves states nor constructs gradients, transport or geometry.
+
+The same output checker is used by the one-step check. Every restart must
+reproduce the preceding accepted rho. Nonzero native return, invalid output,
+open image edges, failed projected direction or failed actual weak Armijo stops
+the campaign immediately. No candidate is copied to accepted-N until checks
+pass; failed candidates remain in their iteration directory. There is no
+volume-drift rejection, step reduction, automatic retry or failed-run restart.
+The driver records a bounded continuation result, not a convergence claim.
