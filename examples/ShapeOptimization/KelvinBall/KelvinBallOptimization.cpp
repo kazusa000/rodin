@@ -2716,7 +2716,16 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << diagnosticLabel("Advected rotated jump:")
                     << Alert::Notation::Number(advectedJump) << Alert::Raise;
       GridFunction advectedOutput(levelSetSpace);
-      advectedOutput.getData() = advectedDistance.getData();
+      if (bemBackground)
+      {
+        const Location::AABB<MMG::Mesh> backgroundLocator(advectionMesh);
+        advectedOutput = RealFunction([&](const Point& point) {
+          const auto located = backgroundLocator.locate(3, point.vector());
+          if (!located) throw std::runtime_error("Chamber output point is outside its background.");
+          return advectedDistance.getValue(*located);
+        });
+      }
+      else advectedOutput.getData() = advectedDistance.getData();
       chamber.add("Advected", advectedOutput, IO::XDMF::Center::Node);
       GridFunction sewedAdvected(sewedDesignScalar);
       sewedDesign.setScalar(sewedAdvected, advectedOutput);
@@ -2794,14 +2803,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       Real scale = initialGridSpacing;
       for (size_t attempt = 0;; ++attempt)
       {
+        // Retain the accepted fitted mesh. Keep the actual input alive for
+        // failure evidence as well as reconstruction.
+        Optional<MMG::Mesh> trialBackground;
+        if (bemBackground) trialBackground.emplace(*bemBackground);
+        MMG::Mesh& cutMesh = trialBackground ? *trialBackground : mesh;
         try
         {
           const Real retryFactor = scale / initialGridSpacing;
-          // Retain the accepted fitted mesh; every trial cuts a fresh copy of
-          // the same chamber background on which the scalar was transported.
-          Optional<MMG::Mesh> trialBackground;
-          if (bemBackground) trialBackground.emplace(*bemBackground);
-          MMG::Mesh& cutMesh = trialBackground ? *trialBackground : mesh;
           auto reconstructed = discretizeLevelSetMMG(cutMesh, advectedDistance, scale,
             retryFactor * m_options.configuration.hmin,
             retryFactor * m_options.configuration.hmax, sphere,
@@ -2815,7 +2824,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           // Keep what MMG received, so that the failure can be reproduced.
           const std::string failure = "mmg-failure-" + std::to_string(iteration + 1) +
             "-" + std::to_string(attempt);
-          mesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
+          cutMesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
           advectedDistance.save(failure + ".sol", IO::FileFormat::MEDIT);
           Alert::Warning() << "Saved the failed MMG input to " << failure << ".mesh and "
                            << failure << ".sol." << Alert::Raise;
