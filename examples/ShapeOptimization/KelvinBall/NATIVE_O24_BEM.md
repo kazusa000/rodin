@@ -68,8 +68,7 @@ of 0.2%; the reference target is 1e-8, constrained state residual 1e-9, and zero
 unmatched image edges. These are discrete consistency gates, not mesh convergence.
 
 ```
-KelvinBall --bem-gradient --n=7 --seed-amplitude=0.1 \
-  --hmin-factor=0.8 --hmax-factor=1.2 --iterations=2 \
+KelvinBall --bem-gradient --n=13 --seed-amplitude=0.1 --iterations=2 \
   --step=0.10 --reconstruction=mmg --mmg-snap=0.001 --mmg-retries=0 --save-mesh
 ```
 
@@ -95,3 +94,35 @@ After cutting, the existing optimizer can move interior vertices while required
 cut faces and vertices are protected. Fixed-plane/Jacobian and image-edge audits
 remain mandatory. The default FEM cutter and 2D/surface kernels retain their
 existing policies. Exact cut inputs and pre-projection candidates are retained.
+
+## Verified checkpoint (2026-10-18)
+
+On 28h, numerical commit `379bd613f6b97d65aca4d81b0deaa4288908245c`
+completed `scripts/bem-gradient-chamber-check.sh` with build, state/FD, native
+update and combined acceptance exits all zero. The coarse reference/FD check
+has 36 chamber panels, 243 matrix-state DOFs and 164 independent DOFs. Its
+maximum resistance/rho relative difference from the full-surface reference is
+`5.618068023815625e-13`; the final centered-FD relative error is
+`3.191422722907536e-7`, decreasing by approximately four on each halved step.
+
+The n=13 update uses the command above. Rho changes from
+`6.0418514161355301e-10` to `3.4841093740257715e-8`; both states have zero
+unmatched image edges and residuals below `3e-16`. The projected volume slope
+is `-8.6736173798840355e-18`. The chamber volume changes by `-0.8463987521%`;
+it is recorded, without a drift rejection cap. The mesh passes the existing
+Jacobian/fixed-plane checks; final minimum tetrahedron quality is only
+`0.004457135467049566`, so this is not evidence of robust long optimization.
+
+The first transported scalar has rotated jump `1.11e-15` and zero fallback
+vertices. After reconstruction, Eikonal traces on the fitted, nonmatching cut
+triangulations have jump `0.04942269014`; the next transport would be evaluated
+and projected onto the common chamber background. No second update was run.
+The first-order rho prediction is `4.177957982374644e-7`, whereas the actual
+increase is `3.4236908598644163e-8`. Weak Armijo passes, but remeshing changes
+both panels and area-based epsilon. These tests establish discrete consistency
+and one actual update, not a mesh-independent physical improvement, convergence,
+second-step seam accuracy, numerical stability or computational cost.
+
+Remote evidence (retained in place):
+`/home/profil/p90318/work/main/m2_internship/out/project-03/bem-gradient/native-chamber-20261018-379bd613`.
+Earlier failed candidates and diagnostic snapshots are preserved separately.
