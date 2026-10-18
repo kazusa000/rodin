@@ -180,7 +180,7 @@ namespace KelvinBall
           for (size_t family=0;family<2;++family)
           {
             const Math::SpatialMatrix<Real> image=g*y.density[family]*g.transpose();
-            H-=x.weight*y.weight*x.weighted[family]*image.transpose();
+            H=H-x.weight*y.weight*x.weighted[family]*image.transpose();
           }
           const Math::SpatialVector<Real> r=x.x-g*y.x;
           Math::SpatialMatrix<Real> K(3,3);kernel.evaluate(K,r);
