@@ -17,7 +17,7 @@ namespace KelvinBall
       {
         Real k = 0, c = 0, q = 0, rho = 0, epsilon = 0;
         Real residual = 0, reciprocity = 0;
-        size_t panels = 0, openEdges = 0;
+        size_t panels = 0, openEdges = 0, stateDOFs = 0, independentDOFs = 0;
         Math::Matrix<Real> resistance, gradient;
       };
 
@@ -25,6 +25,7 @@ namespace KelvinBall
         : m_order(order), m_epsilonFactor(epsilonFactor), m_viscosity(viscosity) {}
 
       Result evaluate(const Mesh& surface, bool derivative = true) const;
+      Result evaluateQuotient(const Mesh& surface, bool derivative = true) const;
       Result evaluateChamber(const Mesh& chamber, const VelocitySpace& shapeSpace,
                              Math::Vector<Real>& load, bool derivative = true) const;
 

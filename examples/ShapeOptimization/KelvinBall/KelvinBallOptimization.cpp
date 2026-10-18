@@ -43,6 +43,7 @@
 #include "Configuration.h"
 #include "Metrics.h"
 #include "BEM.h"
+#include "ChamberSymmetry.h"
 #include "RotatedCharacteristicContinuation.h"
 #include "NodalTransport.h"
 #include "RotatedNitscheIntegrator.h"
@@ -1727,7 +1728,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         << ",\"q\":" << metrics.q << ",\"rho\":" << metrics.rho
         << ",\"residual\":" << bemResult.residual << ",\"reciprocity\":" << bemResult.reciprocity
         << ",\"epsilon\":" << bemResult.epsilon << ",\"panels\":" << bemResult.panels
-        << ",\"open_edges\":" << bemResult.openEdges << "}\n";
+        << ",\"open_edges\":" << bemResult.openEdges
+        << ",\"design_domain\":\"O24-chamber\",\"state_dofs\":" << bemResult.stateDOFs
+        << ",\"independent_dofs\":" << bemResult.independentDOFs << "}\n";
       if (!nativeRecord) throw std::runtime_error("Failed saving native BEM state.");
       saveExact(mesh, "bem-chamber-" + std::to_string(iteration) + ".mesh");
     }
@@ -2176,9 +2179,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
     if (m_options.bemGradient)
     {
-      const SewedOutput quotient(mesh);
-      quotient.enforceVectorRepresentatives(rhoGradient);
-      quotient.enforceVectorRepresentatives(volumeGradient);
+      const ChamberSymmetry quotient(mesh);
+      quotient.vector(rhoGradient);
+      quotient.vector(volumeGradient);
     }
     TestFunction testField(shapeSpace);
     auto interfaceNormal = FaceNormal(mesh);
@@ -2344,7 +2347,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       .setInterface(Gamma)
       .solve()
       .sign();
-    if (m_options.bemGradient) SewedOutput(mesh).enforceScalarRepresentatives(distance);
+    if (m_options.bemGradient) ChamberSymmetry(mesh).scalar(distance);
     stageDiagnostics.eikonalJump = shapeCoupling.scalarJump(distance);
     Alert::Info() << substageHeading("Eikonal redistancing") << Alert::NewLine
                   << diagnosticLabel("Rotated distance jump:")
@@ -2671,7 +2674,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       const KelvinBall::NodalTransport transport(
         advectionMesh, advectionDistance, characteristic, advectedDistance);
       if (m_options.bemGradient)
-        SewedOutput(advectionMesh).enforceScalarRepresentatives(advectedDistance);
+        ChamberSymmetry(advectionMesh).scalar(advectedDistance);
       stageDiagnostics.transportAttempted = transport.getAttemptedCount();
       stageDiagnostics.transportFallback = transport.getFallbackCount();
       Alert::Info() << substageHeading("Transport coverage") << Alert::NewLine

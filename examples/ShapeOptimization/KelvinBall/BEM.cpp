@@ -210,26 +210,22 @@ namespace KelvinBall
   BEM::Result BEM::evaluateChamber(const Mesh& chamber, const VelocitySpace& shapeSpace,
                                   Math::Vector<Real>& load, bool derivative) const
   {
-    SewedOutput full(chamber, {Gamma});
-    full.getMesh().getConnectivity().compute(2, 3);
-    auto solid = full.getMesh().keep(Obstacle);
-    solid.getConnectivity().compute(2, 3);
-    const auto skin = solid.skin();
-    const auto surface = skin.keep(Gamma);
-    auto result = evaluate(surface, derivative);
+    // Only the material interface is extracted; artificial chamber cuts are not BEM panels.
+    auto solid=chamber.keep(Obstacle);
+    solid.getConnectivity().compute(2,3);
+    const auto skin=solid.skin();
+    const auto surface=skin.keep(Gamma);
+    auto result=evaluateQuotient(surface,derivative);
+    load.setZero(shapeSpace.getSize());
     if (derivative)
-    {
-      Math::Matrix<Real> fullGradient(full.getMesh().getVertexCount(), 3);
-      fullGradient.setZero();
-      for (Index i = 0; i < surface.getVertexCount(); ++i)
+      for (Index i=0;i<surface.getVertexCount();++i)
       {
-        const Index sk = surface.getPolytopeMap(0).left[i];
-        const Index so = skin.getPolytopeMap(0).left[sk];
-        const Index vertex = solid.getPolytopeMap(0).left[so];
-        fullGradient.row(vertex) += result.gradient.row(i);
+        const Index sk=surface.getPolytopeMap(0).left[i];
+        const Index so=skin.getPolytopeMap(0).left[sk];
+        const Index vertex=solid.getPolytopeMap(0).left[so];
+        const auto& dofs=shapeSpace.getDOFs(0,vertex);
+        for (size_t j=0;j<3;++j) load(dofs(j))+=result.gradient(i,j);
       }
-      load = full.pullBackCoordinateGradient(fullGradient, shapeSpace);
-    }
     return result;
   }
 }

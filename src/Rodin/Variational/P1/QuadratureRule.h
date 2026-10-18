@@ -4479,7 +4479,8 @@ namespace Rodin::Variational
         // and measures; finite-element spaces supply the component/DOF layout.
         if constexpr (requires { KernelType::SmoothKernel; })
         {
-          if constexpr (KernelType::SmoothKernel && FormLanguage::IsVectorRange<Range>::Value)
+          if constexpr (KernelType::SmoothKernel && (FormLanguage::IsVectorRange<Range>::Value ||
+              FormLanguage::IsMatrixRange<Range>::Value))
           {
             const auto quadrature = [](size_t order, Geometry::Polytope::Type geometry)
               -> const QF::QuadratureFormulaBase& {

@@ -1,5 +1,6 @@
 add_library(KelvinBallSupport STATIC EXCLUDE_FROM_ALL
   BEM.cpp
+  BEMQuotient.cpp
   Common.cpp
   Configuration.cpp
   LaplacianSmoothing.cpp
@@ -37,3 +38,6 @@ target_link_libraries(KelvinBallBEMValidation PRIVATE KelvinBallSupport)
 
 add_executable(KelvinBallBEMMMGValidation EXCLUDE_FROM_ALL BEMMMGValidation.cpp)
 target_link_libraries(KelvinBallBEMMMGValidation PRIVATE KelvinBallSupport Rodin::Advection)
+
+add_executable(KelvinBallBEMChamberValidation EXCLUDE_FROM_ALL BEMChamberValidation.cpp)
+target_link_libraries(KelvinBallBEMChamberValidation PRIVATE KelvinBallSupport)
