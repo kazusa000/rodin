@@ -143,8 +143,10 @@ namespace KelvinBall
        */
       void projectFixedGeometry(MMG::Mesh& mesh) const;
 
-    private:
+      /// Original uniform chamber, used as a common rotated-trace MMG background.
       Mesh makeUniformChamber() const;
+
+    private:
 
       const Configuration& m_configuration;
   };

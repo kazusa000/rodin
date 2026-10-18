@@ -1517,6 +1517,13 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   auto initial = initialize(sphere, requestedWelschScale);
   MMG::Mesh mesh = std::move(initial.mesh);
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);
+  Optional<MMG::Mesh> bemBackground;
+  if (m_options.bemGradient && m_options.reconstructionMethod == "mmg")
+  {
+    // A common paired trace is necessary: independent remeshed cut triangles
+    // do not represent the same piecewise-linear zero contour after transport.
+    bemBackground.emplace(sphere.makeUniformChamber());
+  }
   Real backgroundH = initial.backgroundH;
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
   if (m_options.reconstructOnly)
@@ -2356,7 +2363,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
 
     stageSeconds[5] = elapsedSeconds(stage6Start);
     reportStageTiming(6, stageSeconds[5]);
-    MMG::Mesh& advectionMesh = swiftBackground ? *swiftBackground : mesh;
+    MMG::Mesh& advectionMesh = bemBackground ? *bemBackground :
+      (swiftBackground ? *swiftBackground : mesh);
     P1 advectionLevelSetSpace(advectionMesh);
     GridFunction advectedDistance(advectionLevelSetSpace);
     // Only the transported scalar survives this scope. In particular, the
@@ -2614,7 +2622,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       P1 advectionShapeSpace(advectionMesh, 3);
       GridFunction advectionDistance(advectionLevelSetSpace);
       GridFunction advectionDirection(advectionShapeSpace);
-      if (swiftBackground)
+      if (swiftBackground || bemBackground)
       {
       // The fitted mesh is the background with its vertices moved: the same
       // numbering at different positions. Copying nodal values would carry
@@ -2663,6 +2671,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       {
         advectionDistance.getData() = distance.getData();
         advectionDirection.getData() = theta.getData();
+      }
+      if (m_options.bemGradient)
+      {
+        const ChamberSymmetry symmetry(advectionMesh);
+        symmetry.scalar(advectionDistance);
+        symmetry.vector(advectionDirection);
       }
       KelvinBall::RotatedNitscheIntegrator advectionCoupling(advectionMesh,
         FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
@@ -2784,7 +2798,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         try
         {
           const Real retryFactor = scale / initialGridSpacing;
-          auto reconstructed = discretizeLevelSetMMG(mesh, advectedDistance, scale,
+          // Retain the accepted fitted mesh; every trial cuts a fresh copy of
+          // the same chamber background on which the scalar was transported.
+          Optional<MMG::Mesh> trialBackground;
+          if (bemBackground) trialBackground.emplace(*bemBackground);
+          MMG::Mesh& cutMesh = trialBackground ? *trialBackground : mesh;
+          auto reconstructed = discretizeLevelSetMMG(cutMesh, advectedDistance, scale,
             retryFactor * m_options.configuration.hmin,
             retryFactor * m_options.configuration.hmax, sphere,
             m_options.configuration.adapt, m_options.configuration.mmgSnap,

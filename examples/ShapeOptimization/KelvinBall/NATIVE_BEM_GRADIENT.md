@@ -1,3 +1,7 @@
+> The chamber production state/derivative path is being replaced by native O24
+> Galerkin reduction; see [NATIVE_O24_BEM.md](NATIVE_O24_BEM.md). Full-volume
+> experiments below are historical fixtures and do not certify that path.
+
 # Native Rodin BEM gradient: first verification stage
 
 On `codex/p03-bem-gradient`, numerical states, derivatives and verification updates
