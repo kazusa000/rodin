@@ -8,6 +8,7 @@
 #define KELVIN_BALL_CONFIGURATION_H
 
 #include <string_view>
+#include <vector>
 
 #include <Rodin/Types.h>
 
@@ -21,6 +22,10 @@ namespace KelvinBall
       size_t points = 13;
       Real requestedH = 0;
       Real outerRadius = 2;
+      /// Extend the historical uniform core without changing the reference h.
+      bool gradedChamber = false;
+      Real nearFieldRadius = 2;
+      Real chamberGradation = 1.3;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
       /// Settings of the single MMG optimization of the WNGIR background, the
@@ -51,6 +56,10 @@ namespace KelvinBall
       void finalize();
 
       Real getH() const;
+
+      std::vector<Real> getGridCoordinates() const;
+
+      Real getGradedSize(const Math::SpatialPoint& point, Real h) const;
   };
 }
 

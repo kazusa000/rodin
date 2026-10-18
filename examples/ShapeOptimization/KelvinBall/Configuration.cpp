@@ -7,6 +7,7 @@
 #include "Configuration.h"
 
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -26,6 +27,12 @@ namespace KelvinBall
     }
     else if (option.rfind("--outer-radius=", 0) == 0)
       outerRadius = std::stod(std::string(option.substr(15)));
+    else if (option == "--graded-chamber")
+      gradedChamber = true;
+    else if (option.rfind("--near-field-radius=", 0) == 0)
+      nearFieldRadius = std::stod(std::string(option.substr(20)));
+    else if (option.rfind("--chamber-gradation=", 0) == 0)
+      chamberGradation = std::stod(std::string(option.substr(20)));
     else if (option.rfind("--penalty=", 0) == 0)
       nitschePenalty = std::stod(std::string(option.substr(10)));
     else if (option.rfind("--stabilization=", 0) == 0)
@@ -72,6 +79,17 @@ namespace KelvinBall
     }
     if (points < 5)
       throw std::runtime_error("The chamber uniform grid requires --n >= 5.");
+    if (gradedChamber)
+    {
+      if (!hSpecified || !std::isfinite(requestedH) || !std::isfinite(outerRadius) ||
+          !std::isfinite(nearFieldRadius) || !std::isfinite(chamberGradation) ||
+          !(nearFieldRadius > 1) || nearFieldRadius > outerRadius || !(chamberGradation > 1))
+        throw std::runtime_error("A graded chamber requires explicit h, 1 < core <= box, and finite growth > 1.");
+      const Real intervals = nearFieldRadius / requestedH;
+      if (std::abs(intervals - std::round(intervals)) > 1e-10)
+        throw std::runtime_error("The uniform core must contain an integer number of reference intervals.");
+      points = getGridCoordinates().size();
+    }
     if (!(nitschePenalty > 0))
       throw std::runtime_error("The Nitsche penalty must be positive.");
     if (stabilizationFactor < 0)
@@ -96,6 +114,40 @@ namespace KelvinBall
 
   Real Configuration::getH() const
   {
+    if (gradedChamber)
+      return requestedH;
     return outerRadius / static_cast<Real>(points - 1);
+  }
+
+  std::vector<Real> Configuration::getGridCoordinates() const
+  {
+    const Real h = getH();
+    const size_t count = gradedChamber
+      ? static_cast<size_t>(std::llround(nearFieldRadius / h)) + 1 : points;
+    std::vector<Real> coordinates;
+    coordinates.reserve(count);
+    // Multiplication, rather than repeated addition, preserves the old core coordinates.
+    for (size_t i = 0; i < count; ++i)
+      coordinates.push_back(static_cast<Real>(i) * h);
+    if (!gradedChamber)
+      return coordinates;
+    Real step = h;
+    while (coordinates.back() < outerRadius)
+    {
+      step = std::min(step * chamberGradation, Real(10) * h);
+      const Real next = std::min(outerRadius, coordinates.back() + step);
+      if (!(next > coordinates.back()))
+        throw std::runtime_error("The graded coordinates cannot advance.");
+      coordinates.push_back(next);
+    }
+    return coordinates;
+  }
+
+  Real Configuration::getGradedSize(const Math::SpatialPoint& point, Real h) const
+  {
+    const Real extent = std::max({std::abs(point(0)), std::abs(point(1)), std::abs(point(2))});
+    const Real distance = std::max(Real(0), extent - nearFieldRadius);
+    return std::min(Real(10) * h,
+      adaptInterfaceSize * h + (h / getH()) * (chamberGradation - Real(1)) * distance);
   }
 }

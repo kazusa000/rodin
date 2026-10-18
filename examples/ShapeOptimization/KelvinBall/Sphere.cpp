@@ -27,6 +27,7 @@ namespace KelvinBall
     Mesh cube = Mesh::UniformGrid(Polytope::Type::Tetrahedron,
       {m_configuration.points, m_configuration.points, m_configuration.points});
     cube.scale(m_configuration.getH());
+    const auto gridCoordinates = m_configuration.getGridCoordinates();
 
     using Key = std::tuple<long long, long long, long long>;
     constexpr Real tolerance = 1e-12;
@@ -59,6 +60,15 @@ namespace KelvinBall
         for (size_t local = 0; local < vertices.size(); ++local)
         {
           Math::SpatialPoint x = cube.getVertexCoordinates(cell->getVertices()(local));
+          if (m_configuration.gradedChamber)
+          {
+            for (Eigen::Index dimension = 0; dimension < 3; ++dimension)
+            {
+              const size_t index = static_cast<size_t>(std::llround(
+                x(dimension) / m_configuration.getH()));
+              x(dimension) = gridCoordinates.at(index);
+            }
+          }
           x(2) *= sign;
           vertices(local) = insertVertex(x);
         }
@@ -256,13 +266,15 @@ namespace KelvinBall
     for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
     {
       const Real ratio = std::min(Real(1), std::abs(distance[vertex]) / width);
-      size[vertex] = interfaceSize + (farSize - interfaceSize) * ratio;
+      size[vertex] = m_configuration.gradedChamber
+        ? m_configuration.getGradedSize(mesh.getVertexCoordinates(vertex), h)
+        : interfaceSize + (farSize - interfaceSize) * ratio;
     }
 
     protectFixedGeometry(mesh, false);
     MMG::Adapt()
       .setHMin(0.1 * h)
-      .setHMax(std::max(interfaceSize, farSize))
+      .setHMax(m_configuration.gradedChamber ? Real(10) * h : std::max(interfaceSize, farSize))
       .setHausdorff(0.1 * h * h)
       .setGradation(m_configuration.adaptGradation)
       .setAngleDetection(false)
