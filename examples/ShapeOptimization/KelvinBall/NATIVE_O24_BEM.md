@@ -133,7 +133,11 @@ Earlier failed candidates and diagnostic snapshots are preserved separately.
 --results NEW_ABSOLUTE_RESULTS --checkpoint ACCEPTED_CHAMBER_MESH
 --expected-rho ACCEPTED_RHO --updates 20` continues from an accepted chamber
 checkpoint. Each child process performs exactly one native update with the
-validated n=13, step=0.10, MMG/snap parameters. The Python driver only launches
+validated n=13 and MMG/snap parameters. Step and H1 length factors are
+explicit `--step` and `--regularization` options (defaults 0.10 and 4).
+Both must be finite and positive, are recorded in history and passed unchanged
+to the native child. The step=1.0, H1=4 continuation starts from the last
+accepted chamber mesh, not the separately diagnosed larger-step candidate. The Python driver only launches
 native processes, checks their JSON/CSV outputs and copies accepted meshes.
 It neither solves states nor constructs gradients, transport or geometry.
 

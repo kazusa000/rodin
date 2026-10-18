@@ -67,6 +67,8 @@ def main():
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--expected-rho', type=float)
     parser.add_argument('--updates', type=int, default=20, help='Maximum additional accepted updates')
+    parser.add_argument('--step', type=float, default=0.10, help='Native step factor')
+    parser.add_argument('--regularization', type=float, default=4, help='Native H1 length factor')
     args = parser.parse_args()
     if args.check_update:
         record = validate_update(args.check_update)
@@ -76,6 +78,8 @@ def main():
             args.expected_rho is None or not math.isfinite(args.expected_rho) or
             args.expected_rho <= 0 or args.updates <= 0):
         parser.error('Need executable, new results, checkpoint, positive expected rho and update count')
+    if not all(math.isfinite(x) and x > 0 for x in [args.step, args.regularization]):
+        parser.error('Step and H1 regularization factors must be finite and positive')
     for p in [args.executable, args.results, args.checkpoint]:
         if not p.is_absolute():
             parser.error('Use absolute paths')
@@ -89,7 +93,8 @@ def main():
         'accepted_updates': 0, 'starting_rho': args.expected_rho, 'last_rho': args.expected_rho,
         'last_accepted_checkpoint': str(accepted), 'design_domain': 'O24-chamber',
         'gradient_domain': 'O24-chamber', 'reconstruction_domain': 'O24-chamber',
-        'bem_domain': 'infinite-exterior', 'initial_step_factor': 0.10,
+        'bem_domain': 'infinite-exterior', 'initial_step_factor': args.step,
+        'regularization_factor': args.regularization,
         'volume_projection_enabled': True, 'volume_rejection_enabled': False, 'volume_tolerance': None,
     }
     history_path = args.results / 'history.json'
@@ -99,7 +104,8 @@ def main():
         u = step / 'update'
         u.mkdir(parents=True)
         command = [str(args.executable), '--bem-gradient', '--n=13', '--seed-amplitude=0.1',
-                   '--iterations=2', '--step=0.10', '--reconstruction=mmg',
+                   '--iterations=2', f'--step={args.step}', f'--regularization={args.regularization}',
+                   '--reconstruction=mmg',
                    '--mmg-snap=0.001', '--mmg-retries=0', '--save-mesh', f'--mesh={accepted}']
         save(u / 'command.json', command)
         try:
