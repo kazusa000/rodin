@@ -1187,7 +1187,7 @@ namespace KelvinBall
       template <class LevelSet>
       SphereDiscretization discretizeLevelSetMMG(MMG::Mesh& mesh, const LevelSet& levelSet,
         Real targetSize, Real hmin, Real hmax, const Sphere& sphere, bool adapt,
-        Real snap, Real requestedWelschScale)
+        Real snap, Real requestedWelschScale, const std::string& evidencePrefix = "")
       {
         const size_t previousCells = mesh.getCellCount();
         const Real hausdorff = 0.1 * targetSize * targetSize;
@@ -1360,7 +1360,13 @@ namespace KelvinBall
                        << Alert::Notation::Number(snappedMinimum);
         }
         crossingInfo << Alert::Raise;
+        if (!evidencePrefix.empty())
+        {
+          saveExact(mesh, evidencePrefix + "-input.mesh");
+          sanitized.save(evidencePrefix + "-input.sol", IO::FileFormat::MEDIT);
+        }
         MMG::Mesh reconstructed = discretizer.discretize(sanitized);
+        if (!evidencePrefix.empty()) saveExact(reconstructed, evidencePrefix + "-before-projection.mesh");
         sphere.projectFixedGeometry(reconstructed);
 
         splitSelfPairedCut(reconstructed);
@@ -2815,7 +2821,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             retryFactor * m_options.configuration.hmin,
             retryFactor * m_options.configuration.hmax, sphere,
             m_options.configuration.adapt, m_options.configuration.mmgSnap,
-            requestedWelschScale);
+            requestedWelschScale, m_options.bemGradient ?
+              "bem-mmg-" + std::to_string(iteration + 1) + "-" + std::to_string(attempt) : "");
           reconstructed.diagnostics.scale = retryFactor;
           return reconstructed;
         }

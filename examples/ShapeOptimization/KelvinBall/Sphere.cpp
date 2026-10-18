@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <sstream>
+#include <iomanip>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -275,8 +277,18 @@ namespace KelvinBall
       const Real scale = after.col(0).norm() * after.col(1).norm() * after.col(2).norm();
       if (!std::isfinite(determinant) || determinant * before.determinant() <= 0 ||
         std::abs(determinant) <= roundoff * scale)
-        throw std::runtime_error(
-          "Fixed-boundary projection would invert or degenerate a tetrahedron.");
+      {
+        std::ostringstream detail;
+        detail << std::setprecision(17)
+          << "Fixed-boundary projection would invert or degenerate a tetrahedron: cell="
+          << cell->getIndex() << " before=" << before.determinant()
+          << " after=" << determinant << " scale=" << scale;
+        for (const Index v : vertices)
+          detail << " vertex=" << v << " mask=" << constraints[v]
+            << " original=(" << mesh.getVertexCoordinates(v).transpose()
+            << ") projected=(" << coordinates[v].transpose() << ")";
+        throw std::runtime_error(detail.str());
+      }
     }
     for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
       if (constraints[vertex])
