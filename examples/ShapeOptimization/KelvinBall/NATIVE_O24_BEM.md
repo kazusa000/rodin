@@ -70,7 +70,7 @@ unmatched image edges. These are discrete consistency gates, not mesh convergenc
 ```
 KelvinBall --bem-gradient --n=7 --seed-amplitude=0.1 \
   --hmin-factor=0.8 --hmax-factor=1.2 --iterations=2 \
-  --step=0.10 --reconstruction=mmg --save-mesh
+  --step=0.10 --reconstruction=mmg --mmg-snap=0.001 --mmg-retries=0 --save-mesh
 ```
 
 Two evaluations request one actual update. `dt=0.10*L/(n-1)`, not the full-box
@@ -79,3 +79,10 @@ MMG, compare it with the Armijo prediction, and verify the chamber checkpoints.
 No long campaign is launched by these checks. SWIFT, stability/cost studies and
 long optimization remain separate validation tasks. Historical full-volume
 fixtures retain their old purpose and must not be used as chamber acceptance.
+
+The bounded update check enables the existing Carlos near-vertex snapping
+parameter at 0.001 of a crossed edge, to avoid tiny tetrahedra when the zero
+contour nearly hits a background node. This is a recorded reconstruction
+parameter, not a volume constraint or seam-welding tolerance. A reconstruction
+failure ends that check immediately (`mmg-retries=0`); it is never accepted by
+relaxing the fixed-plane or positive-Jacobian checks.

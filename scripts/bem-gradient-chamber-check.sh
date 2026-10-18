@@ -16,7 +16,7 @@ result=$?
 printf '%s\n' "$result" > "$results/validation/run.exit"
 if [[ $result != 0 ]]; then exit "$result"; fi
 arguments=(--bem-gradient --n=13 --seed-amplitude=0.1 --iterations=2
-  --step=0.10 --reconstruction=mmg --save-mesh)
+  --step=0.10 --reconstruction=mmg --mmg-snap=0.001 --mmg-retries=0 --save-mesh)
 printf '%q ' "$executable" "${arguments[@]}" > "$results/update/command.txt"
 printf '\n' >> "$results/update/command.txt"
 (cd "$results/update" && "$executable" "${arguments[@]}" > run.log 2>&1)
