@@ -1233,6 +1233,7 @@ namespace KelvinBall
         const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, m_options.bemGradient, m_options.bemGradient);
 
         MMG::LevelSetDiscretizer discretizer;
+        if (m_options.bemGradient) discretizer.setPreserveVolumeBoundary();
         // Under RMC, retain the body component attached to the chamber cuts;
         // Fluid is a cell label, not a boundary-face base reference.
         discretizer.split(Fluid, {Obstacle, Fluid})
@@ -1363,7 +1364,7 @@ namespace KelvinBall
         if (!evidencePrefix.empty())
         {
           saveExact(mesh, evidencePrefix + "-input.mesh");
-          sanitized.save(evidencePrefix + "-input.sol", IO::FileFormat::MEDIT);
+          saveExactField(sanitized, evidencePrefix + "-input.sol");
         }
         MMG::Mesh reconstructed = discretizer.discretize(sanitized);
         if (!evidencePrefix.empty()) saveExact(reconstructed, evidencePrefix + "-before-projection.mesh");
@@ -2832,7 +2833,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           const std::string failure = "mmg-failure-" + std::to_string(iteration + 1) +
             "-" + std::to_string(attempt);
           cutMesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
-          advectedDistance.save(failure + ".sol", IO::FileFormat::MEDIT);
+          saveExactField(advectedDistance, failure + ".sol");
           Alert::Warning() << "Saved the failed MMG input to " << failure << ".mesh and "
                            << failure << ".sol." << Alert::Raise;
           if (attempt == m_options.configuration.mmgRetries)

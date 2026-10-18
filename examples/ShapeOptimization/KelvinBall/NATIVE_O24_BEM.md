@@ -86,3 +86,12 @@ contour nearly hits a background node. This is a recorded reconstruction
 parameter, not a volume constraint or seam-welding tolerance. A reconstruction
 failure ends that check immediately (`mmg-retries=0`); it is never accepted by
 relaxing the fixed-plane or positive-Jacobian checks.
+
+During the native MMG level-set cut only, `setPreserveVolumeBoundary` enables
+MMG3D nosurf/nomove. Required input faces intersected by the level set may be
+replaced; without these temporary policies MMG can subsequently round the
+chamber planes. Level-set intersections are still generated afresh each update.
+After cutting, the existing optimizer can move interior vertices while required
+cut faces and vertices are protected. Fixed-plane/Jacobian and image-edge audits
+remain mandatory. The default FEM cutter and 2D/surface kernels retain their
+existing policies. Exact cut inputs and pre-projection candidates are retained.

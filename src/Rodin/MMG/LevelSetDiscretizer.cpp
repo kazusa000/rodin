@@ -66,6 +66,11 @@ namespace Rodin::MMG
 
   ReturnCode LevelSetDiscretizer::discretizeMMG2D(MMG5_pMesh mesh, MMG5_pSol sol)
   {
+    if (m_preserveVolumeBoundary)
+      Alert::MemberFunctionException(*this, __func__)
+        << "Boundary preservation is supported only by MMG3D volume cuts."
+        << Alert::Raise;
+
     if (m_rmc)
       MMG2D_Set_dparameter(mesh, sol, MMG2D_DPARAM_rmc, *m_rmc);
     if (getSplitMap().size() > 0)
@@ -121,6 +126,16 @@ namespace Rodin::MMG
 
   ReturnCode LevelSetDiscretizer::discretizeMMG3D(MMG5_pMesh mesh, MMG5_pSol sol)
   {
+    if (m_preserveVolumeBoundary)
+    {
+      if (m_meshTheSurface ||
+          !MMG3D_Set_iparameter(mesh, sol, MMG3D_IPARAM_nosurf, 1) ||
+          !MMG3D_Set_iparameter(mesh, sol, MMG3D_IPARAM_nomove, 1))
+        Alert::MemberFunctionException(*this, __func__)
+          << "Boundary preservation requires an MMG3D volume cut."
+          << Alert::Raise;
+    }
+
     if (m_rmc)
       MMG3D_Set_dparameter(mesh, sol, MMG3D_DPARAM_rmc, *m_rmc);
 
@@ -185,6 +200,11 @@ namespace Rodin::MMG
 
   int LevelSetDiscretizer::discretizeMMGS(MMG5_pMesh mesh, MMG5_pSol sol)
   {
+    if (m_preserveVolumeBoundary)
+      Alert::MemberFunctionException(*this, __func__)
+        << "Boundary preservation is supported only by MMG3D volume cuts."
+        << Alert::Raise;
+
     if (m_rmc)
       Alert::Warning() << "Warning RMC option is not supported for surfaces." << Alert::Raise;
     if (m_isoref)

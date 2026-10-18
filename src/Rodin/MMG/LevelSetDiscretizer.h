@@ -70,6 +70,23 @@ namespace Rodin::MMG
       LevelSetDiscretizer& surface(bool meshTheSurface = true);
 
       /**
+       * @brief Preserves the domain boundary during a 3D volume level-set cut.
+       * @param preserve Whether to disable boundary remeshing and vertex relocation.
+       * @returns Reference to this discretizer.
+       *
+       * The level-set intersection may still split entities and create interface
+       * vertices. MMG's temporary nosurf/nomove policies prevent subsequent
+       * smoothing from rounding fixed domain planes. The default is false;
+       * this policy is not supported for MMG2D or MMGS extraction.
+       */
+      LevelSetDiscretizer& setPreserveVolumeBoundary(bool preserve = true)
+      {
+        m_preserveVolumeBoundary = preserve;
+        return *this;
+      }
+
+
+      /**
        * @brief Specifies the level set to discretize.
        * @param[in] ls Isovalue to extract/discretize.
        *
@@ -273,6 +290,7 @@ namespace Rodin::MMG
        */
       void deleteBoundaryRef(MMG5_pMesh mesh, Geometry::Attribute ref);
 
+      bool m_preserveVolumeBoundary = false; ///< Opt-in boundary retention for MMG3D cuts.
       Real m_ls; ///< Target level-set value defining the interface.
       SplitMap m_split; ///< User-provided material split policy.
       bool m_meshTheSurface; ///< If true, extract/mesh the isosurface.
