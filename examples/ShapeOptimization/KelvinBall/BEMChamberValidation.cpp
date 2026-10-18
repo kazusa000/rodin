@@ -53,7 +53,7 @@ int main(int argc,char** argv)
           const auto& v=cell->getVertices();faces.push_back({map[v(0)],map[v(1)],map[v(2)]});
         }
       }
-      KelvinBall::Mesh::Builder builder;builder.initialize(2,3).nodes(coordinates.size());
+      KelvinBall::Mesh::Builder builder;builder.initialize(3).nodes(coordinates.size());
       for (const auto& x:coordinates) builder.vertex(x);
       for (const auto& f:faces)
       {
