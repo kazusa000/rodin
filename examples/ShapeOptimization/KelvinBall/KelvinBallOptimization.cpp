@@ -2624,10 +2624,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       GridFunction advectionDirection(advectionShapeSpace);
       if (swiftBackground || bemBackground)
       {
-      // The fitted mesh is the background with its vertices moved: the same
-      // numbering at different positions. Copying nodal values would carry
-      // each one from x + u(x) back to x and undo the fit near the interface,
-      // so both fields are evaluated at the positions of the background.
+      // Transfer by physical position to the fixed chamber background.
+      // Reconstructed vertices need not share its numbering or locations;
+      // copying nodal values would move the zero contour to different points.
         const Location::AABB<MMG::Mesh> fittedLocator(mesh);
         std::size_t unlocated = 0;
         advectionDistance = RealFunction([&](const Geometry::Point& point) {

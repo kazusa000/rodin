@@ -27,7 +27,7 @@ int main(int argc,char** argv)
       MMG::MeshLoader(mesh).load(input);
     }
     else mesh=Sphere(configuration).discretize(true,0,true).mesh;
-    mesh.getConnectivity().compute(2,3);
+    prepare(mesh);
     VelocitySpace space(mesh,3);Math::Vector<Real> load;
     const auto result=BEM().evaluateChamber(mesh,space,load,true);
     Real referenceError=0;
@@ -72,7 +72,9 @@ int main(int argc,char** argv)
       Math::SpatialVector<Real> x=p.vector();
       const Real r=x.norm();if (r==0) return x;
       const Real a=x(0)/r,b=x(1)/r,c=x(2)/r;
-      return Math::SpatialVector<Real>(x*(27*a*b*c*(a*a-b*b)*(b*b-c*c)*(c*c-a*a)));
+      // The even H4 term moves cut vertices as well as patch interiors.
+      const Real harmonic=a*a*a*a+b*b*b*b+c*c*c*c-Real(3)/5;
+      return Math::SpatialVector<Real>(x*(harmonic+27*a*b*c*(a*a-b*b)*(b*b-c*c)*(c*c-a*a)));
     });
     const Real analytic=load.dot(direction.getData());
     std::cout<<std::setprecision(17)<<"state rho="<<result.rho<<" residual="<<result.residual
