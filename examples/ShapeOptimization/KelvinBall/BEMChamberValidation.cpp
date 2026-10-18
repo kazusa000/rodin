@@ -18,7 +18,7 @@ int main(int argc,char** argv)
   {
     Configuration configuration;
     configuration.points=7;configuration.hminFactor=.8;configuration.hmaxFactor=1.2;
-    configuration.seedAmplitude=.6;configuration.finalize();
+    configuration.seedAmplitude=.1;configuration.finalize();
     MMG::Mesh mesh;
     const bool reference=argc==2 && std::string(argv[1])=="--reference";
     if (argc==2 && !reference)

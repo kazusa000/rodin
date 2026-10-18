@@ -68,7 +68,7 @@ of 0.2%; the reference target is 1e-8, constrained state residual 1e-9, and zero
 unmatched image edges. These are discrete consistency gates, not mesh convergence.
 
 ```
-KelvinBall --bem-gradient --n=7 --seed-amplitude=0.6 \
+KelvinBall --bem-gradient --n=7 --seed-amplitude=0.1 \
   --hmin-factor=0.8 --hmax-factor=1.2 --iterations=2 \
   --step=0.10 --reconstruction=mmg --save-mesh
 ```
