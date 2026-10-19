@@ -45,6 +45,7 @@
 #include "RotatedNitscheIntegrator.h"
 #include "SewedOutput.h"
 #include "Thickness.h"
+#include "BaselineThickness.h"
 #include "Sphere.h"
 #include "../../WNGIRExampleParameters.h"
 
@@ -314,6 +315,14 @@ namespace KelvinBall
           << "      Minimum body thickness in h (default: 2; 0 disables it)."
           << Alert::NewLine << Alert::Notation("--thickness-weight=<value>")
           << "   Weight of the thickness penalty (default: 1)." << Alert::NewLine
+          << Alert::Notation("--thickness-method=<legacy|baseline>")
+          << " Thickness strategy (default: legacy; baseline is Cubic-only)."
+          << Alert::NewLine << Alert::Notation("--restart-mesh=<path>")
+          << " Read an existing MEDIT volume mesh without initial reconstruction."
+          << Alert::NewLine << Alert::Notation("--restart-target-volume=<value>")
+          << " Original chamber target volume; required for restart."
+          << Alert::NewLine << Alert::Notation("--initial-global-step=<count>")
+          << " Global CSV offset for a restart (default: 0)." << Alert::NewLine
           << Alert::Notation("--motion-every=<count>")
           << "      Write the rigid motion every count iterates (default: 0, off)."
           << Alert::NewLine << Alert::Notation("--motion-force=<fx,fy,fz>")
@@ -920,6 +929,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Real levelSetPenalty = 1;
   Real thicknessFactor = 2;
   Real thicknessWeight = 1;
+  std::string thicknessMethod = "legacy";
+  std::string restartMesh;
+  Real restartTargetVolume = 0;
+  size_t initialGlobalStep = 0;
   size_t motionEvery = 0;
   size_t motionFrames = 24;
   Math::SpatialVector<Real> motionForce(3);
@@ -945,6 +958,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       thicknessFactor = std::stod(std::string(mode.substr(16)));
     else if (mode.rfind("--thickness-weight=", 0) == 0)
       thicknessWeight = std::stod(std::string(mode.substr(19)));
+    else if (mode.rfind("--thickness-method=", 0) == 0)
+      thicknessMethod = std::string(mode.substr(19));
+    else if (mode.rfind("--restart-mesh=", 0) == 0)
+      restartMesh = std::string(mode.substr(15));
+    else if (mode.rfind("--restart-target-volume=", 0) == 0)
+      restartTargetVolume = std::stod(std::string(mode.substr(24)));
+    else if (mode.rfind("--initial-global-step=", 0) == 0)
+      initialGlobalStep = std::stoul(std::string(mode.substr(22)));
     else if (mode.rfind("--motion-every=", 0) == 0)
       motionEvery = std::stoul(std::string(mode.substr(15)));
     else if (mode.rfind("--motion-frames=", 0) == 0)
@@ -996,9 +1017,17 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("The advection step factor must be positive.");
   if (!(levelSetPenalty > 0))
     throw std::runtime_error("The level-set trace penalty must be positive.");
-  if (thicknessFactor < 0 || !(thicknessWeight > 0))
+  if (!std::isfinite(thicknessFactor) || thicknessFactor < 0 ||
+      !std::isfinite(thicknessWeight) || !(thicknessWeight > 0))
     throw std::runtime_error("The thickness options must satisfy --thickness-min >= 0 "
                              "and --thickness-weight > 0.");
+  if (thicknessMethod != "legacy" && thicknessMethod != "baseline")
+    throw std::runtime_error("--thickness-method must be legacy or baseline.");
+  if (thicknessMethod == "baseline" && (KelvinBall::Tetrahedral || thicknessWeight != 1))
+    throw std::runtime_error("Baseline thickness is Cubic-only and uses an adaptive multiplier, not --thickness-weight.");
+  if (!restartMesh.empty() && (reconstructionMethod != "mmg" ||
+      !std::isfinite(restartTargetVolume) || !(restartTargetVolume > 0)))
+    throw std::runtime_error("Restart requires MMG and the positive original --restart-target-volume.");
   if (motionFrames == 0)
     throw std::runtime_error("The motion needs at least one frame.");
   if (!(motionForce.norm() > 0))
@@ -1078,47 +1107,62 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   configurationInfo << Alert::Raise;
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
-  announce(reconstructionMethod == "wngir"
+  announce(!restartMesh.empty()
+      ? "Stage 1: Loading the saved volume mesh without reconstruction."
+      : reconstructionMethod == "wngir"
       ? "Stage 1: Preparing the background mesh and fitting the initial sphere with "
         "WNGIR."
       : "Stage 1: Discretizing the initial sphere with MMG.");
-  Sphere sphere(configuration);
-  SphereDiscretization initial = reconstructionMethod == "wngir"
-    ? sphere.prepareWNGIRBackground()
-    : sphere.discretize();
-  ReconstructionDiagnostics reconstruction = initial.diagnostics;
+  ReconstructionDiagnostics reconstruction;
   Optional<MMG::Mesh> wngirBackground;
   MMG::Mesh mesh;
-  if (reconstructionMethod == "wngir")
+  if (!restartMesh.empty())
   {
-    wngirBackground.emplace(std::move(initial.mesh));
-    P1 sphereSpace(*wngirBackground);
-    GridFunction sphereLevelSet(sphereSpace);
-    sphereLevelSet = RealFunction([](const Geometry::Point& point) {
-      return point.getPhysicalCoordinates().norm() - Real(1);
-    });
-    MMG::Mesh classified = classifyLevelSetForWNGIR(*wngirBackground, sphereLevelSet);
-    P1 classifiedSphereSpace(classified);
-    GridFunction classifiedSphereLevelSet(classifiedSphereSpace);
-    classifiedSphereLevelSet.getData() = sphereLevelSet.getData();
-    MMGReconstruction fitted =
-      fitLevelSetWNGIR(classified, classifiedSphereLevelSet, h, outerRadius, argc, argv);
-    mesh = std::move(fitted.mesh);
+    mesh.load(restartMesh, IO::FileFormat::MEDIT);
+    IO::XDMF restartGeometry("RestartGeometry");
+    auto original = restartGeometry.grid("Chamber");
+    original.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
+    restartGeometry.write(0).flush();
   }
   else
   {
-    mesh = std::move(initial.mesh);
+    Sphere sphere(configuration);
+    SphereDiscretization initial = reconstructionMethod == "wngir"
+      ? sphere.prepareWNGIRBackground()
+      : sphere.discretize();
+    reconstruction = initial.diagnostics;
+    if (reconstructionMethod == "wngir")
+    {
+      wngirBackground.emplace(std::move(initial.mesh));
+      P1 sphereSpace(*wngirBackground);
+      GridFunction sphereLevelSet(sphereSpace);
+      sphereLevelSet = RealFunction([](const Geometry::Point& point) {
+        return point.getPhysicalCoordinates().norm() - Real(1);
+      });
+      MMG::Mesh classified = classifyLevelSetForWNGIR(*wngirBackground, sphereLevelSet);
+      P1 classifiedSphereSpace(classified);
+      GridFunction classifiedSphereLevelSet(classifiedSphereSpace);
+      classifiedSphereLevelSet.getData() = sphereLevelSet.getData();
+      MMGReconstruction fitted =
+        fitLevelSetWNGIR(classified, classifiedSphereLevelSet, h, outerRadius, argc, argv);
+      mesh = std::move(fitted.mesh);
+    }
+    else
+    {
+      mesh = std::move(initial.mesh);
+    }
   }
   checkFixedGeometry(mesh, outerRadius);
   checkMaterials(mesh);
   if (saveMeshDiagnostic)
     mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
-  reportSphereGeometry(mesh);
+  if (restartMesh.empty())
+    reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
   if (geometryOnly)
     return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
+  const Real targetVolume = restartMesh.empty() ? mesh.getVolume(Obstacle) : restartTargetVolume;
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1148,7 +1192,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "eikonal_rotated_jump,projected_rotated_jump,distance_correction,"
              "interface_shift_max,advection_increment,advected_rotated_jump,"
              "min_crossing_fraction,snapped_vertices,reconstruction_scale,"
-             "z_x,z_y,z_z,omega_x,omega_y,omega_z\n";
+             "z_x,z_y,z_z,omega_x,omega_y,omega_z,global_iteration,"
+             "thickness_nominal_penalty,thickness_guard_distance,thickness_minimum_exit,"
+             "thickness_maximum_deficit,thickness_active_multiplier,thickness_active_feasible,"
+             "thickness_repair_d_volume,d_thickness_theta\n";
   IO::XDMF xdmf("KelvinBall");
   auto chamber = xdmf.grid("Chamber");
   chamber.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
@@ -1238,6 +1285,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         Real thicknessPenalty = std::numeric_limits<Real>::quiet_NaN();
         Real thicknessViolating = std::numeric_limits<Real>::quiet_NaN();
         Real thicknessDeepest = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessNominalPenalty = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessGuardDistance = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessMinimumExit = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessMaximumDeficit = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessActiveMultiplier = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessActiveFeasible = std::numeric_limits<Real>::quiet_NaN();
+        Real thicknessRepairVolume = std::numeric_limits<Real>::quiet_NaN();
+        Real dThicknessTheta = std::numeric_limits<Real>::quiet_NaN();
         Real eikonalJump = std::numeric_limits<Real>::quiet_NaN();
         Real projectedJump = std::numeric_limits<Real>::quiet_NaN();
         Real distanceCorrection = std::numeric_limits<Real>::quiet_NaN();
@@ -1300,7 +1355,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         history << ',' << q / determinant * unitForce(component);
       for (Eigen::Index component = 0; component < 3; ++component)
         history << ',' << -c / determinant * unitForce(component);
-      history << '\n';
+      history << ',' << initialGlobalStep + iteration
+              << ',' << stageDiagnostics.thicknessNominalPenalty
+              << ',' << stageDiagnostics.thicknessGuardDistance
+              << ',' << stageDiagnostics.thicknessMinimumExit
+              << ',' << stageDiagnostics.thicknessMaximumDeficit
+              << ',' << stageDiagnostics.thicknessActiveMultiplier
+              << ',' << stageDiagnostics.thicknessActiveFeasible
+              << ',' << stageDiagnostics.thicknessRepairVolume
+              << ',' << stageDiagnostics.dThicknessTheta << '\n';
       history.flush();
     };
     const auto stage4Start = Clock::now();
@@ -1404,20 +1467,38 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reportStageTiming(5, stageSeconds[4]);
     const auto stage6Start = Clock::now();
     announce("Stage 6: Regularizing and constraining the shape direction.");
-    // The minimum-thickness penalty enters the ascent direction of
-    // rho - weight * P as an additional load of the rho identification.
+    // Legacy mixes the load before projection. The baseline method instead
+    // identifies and volume-projects its repair independently below.
     Math::Vector<Real> thicknessLoad;
+    GridFunction thicknessDescent(shapeSpace);
     if (thicknessFactor > 0)
     {
       thicknessLoad = Math::Vector<Real>::Zero(shapeSpace.getSize());
       mesh.getConnectivity().compute(mesh.getDimension() - 1, mesh.getDimension());
-      const KelvinBall::ThicknessPenalty thicknessPenalty(mesh, thicknessFactor * h);
-      const Location::AABB<MMG::Mesh> chamberLocator(mesh);
-      const auto thickness = thicknessPenalty.evaluate(
-        mesh, chamberLocator, shapeSpace, thicknessWeight, thicknessLoad);
-      stageDiagnostics.thicknessPenalty = thickness.penalty;
-      stageDiagnostics.thicknessViolating = static_cast<Real>(thickness.violating);
-      stageDiagnostics.thicknessDeepest = thickness.deepest;
+      if (thicknessMethod == "baseline")
+      {
+        const Real nominal = thicknessFactor * h;
+        const Real guard = nominal + Real(2) * dt;
+        const KelvinBall::BaselineThicknessPenalty penalty(mesh, guard);
+        const auto thickness = penalty.evaluate(mesh, shapeSpace, thicknessLoad, nominal);
+        stageDiagnostics.thicknessPenalty = thickness.penalty;
+        stageDiagnostics.thicknessViolating = static_cast<Real>(thickness.violating);
+        stageDiagnostics.thicknessNominalPenalty = thickness.nominalPenalty;
+        stageDiagnostics.thicknessGuardDistance = guard;
+        stageDiagnostics.thicknessMinimumExit = thickness.minimumExit;
+        stageDiagnostics.thicknessMaximumDeficit = thickness.maximumDeficit;
+        stageDiagnostics.thicknessDeepest = thickness.maximumDeficit;
+      }
+      else
+      {
+        const KelvinBall::ThicknessPenalty thicknessPenalty(mesh, thicknessFactor * h);
+        const Location::AABB<MMG::Mesh> chamberLocator(mesh);
+        const auto thickness = thicknessPenalty.evaluate(
+          mesh, chamberLocator, shapeSpace, thicknessWeight, thicknessLoad);
+        stageDiagnostics.thicknessPenalty = thickness.penalty;
+        stageDiagnostics.thicknessViolating = static_cast<Real>(thickness.violating);
+        stageDiagnostics.thicknessDeepest = thickness.deepest;
+      }
       Alert::Info() << substageHeading("Thickness penalty") << Alert::NewLine
                     << diagnosticLabel("Minimum thickness:")
                     << Alert::Notation::Number(thicknessFactor * h) << " = "
@@ -1425,16 +1506,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << diagnosticLabel("Weight:")
                     << Alert::Notation::Number(thicknessWeight) << Alert::NewLine
                     << diagnosticLabel("Penalty P:")
-                    << Alert::Notation::Number(thickness.penalty) << Alert::NewLine
-                    << diagnosticLabel("Rays leaving the body:")
-                    << Alert::Notation::Number(thickness.violating) << " of "
-                    << Alert::Notation::Number(thickness.rays) << Alert::NewLine
-                    << diagnosticLabel("Deepest exit:")
-                    << Alert::Notation::Number(thickness.deepest) << Alert::Raise;
+                    << Alert::Notation::Number(stageDiagnostics.thicknessPenalty) << Alert::NewLine
+                    << diagnosticLabel(thicknessMethod == "baseline" ? "Violating ray samples:" : "Rays leaving the body:")
+                    << Alert::Notation::Number(stageDiagnostics.thicknessViolating) << Alert::NewLine
+                    << diagnosticLabel(thicknessMethod == "baseline" ? "Maximum thickness deficit:" : "Deepest exit:")
+                    << Alert::Notation::Number(stageDiagnostics.thicknessDeepest) << Alert::Raise;
     }
+    if (thicknessFactor > 0 && thicknessMethod == "baseline")
+      identifyGradient(shapeSpace, RealFunction{0}, shapeCoupling, thicknessDescent,
+        hilbertLength, nitschePenalty, "Thickness descent", &thicknessLoad);
     const GradientDiagnostics rhoGradientDiagnostics =
       identifyGradient(shapeSpace, -rhoDensity, shapeCoupling, rhoGradient, hilbertLength,
-        nitschePenalty, "Rho", thicknessFactor > 0 ? &thicknessLoad : nullptr);
+        nitschePenalty, "Rho", thicknessFactor > 0 && thicknessMethod == "legacy" ? &thicknessLoad : nullptr);
     const GradientDiagnostics volumeGradientDiagnostics =
       identifyGradient(shapeSpace, RealFunction{-1}, shapeCoupling, volumeGradient,
         hilbertLength, nitschePenalty, "Volume");
@@ -1446,9 +1529,87 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     dVolume = FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
     dRho.assemble();
     dVolume.assemble();
-    const Real nullSpaceMultiplier = -dVolume(rhoGradient) / dVolume(volumeGradient);
+    const Real volumeMetric = dVolume(volumeGradient);
+    if (!std::isfinite(volumeMetric) || std::abs(volumeMetric) <= Real(1e-20))
+      throw std::runtime_error("The volume constraint derivative vanished.");
+    Real nullSpaceMultiplier = -dVolume(rhoGradient) / volumeMetric;
     GridFunction xiRho(shapeSpace);
     xiRho = rhoGradient + nullSpaceMultiplier * volumeGradient;
+    if (thicknessFactor > 0 && thicknessMethod == "baseline")
+    {
+      const Real thicknessVolumeMultiplier = -dVolume(thicknessDescent) / volumeMetric;
+      GridFunction thicknessRepair(shapeSpace);
+      thicknessRepair = thicknessDescent + thicknessVolumeMultiplier * volumeGradient;
+      stageDiagnostics.thicknessRepairVolume = dVolume(thicknessRepair);
+      GridFunction candidate(shapeSpace);
+      GridFunction candidateMagnitude(levelSetSpace);
+      const auto thicknessRate = [&](Real multiplier) {
+        candidate = xiRho + multiplier * thicknessRepair;
+        candidateMagnitude = Frobenius(candidate);
+        const Real magnitude = std::max(candidateMagnitude.max(), Real(1e-30));
+        return -thicknessLoad.dot(candidate.getData()) / magnitude;
+      };
+      const Real targetRate =
+        -stageDiagnostics.thicknessPenalty / (thicknessFactor * h);
+      Real multiplier = 0;
+      bool feasible = true;
+      if (thicknessRate(0) > targetRate)
+      {
+        candidateMagnitude = Frobenius(thicknessRepair);
+        const Real repairMagnitude = std::max(candidateMagnitude.max(), Real(1e-30));
+        const Real maximumRepairRate =
+          -thicknessLoad.dot(thicknessRepair.getData()) / repairMagnitude;
+        if (maximumRepairRate >= targetRate)
+        {
+          feasible = false;
+          multiplier = std::numeric_limits<Real>::infinity();
+        }
+        else
+        {
+          Real lower = 0, upper = 1;
+          while (thicknessRate(upper) > targetRate && upper < Real(1e6))
+            upper *= Real(2);
+          if (thicknessRate(upper) > targetRate)
+          {
+            feasible = false;
+            multiplier = std::numeric_limits<Real>::infinity();
+          }
+          else
+          {
+            for (size_t search = 0; search < 40; ++search)
+            {
+              const Real middle = (lower + upper) / Real(2);
+              if (thicknessRate(middle) > targetRate)
+                lower = middle;
+              else
+                upper = middle;
+            }
+            multiplier = upper;
+          }
+        }
+      }
+      if (feasible)
+      {
+        xiRho = rhoGradient + nullSpaceMultiplier * volumeGradient +
+          multiplier * thicknessRepair;
+        nullSpaceMultiplier += multiplier * thicknessVolumeMultiplier;
+      }
+      else
+      {
+        xiRho = thicknessRepair;
+        nullSpaceMultiplier = thicknessVolumeMultiplier;
+      }
+      stageDiagnostics.thicknessActiveMultiplier = multiplier;
+      stageDiagnostics.thicknessActiveFeasible = feasible ? Real(1) : Real(0);
+      Alert::Info() << substageHeading("Aggregate thickness correction") << Alert::NewLine
+                    << diagnosticLabel("Target D guard P [theta]:")
+                    << Alert::Notation::Number(targetRate) << Alert::NewLine
+                    << diagnosticLabel("Selected multiplier:")
+                    << (feasible ? std::to_string(multiplier) : "Repair-only fallback")
+                    << Alert::NewLine
+                    << diagnosticLabel("Target feasible in tested span:")
+                    << (feasible ? "Yes" : "No") << Alert::Raise;
+    }
     GridFunction xiRhoNorm(levelSetSpace);
     xiRhoNorm = Frobenius(xiRho);
     const Real xiRhoInfinityNorm = std::max(xiRhoNorm.max(), Real(1e-30));
@@ -1459,6 +1620,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const Real thetaInfinityNorm = xiRhoNorm.max();
     const Real dRhoTheta = dRho(theta);
     const Real dVolumeTheta = dVolume(theta);
+    if (thicknessFactor > 0 && thicknessMethod == "baseline")
+      stageDiagnostics.dThicknessTheta = -thicknessLoad.dot(theta.getData());
     const Real requiredDVolumeTheta = 0;
     Alert::Info() << substageHeading("Constrained direction") << Alert::NewLine
                   << diagnosticLabel("Null-space multiplier:")

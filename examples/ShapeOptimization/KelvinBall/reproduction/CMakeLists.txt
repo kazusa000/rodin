@@ -17,5 +17,5 @@ if(CARLOS_MUMPS_SUPPORT_LIBRARIES)
   target_link_libraries(RodinSolver INTERFACE ${CARLOS_MUMPS_SUPPORT_LIBRARIES})
 endif()
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_BINARY_DIR}/kelvin")
-set_target_properties(KelvinBall KelvinBallCubicGeometryTest KelvinBallTetraGeometryTest
+set_target_properties(KelvinBall KelvinBallCubicGeometryTest KelvinBallTetraGeometryTest KelvinBallThicknessTest
   PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")

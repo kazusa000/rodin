@@ -1,0 +1,30 @@
+# Restarted Cubic with baseline thickness
+
+`run_thickness_resume.py` is the 28h-only, frozen-commit entry point for the
+2026-10-19 restart of the original Cubic global10. It does not generate a new
+seed. It exports the original double-precision volume mesh, checks exact mesh
+coordinates/connectivity/attributes after loading, and requires the unmodified
+state solve to reproduce global10 before adding thickness.
+
+`--thickness-method=baseline --thickness-min=2` ports Carlos baseline
+`3ae2c0414ffebf11f5814a46510ddf4d8375ba0a`: first outward crossing along inward
+geometric normals on all 24 rotated chamber surfaces, nominal distance 2h,
+guard distance 2h+2dt=3h, and its bounded paired-point repair. The ray-based load
+is a local surrogate, not an exact derivative of the measured penalty. The rho
+and thickness directions are separately regularized and projected onto the
+volume nullspace. The adaptive multiplier seeks the baseline aggregate repair
+rate; its repair-only fallback remains volume-projected. This is a soft
+aggregate constraint, not a guarantee of pointwise minimum thickness.
+
+The original h=2/19, dt=.5h, regularization=100h, MMG and transport stay fixed.
+The original chamber target volume .17391249230727751 is retained. Six solved
+states local0..5 are global10..15, hence five real updates. FEM rho remains an
+internal diagnostic. The final complete state receives the existing FP64 CPU
+BEM evaluation (full original panels, epsilon factor .6, rtol 1e-6), including
+final residual verification with the original NumPy operator. No BEM feedback
+enters the updates. Original results and success packages are immutable.
+
+The geometry test covers known unit-cube first-exit distances, nominal/guard
+consistency, paired load, inactive thickness, and invalid nominal distance.
+The controller also validates separate volume projections and thickness
+surrogate descent on the actual restarted global10 before any real update.
