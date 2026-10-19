@@ -251,7 +251,16 @@ def main():
             f'-DMPI_C_COMPILER_INCLUDE_DIRS={lib/"openmpi/include"};{lib/"openmpi/include/openmpi"}',
             '-DMPI_C_LIB_NAMES=mpi', f'-DMPI_mpi_LIBRARY={lib/"openmpi/lib/libmpi.so"}',
             f'-DCARLOS_MUMPS_SUPPORT_LIBRARIES={lib/"openmpi/lib/libmpi_cxx.so"}']
-        if run('configure', configure, 1) or run('compile', ['cmake', '--build', str(args.build),
+        if args.reuse_build:
+            layout = ['CMakeLists.txt', 'cmake', EXAMPLE+'CMakeLists.txt', EXAMPLE+'reproduction/CMakeLists.txt']
+            if git(args.source, 'diff', '3e3e8aaaf796b7ffaee27d430feed1f9e664783e', args.commit, '--', *layout):
+                raise ValueError('Build layout changed; configure a fresh build instead')
+            record['configure_cache_reuse'] = dict(command_not_rerun=True,
+                layout_matches_commit='3e3e8aaaf796b7ffaee27d430feed1f9e664783e')
+            checkpoint()
+        elif run('configure', configure, 1):
+            raise RuntimeError('Configure failed')
+        if run('compile', ['cmake', '--build', str(args.build),
                 '--target', 'KelvinBall', 'KelvinBallCubicGeometryTest', 'KelvinBallTetraGeometryTest',
                 'KelvinBallThicknessTest', '-j', '2'], 4):
             raise RuntimeError('Build failed')

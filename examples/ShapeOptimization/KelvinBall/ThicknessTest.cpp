@@ -15,7 +15,7 @@ namespace
 
 int main()
 {
-  Mesh mesh = Mesh::UniformGrid(Polytope::Type::Tetrahedron, {5, 5, 5});
+  KelvinBall::Mesh mesh = KelvinBall::Mesh::UniformGrid(Polytope::Type::Tetrahedron, {5, 5, 5});
   mesh.scale(Real(0.5));
   for (auto cell = mesh.getCell(); cell; ++cell)
   {
@@ -53,6 +53,14 @@ int main()
   const auto inactiveResult = inactive.evaluate(mesh, space, disabledLoad);
   require(inactiveResult.penalty == 0 && disabledLoad.norm() == 0,
     "thick-enough geometry received an artificial repair");
+  Math::Vector<Real> expansion = Math::Vector<Real>::Zero(space.getSize());
+  for (Index v = 0; v < mesh.getVertexCount(); ++v)
+  {
+    const auto dofs = space.getDOFs(0, v);
+    for (size_t d = 0; d < 3; ++d)
+      expansion(dofs(d)) = mesh.getVertexCoordinates(v)(d) - Real(1);
+  }
+  require(load.dot(expansion) > 0, "paired repair opposes expansion of a thin cube");
   bool rejected = false;
   try { guarded.evaluate(mesh, space, load, Real(2)); }
   catch (const std::runtime_error&) { rejected = true; }
