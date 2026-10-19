@@ -1116,6 +1116,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   ReconstructionDiagnostics reconstruction;
   Optional<MMG::Mesh> wngirBackground;
   MMG::Mesh mesh;
+  Sphere sphere(configuration);
   if (!restartMesh.empty())
   {
     mesh.load(restartMesh, IO::FileFormat::MEDIT);
@@ -1126,7 +1127,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   }
   else
   {
-    Sphere sphere(configuration);
     SphereDiscretization initial = reconstructionMethod == "wngir"
       ? sphere.prepareWNGIRBackground()
       : sphere.discretize();

@@ -31,14 +31,101 @@ def module(name, path):
     return result
 
 
+def restart_mesh(snapshot, target):
+    """Recover labelled cut/outer faces from the unchanged tetrahedral complex.
+
+    XDMF snapshots omit lower-dimensional connectivity, so their entity numbers
+    cannot be restored. Face geometry/material adjacency uniquely recover the
+    original boundary conditions; histograms must match every stored label.
+    """
+    import h5py
+    import numpy as np
+    from collections import Counter, defaultdict
+    with h5py.File(snapshot) as f:
+        vertices = f['Mesh/Geometry/Vertices'][:]
+        tets = f['Mesh/XDMF/Topology'][:].reshape(-1, 5)[:, 1:]
+        attrs = [f['Mesh/Attributes/'+str(i)][:] for i in range(4)]
+    null = np.iinfo(np.uint64).max
+    owners = defaultdict(list)
+    for i, tet in enumerate(tets):
+        for local in [(1, 2, 3), (0, 2, 3), (0, 1, 3), (0, 1, 2)]:
+            owners[tuple(sorted(int(tet[k]) for k in local))].append(i)
+    faces = []
+    histogram = Counter()
+    edge_labels = defaultdict(set)
+    vertex_labels = defaultdict(set)
+    for face, cells in owners.items():
+        if len(cells) == 2:
+            label = 13 if attrs[3][cells[0]] != attrs[3][cells[1]] else int(null)
+        elif len(cells) == 1:
+            x = vertices[list(face)]
+            if np.max(np.abs(x[:, 0]-2)) <= 1e-8:
+                label = 7
+            elif np.max(np.abs(x[:, 1]-x[:, 2])) <= 1e-8:
+                label = 31
+            elif np.max(np.abs(x[:, 1]+x[:, 2])) <= 1e-8:
+                label = 32
+            elif np.max(np.abs(x[:, 0]-x[:, 1])) <= 1e-8:
+                label = 33 if x[:, 2].mean() >= 0 else 35
+            else:
+                raise ValueError('Unclassified original chamber boundary')
+        else:
+            raise ValueError('Nonmanifold volume face')
+        histogram[label] += 1
+        if label != null:
+            faces.append((*face, label))
+            for v in face:
+                vertex_labels[v].add(label)
+            for pair in [(0, 1), (1, 2), (0, 2)]:
+                edge_labels[tuple(sorted(face[k] for k in pair))].add(label)
+    expected = Counter(map(int, attrs[2]))
+    if histogram != expected:
+        raise ValueError('Recovered face labels differ from original HDF5 counts')
+    fixed = {7, 31, 32, 33, 35}
+    features = [(edge, labels) for edge, labels in edge_labels.items()
+                if len(labels) >= 2 and labels & fixed]
+    if sum(attrs[1] == 40) != len(features) or set(map(int, attrs[1])) != {40, int(null)}:
+        raise ValueError('Recovered feature edges differ from original counts')
+    ridges = [i+1 for i, (_, labels) in enumerate(features)
+              if len({33 if label == 35 else label for label in labels}) >= 2]
+    corners = [v+1 for v, labels in vertex_labels.items() if len(labels) >= 3 and labels & fixed]
+    with target.open('w') as stream:
+        stream.write('MeshVersionFormatted 2\nDimension 3\nVertices\n'+str(len(vertices))+'\n')
+        for x, ref in zip(vertices, attrs[0]):
+            if ref == null:
+                raise ValueError('Unexpected unset source vertex reference')
+            stream.write(' '.join(format(float(c), '.17g') for c in x)+' '+str(ref)+'\n')
+        stream.write('Edges\n'+str(len(features))+'\n')
+        for (a, b), _ in features:
+            stream.write(f'{a+1} {b+1} 40\n')
+        stream.write('Triangles\n'+str(len(faces))+'\n')
+        for a, b, c, label in faces:
+            stream.write(f'{a+1} {b+1} {c+1} {label}\n')
+        stream.write('Tetrahedra\n'+str(len(tets))+'\n')
+        for tet, label in zip(tets, attrs[3]):
+            stream.write(' '.join(str(int(v)+1) for v in tet)+' '+str(label)+'\n')
+        for name, entities in [('Ridges', ridges), ('Corners', corners)]:
+            stream.write(name+'\n'+str(len(entities))+'\n')
+            for entity in entities:
+                stream.write(str(entity)+'\n')
+        stream.write('End\n')
+    return dict(geometry_modified=False, tetrahedra_unchanged=True,
+                face_label_counts=dict(histogram), feature_edges=len(features),
+                ridges=len(ridges), corners=len(corners), lower_dimensional_entities_reindexed=True)
+
+
 def same_geometry(original, loaded):
     import h5py
     import numpy as np
+    from collections import Counter
     with h5py.File(original) as a, h5py.File(loaded) as b:
-        names = ['Geometry/Vertices', 'XDMF/Topology'] + ['Attributes/'+str(i) for i in range(4)]
+        names = ['Geometry/Vertices', 'XDMF/Topology', 'Attributes/0', 'Attributes/3']
         checks = {n: np.array_equal(a['Mesh/'+n][:], b['Mesh/'+n][:]) for n in names}
+        for d in [1, 2]:
+            checks['Attributes/'+str(d)+'_counts'] = (Counter(map(int, a['Mesh/Attributes/'+str(d)][:]))
+                == Counter(map(int, b['Mesh/Attributes/'+str(d)][:])))
     if not all(checks.values()):
-        raise ValueError('Restart altered coordinates/topology/labels: '+str(checks))
+        raise ValueError('Restart altered coordinates/cells/labels: '+str(checks))
     return checks
 
 
@@ -147,6 +234,8 @@ def main():
         record['restart_certificate'] = export.original_double_mesh(snapshot, native, mesh)
         if record['restart_certificate']['gamma_panels'] != int(original['interface_triangles']):
             raise ValueError('Restart lost original panels')
+        mesh = directory/'restart-labelled.mesh'
+        record['restart_label_recovery'] = restart_mesh(snapshot, mesh)
         record['restart_mesh_sha256'] = digest(mesh)
         configure = ['cmake', '-S', str(args.source/EXAMPLE/'reproduction'), '-B', str(args.build),
             '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_PREFIX_PATH={args.prefix}', f'-DMUMPS_ROOT={args.prefix}',
@@ -221,7 +310,7 @@ def main():
             raise RuntimeError('Independent final BEM failed')
         accepted = module('cpu_acceptance', args.cpu_source/'scripts/run_saved_cpu_queue.py')
         record['independent_bem'] = accepted.accepted(args.output/'bem/cubic-final', jobs[0], args.library, CPU)
-        if digest(snapshot) != INPUT or digest(args.output/'restart/original-double.mesh') != record['restart_mesh_sha256']:
+        if digest(snapshot) != INPUT or digest(args.output/'restart/restart-labelled.mesh') != record['restart_mesh_sha256']:
             raise ValueError('Original restart input changed during run')
         pinned(args.source, args.commit)
         record['state'] = 'completed' if record['budget_completed'] else 'native_failed_bem_completed'

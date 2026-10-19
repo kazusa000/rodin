@@ -3,8 +3,13 @@
 `run_thickness_resume.py` is the 28h-only, frozen-commit entry point for the
 2026-10-19 restart of the original Cubic global10. It does not generate a new
 seed. It exports the original double-precision volume mesh, checks exact mesh
-coordinates/connectivity/attributes after loading, and requires the unmodified
-state solve to reproduce global10 before adding thickness.
+coordinates/tetrahedra/vertex and cell references after loading, and requires the unmodified
+state solve to reproduce global10 before adding thickness. XDMF snapshots omit
+lower-dimensional connectivity: boundary labels are recovered uniquely from
+tetrahedral material adjacency and the fixed chamber planes, with every face
+and edge label count checked against the original HDF5. These entities are
+reindexed; no coordinates or tetrahedra are changed. Feature edges/corners
+follow the existing Sphere boundary-feature rules.
 
 `--thickness-method=baseline --thickness-min=2` ports Carlos baseline
 `3ae2c0414ffebf11f5814a46510ddf4d8375ba0a`: first outward crossing along inward
