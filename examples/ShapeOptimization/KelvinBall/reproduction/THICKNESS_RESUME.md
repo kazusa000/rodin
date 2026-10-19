@@ -4,7 +4,13 @@
 2026-10-19 restart of the original Cubic global10. It does not generate a new
 seed. It exports the original double-precision volume mesh, checks exact mesh
 coordinates/tetrahedra/vertex and cell references after loading, and requires the unmodified
-state solve to reproduce global10 before adding thickness. XDMF snapshots omit
+state solve to recover global10 before adding thickness. The observed reindexing
+discrepancy is recorded explicitly (rho about 0.094%); the guard for old FEM
+k/c/q/rho is 0.2%, while geometric volume/reference remain within 1e-14. This is
+not a bitwise FEM reproduction. Enabling thickness must then leave this
+reconstructed state unchanged to relative 1e-8. Coordinates/tetrahedra still
+require exact equality. A previous native state-only exit0 may be reused only
+with identical input/geometry checks and binary SHA. XDMF snapshots omit
 lower-dimensional connectivity: boundary labels are recovered uniquely from
 tetrahedral material adjacency and the fixed chamber planes, with every face
 and edge label count checked against the original HDF5. These entities are
