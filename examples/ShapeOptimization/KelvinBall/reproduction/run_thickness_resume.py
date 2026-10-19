@@ -148,6 +148,8 @@ def main():
     for key in ['source', 'prefix', 'build', 'output', 'input', 'exporter', 'verifier', 'cpu_source', 'library']:
         parser.add_argument('--'+key.replace('_', '-'), type=Path, required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--reuse-build', action='store_true',
+                        help='Reuse an inactive build configured for this exact source path')
     args = parser.parse_args()
     if platform.node() != '28h':
         raise ValueError('All computation is authorized only on 28h')
@@ -169,9 +171,14 @@ def main():
     snapshot = args.input/'optimization/KelvinBall.Chamber.mesh.000010.h5'
     if digest(snapshot) != INPUT or not math.isclose(target, .17391249230727751, rel_tol=1e-14):
         raise ValueError('Original global10 or target volume changed')
-    for path in [args.output, args.build]:
-        if path.exists() or path.resolve().is_relative_to(args.source.resolve()):
-            raise ValueError('Require fresh output/build outside source')
+    if args.output.exists() or args.output.resolve().is_relative_to(args.source.resolve()):
+        raise ValueError('Require fresh output outside source')
+    if args.build.resolve().is_relative_to(args.source.resolve()):
+        raise ValueError('Build must be outside source')
+    if args.build.exists():
+        expected = 'CMAKE_HOME_DIRECTORY:INTERNAL='+str(args.source/EXAMPLE/'reproduction')
+        if not args.reuse_build or expected not in (args.build/'CMakeCache.txt').read_text().splitlines():
+            raise ValueError('Existing build is not the explicitly requested source-matched cache')
     args.output.mkdir(parents=True)
     record = dict(state='preparing', commit=args.commit, thickness_baseline_commit=BASELINE,
         original_commit=OLD, input_snapshot=str(snapshot), input_sha256=INPUT,
@@ -182,6 +189,7 @@ def main():
         OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     lib = args.prefix/'lib/x86_64-linux-gnu'
     environment['LD_LIBRARY_PATH'] = ':'.join(map(str, [lib, lib/'openmpi/lib', lib/'hdf5/serial']))
+    record['reused_build'] = args.reuse_build
     record['environment'] = {k: environment[k] for k in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'LD_LIBRARY_PATH']}
     proc = None
     checkpoint = lambda: save(args.output/'campaign.json', record)
