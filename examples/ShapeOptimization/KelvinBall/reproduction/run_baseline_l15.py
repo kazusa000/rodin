@@ -26,6 +26,7 @@ def main():
     for name in ("source", "prefix", "build", "output"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--reuse-build-record", type=Path)
     args = parser.parse_args()
     if platform.node() != "28h":
         raise ValueError("Run only on the authorized 28h node")
@@ -43,11 +44,38 @@ def main():
     modules = git("submodule", "status", "third-party/mmg", "third-party/termcolor")
     if any(line.startswith(("-", "+", "U")) for line in modules.splitlines()):
         raise ValueError("Require original pinned dependencies")
-    for path in (args.build, args.output):
-        if path.exists() or path.resolve().is_relative_to(args.source.resolve()):
-            raise ValueError("Use fresh external output/build directories")
+    controller_source = Path(__file__).resolve().parents[4]
+    controller_commit = subprocess.check_output(
+        ["git", "-C", str(controller_source), "rev-parse", "HEAD"], text=True).strip()
+    if subprocess.check_output(["git", "-C", str(controller_source), "status", "--porcelain", "--untracked-files=all"], text=True).strip():
+        raise ValueError("Require clean pinned controller")
+    if controller_commit != args.commit and subprocess.check_output(
+        ["git", "-C", str(controller_source), "diff", args.commit, controller_commit, "--", "src", example], text=True).strip():
+        changes = subprocess.check_output(["git", "-C", str(controller_source), "diff", "--name-only",
+            args.commit, controller_commit, "--", "src", example], text=True).splitlines()
+        if any(not name.startswith(example + "reproduction/") for name in changes):
+            raise ValueError("Prebuilt numerical source differs from the controller's numerical source")
+    if args.output.exists() or args.output.resolve().is_relative_to(args.source.resolve()):
+        raise ValueError("Use a fresh external output directory")
+    if args.build.resolve().is_relative_to(args.source.resolve()):
+        raise ValueError("Keep the build outside the numerical source")
+    prebuilt = None
+    if args.reuse_build_record:
+        prebuilt = json.loads(args.reuse_build_record.read_text())
+        if (prebuilt.get("commit") != args.commit or
+            Path(prebuilt["source"]).resolve() != args.source.resolve() or
+            prebuilt.get("binary_sha256") != sha(args.build / "bin/KelvinBall") or
+            not any(stage.get("name") == "compile" and stage.get("exit_code") == 0
+                    for stage in prebuilt.get("stages", []))):
+            raise ValueError("Require matching pinned source and a successfully compiled recorded binary")
+        cached = (args.build / "CMakeCache.txt").read_text()
+        if f"CMAKE_HOME_DIRECTORY:INTERNAL={args.source / example / 'reproduction'}" not in cached:
+            raise ValueError("The recorded build uses another source directory")
+    elif args.build.exists():
+        raise ValueError("Use a fresh build or an explicitly validated existing build record")
     args.output.mkdir(parents=True)
-    record = dict(host=platform.node(), commit=args.commit, baseline=BASE, source=str(args.source),
+    record = dict(host=platform.node(), commit=args.commit, controller_commit=controller_commit,
+                  controller_source=str(controller_source), baseline=BASE, source=str(args.source),
                   source_status="", submodules=modules, unchanged_core_and_update_verified=True,
                   initial_shape="original unit sphere; no added perturbation", outer_halfwidth=15,
                   h=H, physical_step=.2 * H, regularization_length=4 * H, thickness_minimum=0,
@@ -60,7 +88,7 @@ def main():
         pending=p.with_suffix(".json.pending")
         pending.write_text(json.dumps(record, indent=2, allow_nan=False) + "\n")
         pending.replace(p)
-    env = dict(os.environ, OMP_NUM_THREADS="6", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
+    env = dict(os.environ, OMP_NUM_THREADS="2", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
                PYTHONDONTWRITEBYTECODE="1")
     lib = args.prefix / "lib/x86_64-linux-gnu"
     env["LD_LIBRARY_PATH"] = ":".join(str(p) for p in (lib, lib / "openmpi/lib", lib / "hdf5/serial"))
@@ -87,7 +115,7 @@ def main():
         item.update(exit_code=code, finished_at=time.time())
         (directory / "exit-code.txt").write_text(str(code) + "\n")
         save()
-        if code:
+        if code or "termination_signal" in record:
             raise RuntimeError(f"{name} exited {code}; preserve its log and raw output")
     def interrupted(signum, frame):
         record["termination_signal"] = signum
@@ -95,13 +123,18 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     code = 1
     try:
-        run("configure", ["cmake", "-S", str(args.source / example / "reproduction"), "-B", str(args.build),
+        if prebuilt is None:
+            run("configure", ["cmake", "-S", str(args.source / example / "reproduction"), "-B", str(args.build),
             "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_PREFIX_PATH={args.prefix}", f"-DMUMPS_ROOT={args.prefix}",
             f"-DMPI_C_HEADER_DIR={lib / 'openmpi/include'}",
             f"-DMPI_C_COMPILER_INCLUDE_DIRS={lib / 'openmpi/include'};{lib / 'openmpi/include/openmpi'}",
             "-DMPI_C_LIB_NAMES=mpi", f"-DMPI_mpi_LIBRARY={lib / 'openmpi/lib/libmpi.so'}",
             f"-DCARLOS_MUMPS_SUPPORT_LIBRARIES={lib / 'openmpi/lib/libmpi_cxx.so'}"], 1)
-        run("compile", ["cmake", "--build", str(args.build), "--target", "KelvinBall", "KelvinBallGradedDomainTest", "-j", "2"], 4)
+            run("compile", ["cmake", "--build", str(args.build), "--target", "KelvinBall", "KelvinBallGradedDomainTest", "-j", "2"], 4)
+        else:
+            record["compiled_build_provenance"] = dict(campaign=str(args.reuse_build_record),
+                campaign_sha256=sha(args.reuse_build_record), numerical_source_commit=args.commit,
+                stages=[stage for stage in prebuilt["stages"] if stage["name"] in ("configure", "compile")])
         binary = args.build / "bin/KelvinBall"
         record["binary_sha256"] = sha(binary)
         run("validation/configuration", [str(args.build / "bin/KelvinBallGradedDomainTest")], 1)
