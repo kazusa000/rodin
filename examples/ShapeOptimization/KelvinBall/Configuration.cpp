@@ -7,6 +7,7 @@
 #include "Configuration.h"
 
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -30,6 +31,12 @@ namespace KelvinBall
       hmaxFactor = std::stod(std::string(option.substr(14)));
     else if (option.rfind("--outer-radius=", 0) == 0)
       outerRadius = std::stod(std::string(option.substr(15)));
+    else if (option == "--graded-chamber")
+      gradedChamber = true;
+    else if (option.rfind("--near-field-radius=", 0) == 0)
+      nearFieldRadius = std::stod(std::string(option.substr(20)));
+    else if (option.rfind("--chamber-gradation=", 0) == 0)
+      chamberGradation = std::stod(std::string(option.substr(20)));
     else if (option.rfind("--penalty=", 0) == 0)
       nitschePenalty = std::stod(std::string(option.substr(10)));
     else if (option.rfind("--stabilization=", 0) == 0)
@@ -70,6 +77,20 @@ namespace KelvinBall
         !(hminFactor > 0) || !(hmaxFactor >= hminFactor))
       throw std::runtime_error(
         "The size factors must satisfy 0 < --hmin-factor <= --hmax-factor.");
+    if (gradedChamber)
+    {
+      if (!gridSpacingSpecified || !std::isfinite(outerRadius) ||
+          !std::isfinite(nearFieldRadius) || !std::isfinite(chamberGradation) ||
+          !(nearFieldRadius > 1) || nearFieldRadius > outerRadius ||
+          !(chamberGradation > 1) || hmaxFactor < 1)
+        throw std::runtime_error(
+          "Graded chambers require explicit --h, finite 1 < core <= box, growth > 1 and hmax-factor >= 1.");
+      const Real intervals = nearFieldRadius / requestedGridSpacing;
+      constexpr Real intervalTolerance = 1e-10;
+      if (std::abs(intervals - std::round(intervals)) > intervalTolerance)
+        throw std::runtime_error("The near field must contain whole reference intervals.");
+      points = getGridCoordinates().size();
+    }
     hmin = hminFactor * getGridSpacing();
     hmax = hmaxFactor * getGridSpacing();
     if (!(nitschePenalty > 0))
@@ -89,6 +110,31 @@ namespace KelvinBall
 
   Real Configuration::getGridSpacing() const
   {
+    if (gradedChamber)
+      return requestedGridSpacing;
     return outerRadius / static_cast<Real>(points - 1);
+  }
+
+  std::vector<Real> Configuration::getGridCoordinates() const
+  {
+    const Real h = getGridSpacing();
+    const size_t corePoints = gradedChamber
+      ? static_cast<size_t>(std::llround(nearFieldRadius / h)) + 1 : points;
+    std::vector<Real> coordinates;
+    for (size_t i = 0; i < corePoints; ++i)
+      coordinates.push_back(static_cast<Real>(i) * h);
+    if (gradedChamber)
+    {
+      Real step = h;
+      while (coordinates.back() < outerRadius)
+      {
+        step = std::min(step * chamberGradation, hmaxFactor * h);
+        const Real next = std::min(outerRadius, coordinates.back() + step);
+        if (!(next > coordinates.back()))
+          throw std::runtime_error("The graded background cannot advance.");
+        coordinates.push_back(next);
+      }
+    }
+    return coordinates;
   }
 }
