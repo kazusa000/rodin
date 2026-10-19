@@ -32,3 +32,12 @@ all original panels, epsilon factor .6, subdivision0, mu1, center0, residual gat
 1e-6 for the original system and both RHS. No smoothing, welding or panel reduction.
 FEM rho is an internal diagnostic; neither a normal exit nor a converged BEM solve
 proves geometric closure or continuum accuracy. No automatic numerical restarts.
+
+`evaluate_saved_step.py` evaluates an explicitly selected, completely solved
+saved state without any optimizer entry point. It verifies the original FEM
+commit and HDF5 SHA, uses the same frozen double-precision exporter and BEM
+acceptance gate, and waits for the prior Terra BEM's actual exit. The `--step`
+selection and `--input-sha256` are mandatory; `--prepare-only` exports and checks
+the geometry without launching a solver. Outputs must be fresh. This is the
+replacement for the cancelled automatic final-state evaluation when the user
+requests an earlier saved state.
