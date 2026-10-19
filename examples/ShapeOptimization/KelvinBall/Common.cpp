@@ -26,13 +26,15 @@ namespace KelvinBall
 
   Real initialRadius(const Math::SpatialPoint& x)
   {
-    if (!Tetrahedral || x.norm() == 0)
+    if (x.norm() == 0)
       return 1;
     const Math::SpatialPoint u = x / x.norm();
     const Real a = u(0), b = u(1), c = u(2);
     const Real h3 = 3 * std::sqrt(Real(3)) * a * b * c;
     const Real h6 = 6 * std::sqrt(Real(3)) *
       (a*a - b*b) * (b*b - c*c) * (c*c - a*a);
+    if (!Tetrahedral)
+      return 1 + Real(0.02) * h3 * h6;
     return 1 + Real(0.02) * (h3 + h6) / std::sqrt(Real(2));
   }
 

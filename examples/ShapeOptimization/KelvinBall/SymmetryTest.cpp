@@ -50,6 +50,19 @@ int main()
       "incorrect negative cut pairing");
   }
   else
-    require(initialRadius(x) == 1, "cubic seed changed");
+  {
+    const Math::SpatialPoint u = x / x.norm();
+    const Real h3 = 3 * std::sqrt(Real(3)) * u(0) * u(1) * u(2);
+    const Real h6 = 6 * std::sqrt(Real(3)) *
+      (u(0)*u(0)-u(1)*u(1)) * (u(1)*u(1)-u(2)*u(2)) *
+      (u(2)*u(2)-u(0)*u(0));
+    require(std::abs(initialRadius(x) - (1 + Real(0.02)*h3*h6)) < 1e-14,
+      "cubic seed amplitude/form differs from fixed 0.02*H3*H6");
+    const Math::SpatialPoint mirror{-x(0), x(1), x(2)};
+    require(std::abs(initialRadius(x)-initialRadius(mirror)) > 1e-5,
+      "cubic seed accidentally retains reflection symmetry");
+    require(initialRadius(Math::SpatialPoint{0, 0, 0}) == 1,
+      "seed radius is invalid at the origin");
+  }
   std::cout << "PASS group=" << ChamberMultiplicity << " seed and chamber\n";
 }
