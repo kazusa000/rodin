@@ -269,7 +269,7 @@ def main():
         for name in ['CubicGeometry', 'TetraGeometry', 'Thickness']:
             if run('validation/'+name, [str(args.build/f'bin/KelvinBall{name}Test')], .25):
                 raise RuntimeError(name+' control failed')
-        restart = [f'--restart-mesh={mesh}', f'--restart-target-volume={target:.17g}', '--initial-global-step=10']
+        restart = [f'--restart-mesh={mesh}', f'--restart-snapshot={snapshot}', f'--restart-target-volume={target:.17g}', '--initial-global-step=10']
         common = [str(binary), *PARAMETERS, *restart]
         if run('validation/geometry', [*common, '--thickness-min=0', '--geometry-only'], .25):
             raise RuntimeError('Restart mesh load failed')

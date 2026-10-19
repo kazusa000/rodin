@@ -36,6 +36,7 @@
 #include <Rodin/Distance/Eikonal.h>
 #include <Rodin/Geometry.h>
 #include <Rodin/IO/XDMF.h>
+#include <Rodin/IO/HDF5.h>
 #include <Rodin/MMG.h>
 #include <Rodin/Variational.h>
 
@@ -319,6 +320,8 @@ namespace KelvinBall
           << " Thickness strategy (default: legacy; baseline is Cubic-only)."
           << Alert::NewLine << Alert::Notation("--restart-mesh=<path>")
           << " Read an existing MEDIT volume mesh without initial reconstruction."
+          << Alert::NewLine << Alert::Notation("--restart-snapshot=<path>")
+          << " Original HDF5 supplying exact double coordinates."
           << Alert::NewLine << Alert::Notation("--restart-target-volume=<value>")
           << " Original chamber target volume; required for restart."
           << Alert::NewLine << Alert::Notation("--initial-global-step=<count>")
@@ -931,6 +934,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Real thicknessWeight = 1;
   std::string thicknessMethod = "legacy";
   std::string restartMesh;
+  std::string restartSnapshot;
   Real restartTargetVolume = 0;
   size_t initialGlobalStep = 0;
   size_t motionEvery = 0;
@@ -962,6 +966,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       thicknessMethod = std::string(mode.substr(19));
     else if (mode.rfind("--restart-mesh=", 0) == 0)
       restartMesh = std::string(mode.substr(15));
+    else if (mode.rfind("--restart-snapshot=", 0) == 0)
+      restartSnapshot = std::string(mode.substr(19));
     else if (mode.rfind("--restart-target-volume=", 0) == 0)
       restartTargetVolume = std::stod(std::string(mode.substr(24)));
     else if (mode.rfind("--initial-global-step=", 0) == 0)
@@ -1025,9 +1031,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("--thickness-method must be legacy or baseline.");
   if (thicknessMethod == "baseline" && (KelvinBall::Tetrahedral || thicknessWeight != 1))
     throw std::runtime_error("Baseline thickness is Cubic-only and uses an adaptive multiplier, not --thickness-weight.");
-  if (!restartMesh.empty() && (reconstructionMethod != "mmg" ||
+  if (!restartMesh.empty() && (restartSnapshot.empty() || reconstructionMethod != "mmg" ||
       !std::isfinite(restartTargetVolume) || !(restartTargetVolume > 0)))
-    throw std::runtime_error("Restart requires MMG and the positive original --restart-target-volume.");
+    throw std::runtime_error("Restart requires MMG, original --restart-snapshot and positive --restart-target-volume.");
   if (motionFrames == 0)
     throw std::runtime_error("The motion needs at least one frame.");
   if (!(motionForce.norm() > 0))
@@ -1120,6 +1126,24 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (!restartMesh.empty())
   {
     mesh.load(restartMesh, IO::FileFormat::MEDIT);
+    // Boost.Spirit's decimal parser can differ by a final bit. Restore the
+    // exact original doubles before constructing any state/distance spaces.
+    const auto originalFile = IO::HDF5::File(
+      H5Fopen(restartSnapshot.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+    if (!originalFile)
+      throw std::runtime_error("Cannot read original restart snapshot.");
+    const auto [count, dimension] = IO::HDF5::readMatrixShape(
+      originalFile.get(), "/Mesh/Geometry/Vertices");
+    const auto coordinates = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+      originalFile.get(), "/Mesh/Geometry/Vertices");
+    if (count != mesh.getVertexCount() || dimension != 3 || coordinates.size() != 3 * count)
+      throw std::runtime_error("Restart snapshot has different vertices.");
+    for (Index vertex = 0; vertex < count; ++vertex)
+      mesh.setVertexCoordinates(vertex, Math::SpatialPoint{
+        coordinates[3 * vertex], coordinates[3 * vertex + 1], coordinates[3 * vertex + 2]});
+    // Complete lazy topology before recording all edge/face attribute slots.
+    mesh.getConnectivity().compute(3, 1);
+    mesh.getConnectivity().compute(3, 2);
     IO::XDMF restartGeometry("RestartGeometry");
     auto original = restartGeometry.grid("Chamber");
     original.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
