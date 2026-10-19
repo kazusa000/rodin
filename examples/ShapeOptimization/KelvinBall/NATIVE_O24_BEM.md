@@ -142,9 +142,27 @@ native processes, checks their JSON/CSV outputs and copies accepted meshes.
 It neither solves states nor constructs gradients, transport or geometry.
 
 The same output checker is used by the one-step check. Every restart must
-reproduce the preceding accepted rho. Nonzero native return, invalid output,
-open image edges, failed projected direction or failed actual weak Armijo stops
-the campaign immediately. No candidate is copied to accepted-N until checks
-pass; failed candidates remain in their iteration directory. There is no
-volume-drift rejection, step reduction, automatic retry or failed-run restart.
+reproduce the preceding accepted rho. No candidate is copied to accepted-N
+until all checks pass; rejected candidates remain in their trial directory.
+There is no volume-drift rejection and no failed-campaign automatic restart.
 The driver records a bounded continuation result, not a convergence claim.
+
+Optional `--max-backtracks 2` requests the initial step and at most two halvings:
+for `--step 1.0`, the factors are exactly 1.0, 0.5 and 0.25. Each candidate
+starts from the same accepted checkpoint and recomputes the native direction;
+a rejected mesh never becomes the next trial input. Objective rejection or a
+nonzero native candidate result permits the next smaller step. Native return
+codes remain in each trial; if every new candidate has a native failure, the
+last actual native failure is propagated. Broken restart, projection or output
+contracts stop immediately. Only a successful candidate advances the accepted
+count. Three rejected candidates exhaust that iteration and stop the campaign;
+this does not establish convergence. The next accepted iteration starts again
+at the requested initial step. The default of zero halvings preserves the
+previous fixed-step behavior and output paths.
+
+`--first-backtrack 1` may skip an already documented initial-step rejection
+on the first iteration only. The launch record must identify the prior failed
+trial and verify the checkpoint, parameters and numerical binary hashes.
+It records no new measurement at the skipped step. Later iterations restart
+at trial zero. In line-search mode, files are under
+`iteration-N/trial-M/update`, with validation alongside each update directory.

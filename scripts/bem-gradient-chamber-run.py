@@ -69,6 +69,8 @@ def main():
     parser.add_argument('--updates', type=int, default=20, help='Maximum additional accepted updates')
     parser.add_argument('--step', type=float, default=0.10, help='Native step factor')
     parser.add_argument('--regularization', type=float, default=4, help='Native H1 length factor')
+    parser.add_argument('--max-backtracks', type=int, default=0, help='Maximum step halvings per update')
+    parser.add_argument('--first-backtrack', type=int, default=0, help='Skip previously rejected larger steps on the first update only')
     args = parser.parse_args()
     if args.check_update:
         record = validate_update(args.check_update)
@@ -80,6 +82,8 @@ def main():
         parser.error('Need executable, new results, checkpoint, positive expected rho and update count')
     if not all(math.isfinite(x) and x > 0 for x in [args.step, args.regularization]):
         parser.error('Step and H1 regularization factors must be finite and positive')
+    if not 0 <= args.first_backtrack <= args.max_backtracks:
+        parser.error('Need 0 <= first-backtrack <= max-backtracks')
     for p in [args.executable, args.results, args.checkpoint]:
         if not p.is_absolute():
             parser.error('Use absolute paths')
@@ -95,42 +99,87 @@ def main():
         'gradient_domain': 'O24-chamber', 'reconstruction_domain': 'O24-chamber',
         'bem_domain': 'infinite-exterior', 'initial_step_factor': args.step,
         'regularization_factor': args.regularization,
+        'max_backtracks': args.max_backtracks, 'first_backtrack': args.first_backtrack,
+        'step_reduction': 0.5, 'rejected_trials': [],
         'volume_projection_enabled': True, 'volume_rejection_enabled': False, 'volume_tolerance': None,
     }
     history_path = args.results / 'history.json'
     save(history_path, history)
     for i in range(args.updates):
-        step = args.results / f'iteration-{i}'
-        u = step / 'update'
-        u.mkdir(parents=True)
-        command = [str(args.executable), '--bem-gradient', '--n=13', '--seed-amplitude=0.1',
-                   '--iterations=2', f'--step={args.step}', f'--regularization={args.regularization}',
-                   '--reconstruction=mmg',
-                   '--mmg-snap=0.001', '--mmg-retries=0', '--save-mesh', f'--mesh={accepted}']
-        save(u / 'command.json', command)
-        try:
-            with (u / 'run.log').open('w') as log:
-                process = subprocess.run(command, cwd=u, stdout=log, stderr=subprocess.STDOUT,
-                                         env={**os.environ, 'OMP_NUM_THREADS': '1'})
-            save(u / 'native-result.json', {'returncode': process.returncode})
-            if process.returncode != 0:
-                history.update(status='native_failure', stop_reason=f'native_returncode_{process.returncode}')
-                save(history_path, history)
-                return process.returncode if process.returncode > 0 else 128 - process.returncode
-            check = validate_update(step, history['last_rho'])
-            if not check['passed']:
-                history.update(status='candidate_rejected', stop_reason=','.join(k for k, v in check['checks'].items() if not v))
-                save(history_path, history)
-                return 2
-            accepted = args.results / f'accepted-{i + 1}.mesh'
-            shutil.copy2(u / 'bem-chamber-1.mesh', accepted)
-            history.update(accepted_updates=i + 1, last_rho=check['updated_rho'], last_accepted_checkpoint=str(accepted))
+        iteration = args.results / f'iteration-{i}'
+        first_trial = args.first_backtrack if i == 0 else 0
+        native_completed = False
+        last_native_returncode = None
+        for trial in range(first_trial, args.max_backtracks + 1):
+            factor = args.step * 0.5 ** trial
+            step = iteration / f'trial-{trial}' if args.max_backtracks else iteration
+            u = step / 'update'
+            u.mkdir(parents=True)
+            history.update(current_iteration=i, current_trial=trial, current_step_factor=factor)
             save(history_path, history)
-            print(f"accepted_update={i + 1} rho={history['last_rho']:.17g}", flush=True)
-        except Exception as error:
-            history.update(status='observation_error', stop_reason=str(error))
+            command = [str(args.executable), '--bem-gradient', '--n=13', '--seed-amplitude=0.1',
+                       '--iterations=2', f'--step={factor}', f'--regularization={args.regularization}',
+                       '--reconstruction=mmg', '--mmg-snap=0.001', '--mmg-retries=0',
+                       '--save-mesh', f'--mesh={accepted}']
+            save(u / 'command.json', command)
+            try:
+                with (u / 'run.log').open('w') as log:
+                    process = subprocess.run(command, cwd=u, stdout=log, stderr=subprocess.STDOUT,
+                                             env={**os.environ, 'OMP_NUM_THREADS': '1'})
+                save(u / 'native-result.json', {'returncode': process.returncode})
+                if process.returncode != 0:
+                    last_native_returncode = process.returncode
+                    history['rejected_trials'].append({
+                        'iteration': i, 'trial': trial, 'step_factor': factor,
+                        'native_returncode': process.returncode,
+                        'native_result': str(u / 'native-result.json')})
+                    save(history_path, history)
+                    print(f"rejected_update={i + 1} trial={trial} step={factor} native_returncode={process.returncode}", flush=True)
+                    if args.max_backtracks == 0:
+                        history.update(status='native_failure', stop_reason=f'native_returncode_{process.returncode}')
+                        save(history_path, history)
+                        return process.returncode if process.returncode > 0 else 128 - process.returncode
+                    continue
+                native_completed = True
+                check = validate_update(step, history['last_rho'])
+                if not check['passed']:
+                    failed = [k for k, v in check['checks'].items() if not v]
+                    history['rejected_trials'].append({
+                        'iteration': i, 'trial': trial, 'step_factor': factor,
+                        'reason': failed, 'validation': str(step / 'chamber-update-validation.json')})
+                    save(history_path, history)
+                    print(f"rejected_update={i + 1} trial={trial} step={factor} reason={','.join(failed)}", flush=True)
+                    # Projection, restart and artifact contract errors cannot be
+                    # repaired by changing the transport step, so remain fatal.
+                    if not set(failed) <= {'strict_rho_increase', 'weak_armijo'}:
+                        history.update(status='candidate_rejected', stop_reason=','.join(failed))
+                        save(history_path, history)
+                        return 2
+                    continue
+                accepted = args.results / f'accepted-{i + 1}.mesh'
+                shutil.copy2(u / 'bem-chamber-1.mesh', accepted)
+                history.update(accepted_updates=i + 1, last_rho=check['updated_rho'],
+                               last_accepted_checkpoint=str(accepted), last_step_factor=factor,
+                               last_accepted_trial=trial,
+                               last_accepted_validation=str(step / 'chamber-update-validation.json'))
+                save(history_path, history)
+                print(f"accepted_update={i + 1} rho={history['last_rho']:.17g} step={factor} trial={trial}", flush=True)
+                break
+            except Exception as error:
+                history.update(status='observation_error', stop_reason=str(error))
+                save(history_path, history)
+                raise
+        else:
+            if not native_completed and last_native_returncode is not None:
+                history.update(status='line_search_native_failure',
+                               stop_reason='native_failure_at_all_tested_steps')
+                save(history_path, history)
+                return last_native_returncode if last_native_returncode > 0 else 128 - last_native_returncode
+            history.update(status='line_search_exhausted' if args.max_backtracks else 'candidate_rejected',
+                           stop_reason='objective_rejected_at_all_tested_steps' if args.max_backtracks else
+                           ','.join(history['rejected_trials'][-1]['reason']))
             save(history_path, history)
-            raise
+            return 2
     history.update(complete=True, status='requested_updates_complete', stop_reason='update_limit')
     save(history_path, history)
     return 0
