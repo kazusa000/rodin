@@ -7,6 +7,8 @@
 #ifndef KELVIN_BALL_OPTIMIZATION_H
 #define KELVIN_BALL_OPTIMIZATION_H
 
+#include <memory>
+
 namespace KelvinBall
 {
   /**
@@ -15,9 +17,10 @@ namespace KelvinBall
    * Each iteration follows the mathematical construction in order: chamber
    * discretization, fluid extraction, Stokes state solution, resistance
    * evaluation, shape differentiation, Hilbert identification, Feppon
-   * null-space projection, sewn output, level-set advection, and MMG
-   * reconstruction. The initial sphere and every accepted iterate are sewn
-   * into a complete 24-copy design before the level set is advanced.
+   * null-space projection, sewn output, level-set advection, and SWIFT
+   * reconstruction (or optional MMG reconstruction). The initial sphere and
+   * every accepted iterate are sewn into a complete 24-copy design before
+   * the level set is advanced.
    *
    * Architecture:
    * - configuration fixes the chamber, discretization, and descent scales;
@@ -30,14 +33,17 @@ namespace KelvinBall
   {
     public:
       KelvinBallOptimization(int argc, char** argv);
+      ~KelvinBallOptimization();
+
+      KelvinBallOptimization(const KelvinBallOptimization&) = delete;
+      KelvinBallOptimization& operator=(const KelvinBallOptimization&) = delete;
 
       int run();
 
     private:
       class Implementation;
 
-      int m_argc;
-      char** m_argv;
+      std::unique_ptr<Implementation> m_implementation;
   };
 }
 

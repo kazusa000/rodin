@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <Rodin/Distance/Eikonal.h>
+#include <Rodin/Adaptation/SWIFT/Loss.h>
 #include <Rodin/Variational.h>
 
 namespace KelvinBall
@@ -22,25 +23,11 @@ namespace KelvinBall
     : m_configuration(configuration)
   {}
 
-  Real Sphere::levelSet(const Math::SpatialPoint& point) const
-  {
-    const Real radius = point.norm();
-    if (m_configuration.seedAmplitude == 0 || radius == 0)
-      return radius - Real(1);
-    const auto direction = point / radius;
-    const Real x = direction(0), y = direction(1), z = direction(2);
-    const Real h3 = Real(3) * std::sqrt(Real(3)) * x * y * z;
-    const Real h6 = Real(6) * std::sqrt(Real(3)) *
-      (x*x-y*y) * (y*y-z*z) * (z*z-x*x);
-    return radius - (Real(1) + m_configuration.seedAmplitude * h3 * h6);
-  }
-
   Mesh Sphere::makeUniformChamber() const
   {
     Mesh cube = Mesh::UniformGrid(Polytope::Type::Tetrahedron,
       {m_configuration.points, m_configuration.points, m_configuration.points});
-    cube.scale(m_configuration.getH());
-    const auto gridCoordinates = m_configuration.getGridCoordinates();
+    cube.scale(m_configuration.getGridSpacing());
 
     using Key = std::tuple<long long, long long, long long>;
     constexpr Real tolerance = 1e-12;
@@ -73,15 +60,6 @@ namespace KelvinBall
         for (size_t local = 0; local < vertices.size(); ++local)
         {
           Math::SpatialPoint x = cube.getVertexCoordinates(cell->getVertices()(local));
-          if (m_configuration.gradedChamber)
-          {
-            for (Eigen::Index dimension = 0; dimension < 3; ++dimension)
-            {
-              const size_t index = static_cast<size_t>(std::llround(
-                x(dimension) / m_configuration.getH()));
-              x(dimension) = gridCoordinates.at(index);
-            }
-          }
           x(2) *= sign;
           vertices(local) = insertVertex(x);
         }
@@ -193,19 +171,123 @@ namespace KelvinBall
     return count;
   }
 
-  SphereDiscretization Sphere::discretize(bool conformingCuts) const
+  void Sphere::projectFixedGeometry(MMG::Mesh& mesh) const
   {
-    const Real h = m_configuration.getH();
+    constexpr unsigned outer = 1, xy = 2, plus = 4, minus = 8;
+    // Relative roundoff floor, not an additional mesh-quality budget.
+    constexpr Real roundoff = 64 * std::numeric_limits<Real>::epsilon();
+    std::vector<unsigned> constraints(mesh.getVertexCount(), 0);
+    for (auto face = mesh.getFace(); face; ++face)
+    {
+      const auto attribute = face->getAttribute();
+      if (!attribute)
+        continue;
+      const unsigned constraint = *attribute == Outer               ? outer
+        : (*attribute == SigmaXYPlus || *attribute == SigmaXYMinus) ? xy
+        : *attribute == SigmaPlus                                   ? plus
+        : *attribute == SigmaMinus                                  ? minus
+                                                                    : 0;
+      for (const Index vertex : face->getVertices())
+        constraints[vertex] |= constraint;
+    }
+
+    std::vector<Math::SpatialPoint> coordinates;
+    coordinates.reserve(mesh.getVertexCount());
+    Real maximumCorrection = 0;
+    size_t correctedVertices = 0;
+    for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+    {
+      const auto original = mesh.getVertexCoordinates(vertex);
+      Math::SpatialPoint projected = original;
+      std::array<Math::SpatialPoint, 3> basis;
+      std::array<Real, 3> offsets{};
+      size_t rank = 0;
+      // Orthogonalize the affine equations together. Successive projections
+      // onto the original planes would not preserve their intersections.
+      for (const unsigned constraint : {outer, xy, plus, minus})
+      {
+        if (!(constraints[vertex] & constraint))
+          continue;
+        Math::SpatialPoint normal(3);
+        normal(0) = (constraint == outer || constraint == xy) ? 1 : 0;
+        normal(1) = constraint == outer ? 0 : constraint == xy ? -1 : 1;
+        normal(2) = constraint == plus ? -1 : constraint == minus ? 1 : 0;
+        Real offset = constraint == outer ? m_configuration.outerRadius : 0;
+        for (size_t i = 0; i < rank; ++i)
+        {
+          const Real coefficient = normal.dot(basis[i]);
+          normal -= coefficient * basis[i];
+          offset -= coefficient * offsets[i];
+        }
+        const Real norm = normal.norm();
+        if (norm <= roundoff)
+        {
+          if (std::abs(offset) > roundoff * m_configuration.outerRadius)
+            throw std::runtime_error(
+              "Incompatible fixed-boundary labels at a chamber vertex.");
+          continue;
+        }
+        basis[rank] = normal / norm;
+        offsets[rank] = offset / norm;
+        ++rank;
+      }
+      for (size_t i = 0; i < rank; ++i)
+        projected += (offsets[i] - basis[i].dot(original)) * basis[i];
+      const Real correction = (projected - original).norm();
+      maximumCorrection = std::max(maximumCorrection, correction);
+      correctedVertices += correction > roundoff * m_configuration.outerRadius;
+      coordinates.push_back(std::move(projected));
+    }
+
+    // Validate the proposed geometry before mutating the mesh, including
+    // cells incident to vertices shared by cuts and the material interface.
+    for (auto cell = mesh.getCell(); cell; ++cell)
+    {
+      const auto& vertices = cell->getVertices();
+      Math::SpatialMatrix<Real> before(3, 3), after(3, 3);
+      for (size_t i = 0; i < 3; ++i)
+      {
+        const auto oldEdge = mesh.getVertexCoordinates(vertices(i + 1)) -
+          mesh.getVertexCoordinates(vertices(0));
+        const auto newEdge = coordinates[vertices(i + 1)] - coordinates[vertices(0)];
+        for (size_t j = 0; j < 3; ++j)
+        {
+          before(j, i) = oldEdge(j);
+          after(j, i) = newEdge(j);
+        }
+      }
+      const Real determinant = after.determinant();
+      const Real scale = after.col(0).norm() * after.col(1).norm() * after.col(2).norm();
+      if (!std::isfinite(determinant) || determinant * before.determinant() <= 0 ||
+        std::abs(determinant) <= roundoff * scale)
+        throw std::runtime_error(
+          "Fixed-boundary projection would invert or degenerate a tetrahedron.");
+    }
+    for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+      if (constraints[vertex])
+        mesh.setVertexCoordinates(vertex, coordinates[vertex]);
+    Alert::Text<Alert::YellowT> heading(Alert::Yellow, "Fixed-boundary projection");
+    Alert::Info() << heading.setBold() << Alert::NewLine
+                  << "Corrected vertices:                 "
+                  << Alert::Notation::Number(correctedVertices) << Alert::NewLine
+                  << "Maximum displacement:               "
+                  << Alert::Notation::Number(maximumCorrection) << Alert::Raise;
+  }
+
+  SphereDiscretization Sphere::discretize(bool conformingCuts,
+    Real requestedWelschScale) const
+  {
     MMG::Mesh mesh(makeUniformChamber());
+    const Real h = m_configuration.getGridSpacing();
     const size_t cellsBefore = mesh.getCellCount();
     protectFixedGeometry(mesh, conformingCuts);
-    const Real hmin = 0.1 * h;
-    const Real hmax = 10 * h;
+    const Real hmin = m_configuration.hmin;
+    const Real hmax = m_configuration.hmax;
     const Real hausdorff = 0.1 * h * h;
     P1 levelSetSpace(mesh);
     GridFunction sphere(levelSetSpace);
-    sphere = RealFunction([&](const Geometry::Point& point) {
-      return levelSet(point.getPhysicalCoordinates());
+    sphere = RealFunction([](const Geometry::Point& point) {
+      return point.getPhysicalCoordinates().norm() - Real(1);
     });
     MMG::LevelSetDiscretizer discretizer;
     discretizer.split(Fluid, {Obstacle, Fluid})
@@ -213,14 +295,14 @@ namespace KelvinBall
       .setHMax(hmax)
       .setHausdorff(hausdorff)
       .setGradation(2)
-      .setBaseReferences(FlatSet<Attribute>{Fluid})
       .setBoundaryReference(Gamma)
       .setAngleDetection(false);
     mesh = discretizer.discretize(sphere);
+    projectFixedGeometry(mesh);
     splitSelfPairedCut(mesh);
     if (m_configuration.adapt && !conformingCuts)
     {
-      adapt(mesh, h);
+      adapt(mesh, requestedWelschScale);
     }
     else
     {
@@ -232,6 +314,7 @@ namespace KelvinBall
         .setGradation(2)
         .setAngleDetection(false)
         .optimize(mesh);
+      projectFixedGeometry(mesh);
       splitSelfPairedCut(mesh);
     }
     const size_t requiredTriangles = protectFixedGeometry(mesh, conformingCuts);
@@ -240,35 +323,123 @@ namespace KelvinBall
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};
   }
 
-  SphereDiscretization Sphere::prepareWNGIRBackground() const
+  SphereDiscretization Sphere::prepareSWIFTBackground(Real requestedWelschScale) const
   {
-    const Real h = m_configuration.getH();
-    const Real hmin = m_configuration.backgroundHMin * h;
-    const Real hmax = m_configuration.backgroundHMax * h;
-    const Real hausdorff = m_configuration.backgroundHausdorff * h;
     MMG::Mesh mesh(makeUniformChamber());
+    for (auto cell = mesh.getCell(); cell; ++cell)
+      mesh.setAttribute({3, cell->getIndex()}, {});
+    const Real h = m_configuration.getGridSpacing();
+    const Real interfaceSize = m_configuration.hmin;
+    const Real farSize = m_configuration.hmax;
+    const Real hmin = m_configuration.hmin;
+    const Real hmax = m_configuration.hmax;
+    const Real hausdorff = m_configuration.backgroundHausdorff * h;
+    const Real backgroundMeanElementSize = meanElementSize(mesh);
+    const Real welschScale = requestedWelschScale > 0
+      ? requestedWelschScale : Real(3) * h;
     const size_t cellsBefore = mesh.getCellCount();
-    protectFixedGeometry(mesh, true);
-    MMG::Optimizer()
-      .setHMin(hmin)
-      .setHMax(hmax)
-      .setHausdorff(hausdorff)
-      .setGradation(m_configuration.backgroundGradation)
-      .setAngleDetection(false)
-      .optimize(mesh);
+    if (m_configuration.adapt)
+    {
+      P1<Real, Mesh> sizeSpace(mesh);
+      MMG::RealGridFunction size(sizeSpace);
+      const Adaptation::SWIFT::Loss welsch(welschScale);
+      for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+      {
+        const Real distance =
+          std::abs(mesh.getVertexCoordinates(vertex).norm() - Real(1));
+        size[vertex] =
+          farSize - (farSize - interfaceSize) * welsch.getWeight(distance);
+      }
+      protectFixedGeometry(mesh, false);
+      MMG::Adapt()
+        .setHMin(hmin)
+        .setHMax(hmax)
+        .setHausdorff(hausdorff)
+        .setGradation(m_configuration.adaptGradation)
+        .setAngleDetection(false)
+        .adapt(mesh, size);
+    }
+    else
+    {
+      protectFixedGeometry(mesh, true);
+      MMG::Optimizer()
+        .setHMin(hmin)
+        .setHMax(hmax)
+        .setHausdorff(hausdorff)
+        .setGradation(m_configuration.backgroundGradation)
+        .setAngleDetection(false)
+        .optimize(mesh);
+    }
+    projectFixedGeometry(mesh);
     splitSelfPairedCut(mesh);
-    const size_t requiredTriangles = protectFixedGeometry(mesh, true);
+    const size_t requiredTriangles = protectFixedGeometry(mesh, !m_configuration.adapt);
+
+    for (auto cell = mesh.getCell(); cell; ++cell)
+      mesh.setAttribute({3, cell->getIndex()}, {});
 
     const size_t cellsAfter = mesh.getCellCount();
-    return {std::move(mesh),
-      {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};
+    ReconstructionDiagnostics diagnostics{
+      hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter};
+    diagnostics.backgroundMeanElementSize = backgroundMeanElementSize;
+    diagnostics.welschScale = welschScale;
+    return {std::move(mesh), diagnostics};
   }
 
-  void Sphere::adapt(MMG::Mesh& mesh, Real h) const
+  MMG::Mesh Sphere::adaptBackground(const MMG::Mesh& background,
+    const MMG::RealGridFunction& sizeMap, bool requiredCuts) const
   {
-    const Real interfaceSize = m_configuration.adaptInterfaceSize * h;
-    const Real farSize = m_configuration.adaptFarSize * h;
-    const Real width = m_configuration.adaptWidth * h;
+    MMG::Mesh mesh(background);
+    mesh.getConnectivity().compute(2, 3);
+    // Empty cell references export as zero. Clearing old feature metadata is
+    // essential: an unlabelled but required entity would still reach MMG.
+    mesh.getRequiredVertices().clear();
+    mesh.getRequiredEdges().clear();
+    mesh.getRequiredTriangles().clear();
+    mesh.getRequiredTetrahedra().clear();
+    mesh.getRidges().clear();
+    mesh.getCorners().clear();
+    for (size_t dimension = 0; dimension <= 3; ++dimension)
+    {
+      for (auto entity = mesh.getPolytope(dimension); entity; ++entity)
+      {
+        if (dimension == 2 && mesh.isBoundary(entity->getIndex()))
+          continue;
+        mesh.setAttribute({dimension, entity->getIndex()}, {});
+      }
+    }
+    P1<Real, Mesh> sizeSpace(mesh);
+    MMG::RealGridFunction size(sizeSpace);
+    size.getData() = sizeMap.getData();
+    protectFixedGeometry(mesh, requiredCuts);
+    MMG::Adapt()
+      .setHMin(m_configuration.hmin)
+      .setHMax(m_configuration.hmax)
+      .setHausdorff(Real(0.1) * m_configuration.getGridSpacing() *
+        m_configuration.getGridSpacing())
+      .setGradation(m_configuration.adaptGradation)
+      .setAngleDetection(false)
+      .adapt(mesh, size);
+    projectFixedGeometry(mesh);
+    splitSelfPairedCut(mesh);
+    // Native MMG returns reference zero as an explicit attribute. Keep the
+    // background genuinely unclassified in Rodin as well.
+    for (auto cell = mesh.getCell(); cell; ++cell)
+      mesh.setAttribute({3, cell->getIndex()}, {});
+    return mesh;
+  }
+
+  void Sphere::adapt(
+    MMG::Mesh& fitted, Real requestedWelschScale, bool requiredCuts) const
+  {
+    // MMG and the subsequent exact-boundary projection operate on a candidate.
+    // Any exception leaves the fitted geometry, topology and MMG tags intact.
+    MMG::Mesh mesh = fitted;
+    const Real h = m_configuration.getGridSpacing();
+    const Real interfaceSize = m_configuration.hmin;
+    const Real farSize = m_configuration.hmax;
+    const Real welschScale = requestedWelschScale > 0
+      ? requestedWelschScale : Real(3) * h;
+    const Adaptation::SWIFT::Loss welsch(welschScale);
 
     P1<Real, Mesh> sizeSpace(mesh);
     MMG::RealGridFunction size(sizeSpace);
@@ -278,20 +449,20 @@ namespace KelvinBall
     Distance::Eikonal(distance).setInterior(Obstacle).setInterface(Gamma).solve();
     for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
     {
-      const Real ratio = std::min(Real(1), std::abs(distance[vertex]) / width);
-      size[vertex] = m_configuration.gradedChamber
-        ? m_configuration.getGradedSize(mesh.getVertexCoordinates(vertex), h)
-        : interfaceSize + (farSize - interfaceSize) * ratio;
+      size[vertex] = farSize - (farSize - interfaceSize)
+        * welsch.getWeight(std::abs(distance[vertex]));
     }
 
-    protectFixedGeometry(mesh, false);
+    protectFixedGeometry(mesh, requiredCuts);
     MMG::Adapt()
-      .setHMin(0.1 * h)
-      .setHMax(m_configuration.gradedChamber ? Real(10) * h : std::max(interfaceSize, farSize))
+      .setHMin(interfaceSize)
+      .setHMax(farSize)
       .setHausdorff(0.1 * h * h)
       .setGradation(m_configuration.adaptGradation)
       .setAngleDetection(false)
       .adapt(mesh, size);
+    projectFixedGeometry(mesh);
     splitSelfPairedCut(mesh);
+    fitted = std::move(mesh);
   }
 }

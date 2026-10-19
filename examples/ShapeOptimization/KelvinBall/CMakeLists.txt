@@ -1,6 +1,7 @@
 add_library(KelvinBallSupport STATIC EXCLUDE_FROM_ALL
   Common.cpp
   Configuration.cpp
+  LaplacianSmoothing.cpp
   Metrics.cpp
   RotatedNitscheIntegrator.cpp
   SewedOutput.cpp
@@ -21,15 +22,3 @@ target_link_libraries(KelvinBall PRIVATE KelvinBallSupport Rodin::Advection)
 
 add_executable(KelvinBallSphere EXCLUDE_FROM_ALL KelvinBallSphere.cpp)
 target_link_libraries(KelvinBallSphere PRIVATE KelvinBallSupport)
-
-add_executable(KelvinBallGradedChamberTest EXCLUDE_FROM_ALL GradedChamberTest.cpp)
-target_link_libraries(KelvinBallGradedChamberTest PRIVATE KelvinBallSupport)
-
-add_executable(KelvinBallSeedTest EXCLUDE_FROM_ALL SeedTest.cpp)
-target_link_libraries(KelvinBallSeedTest PRIVATE KelvinBallSupport)
-
-add_executable(KelvinBallCutCoverage EXCLUDE_FROM_ALL CutCoverage.cpp)
-target_link_libraries(KelvinBallCutCoverage PRIVATE KelvinBallSupport)
-
-add_executable(KelvinBallCutProjectionTest EXCLUDE_FROM_ALL CutProjectionTest.cpp)
-target_link_libraries(KelvinBallCutProjectionTest PRIVATE KelvinBallSupport)

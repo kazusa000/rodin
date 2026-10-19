@@ -23,6 +23,8 @@ namespace KelvinBall
       size_t requiredBoundaryTriangles = 0;
       size_t cellsBefore = 0;
       size_t cellsAfter = 0;
+      Real backgroundMeanElementSize = std::numeric_limits<Real>::quiet_NaN();
+      Real welschScale = std::numeric_limits<Real>::quiet_NaN();
       /// Smallest crossing fraction before snapping, snapped vertices, and the
       /// MMG scale in multiples of h; not a number where not applicable.
       Real minimumCrossing = std::numeric_limits<Real>::quiet_NaN();
@@ -49,8 +51,6 @@ namespace KelvinBall
     public:
       explicit Sphere(const Configuration& configuration);
 
-      Real levelSet(const Math::SpatialPoint& point) const;
-
       /**
        * @brief Discretizes the initial sphere in the chamber.
        *
@@ -60,15 +60,34 @@ namespace KelvinBall
        * adaptation is then not applied. Otherwise the cuts are free, as for
        * every later reconstruction.
        */
-      SphereDiscretization discretize(bool conformingCuts = false) const;
+      SphereDiscretization discretize(
+        bool conformingCuts = false, Real requestedWelschScale = 0) const;
 
       /**
-       * @brief Prepares the fixed background mesh used by WNGIR.
+       * @brief Prepares the fixed background mesh used by SWIFT.
        *
-       * MMG acts only on the interface-free chamber background. The returned
-       * mesh contains no design interface and remains fixed during optimization.
+       * MMG optimizes the interface-free background, or adapts it according to
+       * the initial sphere's Welsch weight. Unless @p requestedWelschScale is
+       * positive, its width is three times the fixed reference grid spacing.
+       * The returned mesh contains no design interface and
+       * remains fixed during each SWIFT fit. With adaptation enabled, the
+       * interface-free background is remeshed before the next classification.
        */
-      SphereDiscretization prepareWNGIRBackground() const;
+      SphereDiscretization prepareSWIFTBackground(Real requestedWelschScale = 0) const;
+
+      /**
+       * @brief Remeshes an interface-free background before classification.
+       *
+       * Material, internal-face and old feature attributes are removed from
+       * a candidate. Only chamber boundary labels and their geometric features
+       * are handed to MMG. The input and its fields remain valid on failure.
+       * @param[in] background Unchanged source mesh defining the size map.
+       * @param[in] sizeMap Nodal target sizes on the source background.
+       * @param[in] requiredCuts Whether every cut triangle is required on retry.
+       * @returns Remeshed, unclassified chamber with no material interface.
+       */
+      MMG::Mesh adaptBackground(const MMG::Mesh& background,
+        const MMG::RealGridFunction& sizeMap, bool requiredCuts = false) const;
 
       /**
        * @brief Adapts a mesh fitted to Gamma to the prescribed size map.
@@ -76,10 +95,22 @@ namespace KelvinBall
        * Replaces the MMG optimization pass after a level-set cut when
        * `--mmg-adapt` is given. The optimization pass keeps the edge lengths the
        * cut created, including its short edges; adaptation remeshes towards
-       * a size set by the distance to Gamma instead. The sizes are multiples
-       * of @p h, which a retried reconstruction halves.
+       * a size set by the Welsch weight of the FMM distance to Gamma instead.
+       * The sizes and default Welsch scale are multiples of the fixed reference
+       * grid spacing. A positive @p requestedWelschScale overrides
+       * the default scale.
+       * Adaptation is transactional: the candidate is committed only after
+       * fixed-boundary projection and cut splitting succeed. An exception
+       * leaves the supplied mesh unchanged, including its MMG feature tags.
+       * @param[in,out] mesh Fitted mesh, replaced only by a valid candidate.
+       * @param[in] requestedWelschScale Positive band-width override, or zero
+       * for the reference-spacing default.
+       * @param[in] requiredCuts Protects every cut triangle during this pass.
+       * Used for the single recovery attempt after ordinary adaptation fails;
+       * it does not constrain subsequent SWIFT displacement solves.
        */
-      void adapt(MMG::Mesh& mesh, Real h) const;
+      void adapt(MMG::Mesh& mesh, Real requestedWelschScale = 0,
+        bool requiredCuts = false) const;
 
       /**
        * @brief Marks the fixed boundary for MMG and returns the number of
@@ -89,13 +120,24 @@ namespace KelvinBall
        * when @p cuts is set: a level-set cut splits their triangles where
        * Gamma meets them, and required triangles there freeze the flat
        * tetrahedra the split can leave on the plane. Otherwise MMG may
-       * retriangulate each plane, and with angle detection disabled it keeps
-       * the planes flat only if their borders are given as features: every
+       * retriangulate each plane. Features guide this remeshing, while
+       * projectFixedGeometry restores the exact planes afterward: every
        * edge between differently labelled faces, one of them a fixed face,
        * becomes a reference edge, and a ridge unless both faces lie in the
        * same plane; every vertex on three or more labels becomes a corner.
        */
       size_t protectFixedGeometry(MMG::Mesh& mesh, bool cuts) const;
+
+      /**
+       * @brief Orthogonally projects labelled fixed-boundary vertices onto
+       * their prescribed planes, or their intersection at shared vertices.
+       *
+       * Applied after MMG, outside its optimization solve. Coordinates are
+       * committed only if every tetrahedron retains its orientation and a
+       * nondegenerate Jacobian. Interior vertices and Gamma-only vertices are
+       * unchanged; no rotational rim compatibility is imposed.
+       */
+      void projectFixedGeometry(MMG::Mesh& mesh) const;
 
     private:
       Mesh makeUniformChamber() const;

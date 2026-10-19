@@ -13,11 +13,7 @@ namespace KelvinBall
     prepare(fluid);
     VelocitySpace velocitySpace(fluid, 3);
     PressureSpace pressureSpace(fluid);
-    // A near-field physical band avoids tying rim acceptance to thin-face
-    // barycentric conditioning or to the size of the outer box.
-    const Real projectionDistance = DefaultRotatedTraceReferenceTolerance * m_parameters.h;
-    RotatedNitscheIntegrator coupling(fluid, MasterCuts, DefaultRotatedTracePhysicalTolerance,
-      DefaultRotatedTraceReferenceTolerance, projectionDistance);
+    RotatedNitscheIntegrator coupling(fluid, MasterCuts, 0.01, 0.25);
     GridFunction uT0(velocitySpace), uT1(velocitySpace), uT2(velocitySpace),
       uR0(velocitySpace), uR1(velocitySpace), uR2(velocitySpace);
     GridFunction pT0(pressureSpace), pT1(pressureSpace), pT2(pressureSpace),
