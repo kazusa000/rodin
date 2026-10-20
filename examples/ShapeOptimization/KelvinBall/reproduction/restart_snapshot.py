@@ -29,6 +29,39 @@ def export_restart(snapshot, output, outer_radius):
     labels = attributes[3]
     if len(tets) != len(labels) or set(np.unique(labels)) != {2, 3}:
         raise ValueError('Require original solid/fluid materials')
+    # The paired x=y labels can move away from z=0 during upstream MMG.
+    # Recover their original mapping from the last preserved native fluid
+    # coverage mesh, never replace it by a new sign-based partition.
+    native = snapshot.parent / "kelvin-cut-coverage-failure.mesh"
+    fluid_snapshot = snapshot.with_name(snapshot.name.replace("Chamber", "Fluid"))
+    native_hash = digest(native)
+    lines = native.read_text().splitlines()
+    def section(name):
+        index = next(i for i, line in enumerate(lines) if line.strip() == name) + 1
+        while not lines[index].strip():
+            index += 1
+        count = int(lines[index])
+        return lines[index+1:index+1+count]
+    ascii_vertices = np.array([[float(x) for x in line.split()[:3]] for line in section("Vertices")])
+    with h5py.File(fluid_snapshot) as data:
+        fluid_vertices = data['Mesh/Geometry/Vertices'][:]
+        fluid_stream = data['Mesh/XDMF/Topology'][:].reshape(-1, 5)
+        fluid_labels = data['Mesh/Attributes/3'][:]
+    if ascii_vertices.shape != fluid_vertices.shape or not np.allclose(ascii_vertices, fluid_vertices, rtol=6e-6, atol=1e-9):
+        raise ValueError('The native coverage mesh is not the matching saved fluid state')
+    ascii_tets = np.array([[int(x) for x in line.split()] for line in section("Tetrahedra")])
+    if not np.array_equal(ascii_tets[:, :4] - 1, fluid_stream[:, 1:]) or not np.array_equal(ascii_tets[:, 4], fluid_labels):
+        raise ValueError('The native coverage mesh has different fluid tetrahedra or materials')
+    lookup = {tuple(point): i for i, point in enumerate(vertices)}
+    try:
+        fluid_to_full = np.array([lookup[tuple(point)] for point in fluid_vertices])
+    except KeyError as error:
+        raise ValueError('A preserved fluid coordinate is absent from the complete volume') from error
+    native_faces = {}
+    for line in section("Triangles"):
+        a, b, c, label = map(int, line.split())
+        if label in (7, 13, 31, 32, 33, 35):
+            native_faces[tuple(sorted(fluid_to_full[np.array([a, b, c])-1]))] = label
     templates = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
     faces = np.sort(tets[:, templates].reshape(-1, 3), axis=1)
     unique, inverse, counts = np.unique(faces, axis=0, return_inverse=True, return_counts=True)
@@ -47,10 +80,17 @@ def export_restart(snapshot, output, outer_radius):
         if triangle_labels[i]:
             continue
         points = vertices[face]
+        preserved = native_faces.get(tuple(face))
+        if preserved is not None:
+            triangle_labels[i] = preserved
+            continue
         if np.max(np.abs(points[:, 0] - outer_radius)) <= plane_tolerance:
             triangle_labels[i] = 7
         elif np.max(np.abs(points[:, 0] - points[:, 1])) <= plane_tolerance:
-            triangle_labels[i] = 35 if points[:, 2].mean() < 0 else 33
+            references = set(int(v) for v in attributes[0][face]) & {33, 35}
+            if len(references) != 1:
+                raise ValueError(f'A solid-cut triangle lacks an unambiguous original reference: {face}, {references}')
+            triangle_labels[i] = next(iter(references))
         elif np.max(np.abs(points[:, 1] - points[:, 2])) <= plane_tolerance:
             triangle_labels[i] = 31
         elif np.max(np.abs(points[:, 1] + points[:, 2])) <= plane_tolerance:
@@ -99,7 +139,9 @@ def export_restart(snapshot, output, outer_radius):
                   output_sha256=digest(output), vertices=len(vertices), tetrahedra=len(tets),
                   gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges),
                   original_tet_order_and_materials=True, exact_double_roundtrip=True,
-                  geometry_modified=False, boundary_label_method='original fixed planes and solid/fluid adjacency; original label counts required',
+                  geometry_modified=False, boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
+                  native_fluid=str(native), native_fluid_sha256=native_hash, fluid_snapshot=str(fluid_snapshot),
+                  fluid_snapshot_sha256=digest(fluid_snapshot),
                   plane_classification_tolerance=plane_tolerance)
     output.with_suffix('.json').write_text(json.dumps(record, indent=2)+'\n')
     return record
