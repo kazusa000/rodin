@@ -77,7 +77,7 @@ namespace KelvinBall
        * a size set by the distance to Gamma instead. The sizes are multiples
        * of @p h, which a retried reconstruction halves.
        */
-      void adapt(MMG::Mesh& mesh, Real h) const;
+      void adapt(MMG::Mesh& mesh, Real h, bool conformingCuts = false) const;
 
       /**
        * @brief Marks the fixed boundary for MMG and returns the number of

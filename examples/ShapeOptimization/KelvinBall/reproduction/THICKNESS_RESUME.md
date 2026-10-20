@@ -55,3 +55,9 @@ before-cut, after-cut, before-adapt and after-adapt. The final fixed-plane
 check retains its original 1e-6 threshold. Normal invocations have no stage
 recording, parameter changes, or relaxed checks. Use a fresh scratch/output
 directory and preserve the original run and binary.
+
+`--replay-mmg-lock-cuts` is an isolated causal control: the existing
+`Sphere::protectFixedGeometry(..., true)` also requires the cut-plane triangles
+during adaptation. It is rejected outside replay. It is not a production fix
+or an optimization setting: freezing all cut triangles can retain thin cells,
+and does not demonstrate that a long optimization is stable.

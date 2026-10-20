@@ -71,6 +71,7 @@ namespace KelvinBall
       // write intermediate meshes or change their reconstruction parameters.
       std::string m_mmgReplayPrefix;
       Real m_mmgReplayOuterRadius = 2;
+      bool m_mmgReplayLockCuts = false;
 
       static constexpr Attribute Obstacle = KelvinBall::Obstacle;
       static constexpr Attribute Fluid = KelvinBall::Fluid;
@@ -381,6 +382,8 @@ namespace KelvinBall
           << "   Diagnose saved advected fields without optimization." << Alert::NewLine
           << Alert::Notation("--replay-mmg-count=<count>")
           << " Replay one to three saved fields (default: 3)." << Alert::NewLine
+          << Alert::Notation("--replay-mmg-lock-cuts")
+          << "     Diagnostic control: require cut faces during adaptation." << Alert::NewLine
           << Alert::Notation("--save-mesh")
           << "                 Save KelvinBallInitial.mesh." << Alert::NewLine
           << Alert::Notation("--help") << "                      Show this message."
@@ -469,6 +472,8 @@ namespace KelvinBall
           {
             if (face->getAttribute() != attribute)
               continue;
+            if (count == 0)
+              worst = face->getVertices()[0];
             ++count;
             Real faceResidual = 0;
             for (const Index vertex : face->getVertices())
@@ -882,7 +887,7 @@ namespace KelvinBall
         recordMMGStage(reconstructed, "before-adapt", m_mmgReplayOuterRadius);
         if (adapt)
         {
-          sphere.adapt(reconstructed, h);
+          sphere.adapt(reconstructed, h, m_mmgReplayLockCuts);
         }
         else
         {
@@ -1031,6 +1036,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       replayMMG = std::string(mode.substr(std::string_view("--replay-mmg=").size()));
     else if (mode.rfind("--replay-mmg-count=", 0) == 0)
       replayMMGCount = std::stoul(std::string(mode.substr(std::string_view("--replay-mmg-count=").size())));
+    else if (mode == "--replay-mmg-lock-cuts")
+      m_mmgReplayLockCuts = true;
     else if (mode.rfind("--restart-target-volume=", 0) == 0)
       restartTargetVolume = std::stod(std::string(mode.substr(24)));
     else if (mode.rfind("--initial-global-step=", 0) == 0)
@@ -1116,6 +1123,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (!replayMMG.empty() && (restartMesh.empty() || geometryOnly || stateOnly ||
       reconstructionMethod != "mmg" || replayMMGCount == 0 || replayMMGCount > 3))
     throw std::runtime_error("MMG replay requires a saved restart and one to three saved advected fields.");
+  if (m_mmgReplayLockCuts && replayMMG.empty())
+    throw std::runtime_error("Cut locking is a diagnostic replay control, not an optimization option.");
   const Real h = configuration.getH();
   const Real hilbertLength = regularizationFactor * h;
   const Real dt = stepFactor * h;

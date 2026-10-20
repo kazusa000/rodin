@@ -263,7 +263,7 @@ namespace KelvinBall
       {hmin, hmax, hausdorff, requiredTriangles, cellsBefore, cellsAfter}};
   }
 
-  void Sphere::adapt(MMG::Mesh& mesh, Real h) const
+  void Sphere::adapt(MMG::Mesh& mesh, Real h, bool conformingCuts) const
   {
     const Real interfaceSize = m_configuration.adaptInterfaceSize * h;
     const Real farSize = m_configuration.adaptFarSize * h;
@@ -281,7 +281,7 @@ namespace KelvinBall
       size[vertex] = interfaceSize + (farSize - interfaceSize) * ratio;
     }
 
-    protectFixedGeometry(mesh, false);
+    protectFixedGeometry(mesh, conformingCuts);
     MMG::Adapt()
       .setHMin(0.1 * h)
       .setHMax(std::max(interfaceSize, farSize))
