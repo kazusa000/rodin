@@ -111,6 +111,8 @@ def export_restart(snapshot, output, outer_radius):
                     triangle_labels[i] = 33
                 elif len(references) == 0 and np.all(points[:, 2] <= plane_tolerance):
                     triangle_labels[i] = 35
+                elif len(references) == 0 and points[:, 2].mean() >= 0:
+                    triangle_labels[i] = 33
                 else:
                     raise ValueError(f'A solid-cut triangle has ambiguous original references: {face}, {references}')
         elif np.max(np.abs(points[:, 1] - points[:, 2])) <= plane_tolerance:
