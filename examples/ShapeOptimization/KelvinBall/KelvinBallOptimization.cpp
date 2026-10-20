@@ -2661,6 +2661,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       volumeGradientDiagnostics);
   }
 
+  if (!m_options.restartMesh.empty())
+    mesh.save("KelvinBallFinal.h5", IO::FileFormat::HDF5);
+
   Alert::Success() << "Wrote KelvinBall.xdmf, KelvinBallSewed.xdmf, "
                    << (reconstructionXdmf ? "KelvinBallMMG.xdmf, " : "")
                    << "and kelvin-ball.csv" << Alert::Raise;

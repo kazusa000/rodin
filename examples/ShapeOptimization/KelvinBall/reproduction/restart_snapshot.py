@@ -53,6 +53,8 @@ def export_restart(snapshot, output, outer_radius):
     if not np.array_equal(ascii_tets[:, :4] - 1, fluid_stream[:, 1:]) or not np.array_equal(ascii_tets[:, 4], fluid_labels):
         raise ValueError('The native coverage mesh has different fluid tetrahedra or materials')
     lookup = {tuple(point): i for i, point in enumerate(vertices)}
+    if len(lookup) != len(vertices):
+        raise ValueError('Coincident original vertices require an explicit parent map')
     try:
         fluid_to_full = np.array([lookup[tuple(point)] for point in fluid_vertices])
     except KeyError as error:
@@ -88,9 +90,14 @@ def export_restart(snapshot, output, outer_radius):
             triangle_labels[i] = 7
         elif np.max(np.abs(points[:, 0] - points[:, 1])) <= plane_tolerance:
             references = set(int(v) for v in attributes[0][face]) & {33, 35}
-            if len(references) != 1:
-                raise ValueError(f'A solid-cut triangle lacks an unambiguous original reference: {face}, {references}')
-            triangle_labels[i] = next(iter(references))
+            if len(references) == 1:
+                triangle_labels[i] = next(iter(references))
+            elif len(references) == 0 and np.all(points[:, 2] >= 0):
+                triangle_labels[i] = 33
+            elif len(references) == 0 and np.all(points[:, 2] <= 0):
+                triangle_labels[i] = 35
+            else:
+                raise ValueError(f'A solid-cut triangle has ambiguous original references: {face}, {references}')
         elif np.max(np.abs(points[:, 1] - points[:, 2])) <= plane_tolerance:
             triangle_labels[i] = 31
         elif np.max(np.abs(points[:, 1] + points[:, 2])) <= plane_tolerance:
@@ -140,7 +147,7 @@ def export_restart(snapshot, output, outer_radius):
                   gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges),
                   original_tet_order_and_materials=True, exact_double_roundtrip=True,
                   geometry_modified=False, boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
-                  native_fluid=str(native), native_fluid_sha256=native_hash, fluid_snapshot=str(fluid_snapshot),
+                  native_fluid=str(native), native_fluid_sha256=native_hash, solid_cut_fallback='whole-triangle hemisphere only when no original vertex cut reference exists; full direction regression required', fluid_snapshot=str(fluid_snapshot),
                   fluid_snapshot_sha256=digest(fluid_snapshot),
                   plane_classification_tolerance=plane_tolerance)
     output.with_suffix('.json').write_text(json.dumps(record, indent=2)+'\n')

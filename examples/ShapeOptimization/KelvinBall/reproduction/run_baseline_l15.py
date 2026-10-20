@@ -45,6 +45,8 @@ def main():
         raise ValueError("October 11 core or update algorithm was changed")
     original_optimizer = git("show", BASE + ":" + example + "KelvinBallOptimization.cpp")
     current_optimizer = (args.source / example / "KelvinBallOptimization.cpp").read_text().strip()
+    # Exclude only the new final persistence operation from the loop identity check.
+    current_optimizer = current_optimizer.replace('  if (!m_options.restartMesh.empty())\n    mesh.save("KelvinBallFinal.h5", IO::FileFormat::HDF5);\n\n', '')
     update_start = "  Optional<MMG::Mesh> nextMesh;"
     if original_optimizer[original_optimizer.index(update_start):] != current_optimizer[current_optimizer.index(update_start):]:
         raise ValueError("The original numerical update loop changed")
@@ -217,6 +219,15 @@ def main():
                     if not np.array_equal(np.unique(a[f"Mesh/Attributes/{dim}"][:], return_counts=True),
                                           np.unique(b[f"Mesh/Attributes/{dim}"][:], return_counts=True)):
                         raise ValueError(f"Restart label histogram changed: dimension {dim}")
+            for field, rtol, atol in (("Theta", 1e-7, 1e-9), ("Distance", 1e-12, 1e-12)):
+                old_field = args.restart_from / f"optimization/KelvinBall.Chamber.{field}.000019.h5"
+                new_field = args.output / f"validation/restart/KelvinBall.Chamber.{field}.000000.h5"
+                with h5py.File(old_field) as a, h5py.File(new_field) as b:
+                    original = a["GridFunction/Values/Data"][:]
+                    restored = b["GridFunction/Values/Data"][:]
+                    if original.shape != restored.shape or not np.allclose(original, restored, rtol=rtol, atol=atol):
+                        raise ValueError(f"Restart {field} differs from the original final state")
+            record["validation"]["restart_direction_and_distance_passed"] = True
             record["validation"]["restart_state_passed"] = True
             record["validation"]["exact_restart_geometry_tets_materials_passed"] = True
             record["validation"]["restart_fem_diagnostics"] = restarted[0]
