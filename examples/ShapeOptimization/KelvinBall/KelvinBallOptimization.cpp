@@ -88,6 +88,8 @@ namespace KelvinBall
           Real minimumThickness = 0;
           Math::SpatialVector<Real> motionForce;
           std::string reconstructionMethod = "swift";
+          std::string restartMesh;
+          Optional<Real> originalTargetVolume;
 
           bool parse(int argc, char** argv)
           {
@@ -106,6 +108,10 @@ namespace KelvinBall
                 stepFactor = std::stod(std::string(mode.substr(7)));
               else if (mode.rfind("--thickness-min=", 0) == 0)
                 minimumThickness = std::stod(std::string(mode.substr(16)));
+              else if (mode.rfind("--restart-mesh=", 0) == 0)
+                restartMesh = std::string(mode.substr(15));
+              else if (mode.rfind("--original-target-volume=", 0) == 0)
+                originalTargetVolume = std::stod(std::string(mode.substr(25)));
               else if (mode.rfind("--motion-force=", 0) == 0)
               {
                 std::istringstream components{std::string(mode.substr(15))};
@@ -155,6 +161,11 @@ namespace KelvinBall
               throw std::runtime_error("The motion force must be finite and nonzero.");
             if (reconstructionMethod != "mmg" && reconstructionMethod != "swift")
               throw std::runtime_error("The reconstruction method must be mmg or swift.");
+            if (!restartMesh.empty() && reconstructionMethod != "mmg")
+              throw std::runtime_error("Saved volume-mesh continuation currently requires MMG.");
+            if (originalTargetVolume && (restartMesh.empty() ||
+                !std::isfinite(*originalTargetVolume) || !(*originalTargetVolume > 0)))
+              throw std::runtime_error("An original target volume requires a restart and a finite positive volume.");
             if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
               throw std::runtime_error(
                 "--mmg-snap applies only to --reconstruction=mmg.");
@@ -758,6 +769,17 @@ namespace KelvinBall
 
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
+        if (!m_options.restartMesh.empty())
+        {
+          MMG::Mesh mesh;
+          mesh.load(m_options.restartMesh, IO::FileFormat::MEDIT);
+          prepare(mesh);
+          const Real h = m_options.configuration.getGridSpacing();
+          ReconstructionDiagnostics diagnostics{m_options.configuration.hmin,
+            m_options.configuration.hmax, Real(0.1) * h * h, 0,
+            mesh.getCellCount(), mesh.getCellCount()};
+          return {std::move(mesh), {}, std::numeric_limits<Real>::quiet_NaN(), diagnostics};
+        }
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
@@ -830,6 +852,11 @@ namespace KelvinBall
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
           << Alert::Notation("--iterations=<count>")
           << "       Number of evaluated designs (default: 1)." << Alert::NewLine
+          << Alert::Notation("--restart-mesh=<file>")
+          << "    Continue an unchanged double-precision volume mesh (MMG only)."
+          << Alert::NewLine << Alert::Notation("--original-target-volume=<value>")
+          << " Retain the first campaign's volume reporting reference."
+          << Alert::NewLine
           << Alert::Notation("--penalty=<value>")
           << "          Rotational Nitsche penalty (default: 320)." << Alert::NewLine
           << Alert::Notation("--stabilization=<value>")
@@ -1456,12 +1483,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   checkMaterials(mesh);
   if (m_options.saveMeshDiagnostic)
     mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
+  if (!m_options.restartMesh.empty())
+    mesh.save("KelvinBallRestartLoaded.h5", IO::FileFormat::HDF5);
   reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)
     return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
+  const Real targetVolume = m_options.originalTargetVolume
+    ? *m_options.originalTargetVolume : mesh.getVolume(Obstacle);
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);

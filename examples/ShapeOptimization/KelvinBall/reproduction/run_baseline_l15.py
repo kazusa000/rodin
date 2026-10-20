@@ -27,6 +27,8 @@ def main():
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--reuse-build-record", type=Path)
+    parser.add_argument("--restart-from", type=Path)
+    parser.add_argument("--updates", type=int, default=20)
     args = parser.parse_args()
     if platform.node() != "28h":
         raise ValueError("Run only on the authorized 28h node")
@@ -35,12 +37,19 @@ def main():
     if git("rev-parse", "HEAD") != args.commit or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Require clean pinned source")
     example = "examples/ShapeOptimization/KelvinBall/"
-    unchanged = ["src", *[example + name for name in ("KelvinBallOptimization.cpp", "KelvinBallOptimization.h",
+    unchanged = ["src", *[example + name for name in ("KelvinBallOptimization.h",
                  "Common.cpp", "Common.h", "Metrics.cpp", "Metrics.h", "RotatedNitscheIntegrator.cpp",
                  "RotatedNitscheIntegrator.h", "SewedOutput.cpp", "SewedOutput.h", "NodalTransport.h",
                  "Thickness.h", "RotatedCharacteristicContinuation.h", "HilbertIdentification.h")]]
     if git("diff", BASE, "HEAD", "--", *unchanged):
         raise ValueError("October 11 core or update algorithm was changed")
+    original_optimizer = git("show", BASE + ":" + example + "KelvinBallOptimization.cpp")
+    current_optimizer = (args.source / example / "KelvinBallOptimization.cpp").read_text().strip()
+    update_start = "  Optional<MMG::Mesh> nextMesh;"
+    if original_optimizer[original_optimizer.index(update_start):] != current_optimizer[current_optimizer.index(update_start):]:
+        raise ValueError("The original numerical update loop changed")
+    if args.updates <= 0:
+        raise ValueError("Require a positive bounded update budget")
     modules = git("submodule", "status", "third-party/mmg", "third-party/termcolor")
     if any(line.startswith(("-", "+", "U")) for line in modules.splitlines()):
         raise ValueError("Require original pinned dependencies")
@@ -76,7 +85,7 @@ def main():
     args.output.mkdir(parents=True)
     record = dict(host=platform.node(), commit=args.commit, controller_commit=controller_commit,
                   controller_source=str(controller_source), baseline=BASE, source=str(args.source),
-                  source_status="", submodules=modules, unchanged_core_and_update_verified=True,
+                  source_status="", submodules=modules, unchanged_core_and_update_loop_verified=True,
                   initial_shape="original unit sphere; no added perturbation", outer_halfwidth=15,
                   h=H, physical_step=.2 * H, regularization_length=4 * H, thickness_minimum=0,
                   initial_grading="core2; exterior interval ratio1.3; maximum10h",
@@ -169,9 +178,53 @@ def main():
         record["validation"] = dict(configuration_exit=0, smallbox_controls=controls,
                                      numerical_controls_passed=True, exact_l2_mesh_control_passed=True,
                                      reference_control_step_factor=0.1)
+        command = [str(binary), "--graded-chamber", f"--h={H:.17g}", "--outer-radius=15",
+                   "--near-field-radius=2", "--chamber-gradation=1.3", *common, "--step=0.2"]
+        if args.restart_from:
+            from restart_snapshot import export_restart
+            parent = json.loads((args.restart_from / "campaign.json").read_text())
+            if parent.get("exit_code") != 0 or parent.get("completed_real_updates") != 19:
+                raise ValueError("Require the completed original 19-update L15 campaign")
+            with (args.restart_from / "optimization/kelvin-ball.csv").open() as stream:
+                previous = list(csv.DictReader(stream))
+            if len(previous) != 20 or int(previous[-1]["iteration"]) != 19:
+                raise ValueError("The parent CSV is incomplete")
+            snapshot = args.restart_from / "optimization/KelvinBall.Chamber.mesh.000019.h5"
+            checkpoint = args.output / "restart-original-double.mesh"
+            record["restart_input"] = export_restart(snapshot, checkpoint, 15)
+            volume_reference = previous[0]["target_volume"]
+            restart = [f"--restart-mesh={checkpoint}", f"--original-target-volume={volume_reference}"]
+            record.update(parent_campaign=str(args.restart_from), restart_global_step=19,
+                          requested_states=args.updates + 1, requested_real_updates=args.updates,
+                          requested_final_global_step=19 + args.updates,
+                          original_target_volume=float(volume_reference),
+                          initial_shape="original final global19 volume mesh; no geometric modification")
+            record["state"] = "validating_restart_state"
+            run("validation/restart", [*command, *restart, "--iterations=1"], 2)
+            with (args.output / "validation/restart/kelvin-ball.csv").open() as stream:
+                restarted = list(csv.DictReader(stream))
+            if len(restarted) != 1 or any(not math.isclose(float(restarted[0][k]), float(previous[-1][k]),
+                        rel_tol=1e-8, abs_tol=1e-10) for k in ("k", "c", "q", "volume")):
+                raise ValueError("Restart state differs from the original final state")
+            if float(restarted[0]["target_volume"]) != float(volume_reference):
+                raise ValueError("Original volume reporting reference was lost")
+            loaded_path = args.output / "validation/restart/KelvinBall.Chamber.mesh.000000.h5"
+            with h5py.File(snapshot) as a, h5py.File(loaded_path) as b:
+                for key in ("Mesh/Geometry/Vertices", "Mesh/XDMF/Topology", "Mesh/Attributes/3"):
+                    if not np.array_equal(a[key][:], b[key][:]):
+                        raise ValueError(f"The restart changed original geometry/connectivity/materials: {key}")
+                for dim in (0, 1, 2):
+                    if not np.array_equal(np.unique(a[f"Mesh/Attributes/{dim}"][:], return_counts=True),
+                                          np.unique(b[f"Mesh/Attributes/{dim}"][:], return_counts=True)):
+                        raise ValueError(f"Restart label histogram changed: dimension {dim}")
+            record["validation"]["restart_state_passed"] = True
+            record["validation"]["exact_restart_geometry_tets_materials_passed"] = True
+            record["validation"]["restart_fem_diagnostics"] = restarted[0]
+            command.extend([*restart, f"--iterations={args.updates + 1}"])
+        else:
+            command.append("--iterations=20")
         record["state"] = "optimizing"
-        run("optimization", [str(binary), "--graded-chamber", f"--h={H:.17g}", "--outer-radius=15",
-            "--near-field-radius=2", "--chamber-gradation=1.3", *common, "--step=0.2", "--iterations=20"], 8)
+        run("optimization", command, 8)
         record["state"] = "completed_native_budget"
         code = 0
     except (Exception, KeyboardInterrupt) as error:
@@ -183,6 +236,8 @@ def main():
                 rows = [r for r in csv.DictReader(stream) if None not in r and all(value not in (None, "") for value in r.values())]
             record["fully_evaluated_states"] = len(rows)
             record["completed_real_updates"] = max(0, len(rows) - 1)
+            if args.restart_from:
+                record["latest_complete_global_step"] = 19 + max(0, len(rows) - 1)
             record["latest_fem_diagnostic"] = rows[-1] if rows else None
         record.update(exit_code=code, finished_at=time.time())
         save()
