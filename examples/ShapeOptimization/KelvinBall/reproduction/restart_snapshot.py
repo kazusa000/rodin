@@ -92,6 +92,13 @@ def export_restart(snapshot, output, outer_radius):
             references = set(int(v) for v in attributes[0][face]) & {33, 35}
             if len(references) == 1:
                 triangle_labels[i] = next(iter(references))
+            elif len(references) == 2:
+                refs = attributes[0][face]
+                plus_count = int(np.count_nonzero(refs == 33))
+                minus_count = int(np.count_nonzero(refs == 35))
+                if plus_count == minus_count:
+                    raise ValueError(f'A solid-cut triangle has tied original references: {face}')
+                triangle_labels[i] = 33 if plus_count > minus_count else 35
             else:
                 nonorigin = np.max(np.abs(points), axis=1) > plane_tolerance
                 upper = np.any(nonorigin & (np.abs(points[:, 1] - points[:, 2]) <= plane_tolerance))
