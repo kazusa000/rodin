@@ -1460,7 +1460,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportConfiguration(requestedWelschScale);
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
-  announce(m_options.reconstructionMethod == "swift"
+  announce(!m_options.restartMesh.empty()
+      ? "Stage 1: Loading the preserved volume checkpoint without reconstruction."
+      : m_options.reconstructionMethod == "swift"
       ? "Stage 1: Preparing the background mesh and fitting the initial sphere with "
         "SWIFT."
       : "Stage 1: Discretizing the initial sphere with MMG.");
