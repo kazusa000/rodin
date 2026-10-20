@@ -92,12 +92,18 @@ def export_restart(snapshot, output, outer_radius):
             references = set(int(v) for v in attributes[0][face]) & {33, 35}
             if len(references) == 1:
                 triangle_labels[i] = next(iter(references))
-            elif len(references) == 0 and np.all(points[:, 2] >= -plane_tolerance):
-                triangle_labels[i] = 33
-            elif len(references) == 0 and np.all(points[:, 2] <= plane_tolerance):
-                triangle_labels[i] = 35
             else:
-                raise ValueError(f'A solid-cut triangle has ambiguous original references: {face}, {references}')
+                nonorigin = np.max(np.abs(points), axis=1) > plane_tolerance
+                upper = np.any(nonorigin & (np.abs(points[:, 1] - points[:, 2]) <= plane_tolerance))
+                lower = np.any(nonorigin & (np.abs(points[:, 1] + points[:, 2]) <= plane_tolerance))
+                if len(references) == 0 and upper != lower:
+                    triangle_labels[i] = 33 if upper else 35
+                elif len(references) == 0 and np.all(points[:, 2] >= -plane_tolerance):
+                    triangle_labels[i] = 33
+                elif len(references) == 0 and np.all(points[:, 2] <= plane_tolerance):
+                    triangle_labels[i] = 35
+                else:
+                    raise ValueError(f'A solid-cut triangle has ambiguous original references: {face}, {references}')
         elif np.max(np.abs(points[:, 1] - points[:, 2])) <= plane_tolerance:
             triangle_labels[i] = 31
         elif np.max(np.abs(points[:, 1] + points[:, 2])) <= plane_tolerance:
