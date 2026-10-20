@@ -39,3 +39,19 @@ The geometry test covers known unit-cube first-exit distances, nominal/guard
 consistency, paired load, inactive thickness, and invalid nominal distance.
 The controller also validates separate volume projections and thickness
 surrogate descent on the actual restarted global10 before any real update.
+
+## Saved-field MMG diagnosis
+
+`KelvinBall --replay-mmg=<old-optimization-directory> --replay-mmg-count=3`
+with the original restart mesh/snapshot and original MMG parameters replays
+only the saved `KelvinBall.Chamber.Advected.000000..2.h5` fields. It returns
+before the optimization loop: no Stokes solve, gradient, transport update, or
+BEM evaluation is started. Before each field is used, coordinates and ordered
+tetrahedra must exactly equal its original chamber snapshot; a mismatch stops
+the replay instead of transferring the field to another mesh.
+
+For diagnosis only, snapshots and boundary CSVs are written at input,
+before-cut, after-cut, before-adapt and after-adapt. The final fixed-plane
+check retains its original 1e-6 threshold. Normal invocations have no stage
+recording, parameter changes, or relaxed checks. Use a fresh scratch/output
+directory and preserve the original run and binary.

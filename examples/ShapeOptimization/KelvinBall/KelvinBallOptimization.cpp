@@ -67,6 +67,11 @@ namespace KelvinBall
       int run();
 
     private:
+      // Nonempty only in the saved-field diagnostic entry; normal runs do not
+      // write intermediate meshes or change their reconstruction parameters.
+      std::string m_mmgReplayPrefix;
+      Real m_mmgReplayOuterRadius = 2;
+
       static constexpr Attribute Obstacle = KelvinBall::Obstacle;
       static constexpr Attribute Fluid = KelvinBall::Fluid;
       static constexpr Attribute Outer = KelvinBall::Outer;
@@ -372,6 +377,10 @@ namespace KelvinBall
           << "             Stop after initial MMG reconstruction." << Alert::NewLine
           << Alert::Notation("--state-only")
           << "                Stop after the first Stokes evaluation." << Alert::NewLine
+          << Alert::Notation("--replay-mmg=<directory>")
+          << "   Diagnose saved advected fields without optimization." << Alert::NewLine
+          << Alert::Notation("--replay-mmg-count=<count>")
+          << " Replay one to three saved fields (default: 3)." << Alert::NewLine
           << Alert::Notation("--save-mesh")
           << "                 Save KelvinBallInitial.mesh." << Alert::NewLine
           << Alert::Notation("--help") << "                      Show this message."
@@ -435,6 +444,48 @@ namespace KelvinBall
             return std::abs(x(0) - x(1));
           default:
             return 0;
+        }
+      }
+
+      void recordMMGStage(const MMG::Mesh& mesh, const char* stage, Real outerRadius)
+      {
+        if (m_mmgReplayPrefix.empty())
+          return;
+        const std::string name = m_mmgReplayPrefix + "-" + stage;
+        mesh.save(name + ".mesh", IO::FileFormat::MEDIT);
+        IO::XDMF output(name);
+        auto grid = output.grid("Chamber");
+        grid.setMesh(mesh, IO::XDMF::MeshPolicy::Transient);
+        output.write(0).flush();
+        std::ofstream csv(name + "-boundary.csv");
+        csv.precision(std::numeric_limits<Real>::max_digits10);
+        csv << "attribute,faces,bad_faces,max_plane_residual,worst_vertex,x,y,z\n";
+        for (const Attribute attribute : {Outer, SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus})
+        {
+          size_t count = 0, bad = 0;
+          Real maximum = 0;
+          Index worst = 0;
+          for (auto face = mesh.getPolytope(2); face; ++face)
+          {
+            if (face->getAttribute() != attribute)
+              continue;
+            ++count;
+            Real faceResidual = 0;
+            for (const Index vertex : face->getVertices())
+            {
+              const Real residual = planeResidual(attribute, mesh.getVertexCoordinates(vertex), outerRadius);
+              faceResidual = std::max(faceResidual, residual);
+              if (residual > maximum)
+              {
+                maximum = residual;
+                worst = vertex;
+              }
+            }
+            bad += faceResidual > 1e-6;
+          }
+          const auto& x = mesh.getVertexCoordinates(worst);
+          csv << attribute << ',' << count << ',' << bad << ',' << maximum << ','
+              << worst << ',' << x(0) << ',' << x(1) << ',' << x(2) << '\n';
         }
       }
 
@@ -789,9 +840,13 @@ namespace KelvinBall
                        << Alert::Notation::Number(snappedMinimum);
         }
         crossingInfo << Alert::Raise;
+        recordMMGStage(mesh, "before-cut", m_mmgReplayOuterRadius);
+        if (!m_mmgReplayPrefix.empty())
+          sanitized.save(m_mmgReplayPrefix + "-sanitized.sol", IO::FileFormat::MEDIT);
         MMG::Mesh reconstructed = discretizer.discretize(sanitized);
 
         splitSelfPairedCut(reconstructed);
+        recordMMGStage(reconstructed, "after-cut", m_mmgReplayOuterRadius);
         const MeshDiagnostics reconstructionDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()
@@ -824,6 +879,7 @@ namespace KelvinBall
 
         const size_t requiredTrianglesBeforeOptimization =
           sphere.protectFixedGeometry(reconstructed, false);
+        recordMMGStage(reconstructed, "before-adapt", m_mmgReplayOuterRadius);
         if (adapt)
         {
           sphere.adapt(reconstructed, h);
@@ -841,6 +897,7 @@ namespace KelvinBall
         }
         const size_t requiredTrianglesAfterOptimization =
           sphere.protectFixedGeometry(reconstructed, false);
+        recordMMGStage(reconstructed, "after-adapt", m_mmgReplayOuterRadius);
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()
@@ -935,6 +992,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   std::string thicknessMethod = "legacy";
   std::string restartMesh;
   std::string restartSnapshot;
+  std::string replayMMG;
+  size_t replayMMGCount = 3;
   Real restartTargetVolume = 0;
   size_t initialGlobalStep = 0;
   size_t motionEvery = 0;
@@ -968,6 +1027,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       restartMesh = std::string(mode.substr(15));
     else if (mode.rfind("--restart-snapshot=", 0) == 0)
       restartSnapshot = std::string(mode.substr(19));
+    else if (mode.rfind("--replay-mmg=", 0) == 0)
+      replayMMG = std::string(mode.substr(std::string_view("--replay-mmg=").size()));
+    else if (mode.rfind("--replay-mmg-count=", 0) == 0)
+      replayMMGCount = std::stoul(std::string(mode.substr(std::string_view("--replay-mmg-count=").size())));
     else if (mode.rfind("--restart-target-volume=", 0) == 0)
       restartTargetVolume = std::stod(std::string(mode.substr(24)));
     else if (mode.rfind("--initial-global-step=", 0) == 0)
@@ -1050,6 +1113,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     throw std::runtime_error("The tetrahedral extension supports MMG only.");
   if (geometryOnly && stateOnly)
     throw std::runtime_error("Use either --geometry-only or --state-only, not both.");
+  if (!replayMMG.empty() && (restartMesh.empty() || geometryOnly || stateOnly ||
+      reconstructionMethod != "mmg" || replayMMGCount == 0 || replayMMGCount > 3))
+    throw std::runtime_error("MMG replay requires a saved restart and one to three saved advected fields.");
   const Real h = configuration.getH();
   const Real hilbertLength = regularizationFactor * h;
   const Real dt = stepFactor * h;
@@ -1184,6 +1250,65 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
+  if (!replayMMG.empty())
+  {
+    m_mmgReplayOuterRadius = outerRadius;
+    // Replay recorded transport fields only: never solve Stokes, identify a
+    // direction, advect, or continue optimization. Stop before using a field
+    // if reconstructed vertex/cell ordering differs from its saved input.
+    for (size_t iteration = 0; iteration < replayMMGCount; ++iteration)
+    {
+      char suffix[32];
+      std::snprintf(suffix, sizeof(suffix), "%06zu.h5", iteration);
+      const std::string expectedPath = replayMMG + "/KelvinBall.Chamber.mesh." + suffix;
+      const auto expected = IO::HDF5::File(H5Fopen(expectedPath.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+      if (!expected)
+        throw std::runtime_error("Missing saved replay mesh: " + expectedPath);
+      const auto coordinates = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+        expected.get(), "/Mesh/Geometry/Vertices");
+      const auto topology = IO::HDF5::readVectorDataset<IO::HDF5::U64>(
+        expected.get(), "/Mesh/XDMF/Topology");
+      bool identical = coordinates.size() == 3 * mesh.getVertexCount() &&
+        topology.size() == 5 * mesh.getCellCount();
+      for (Index vertex = 0; identical && vertex < mesh.getVertexCount(); ++vertex)
+        for (size_t d = 0; d < 3; ++d)
+          identical = identical && mesh.getVertexCoordinates(vertex)(d) == coordinates[3 * vertex + d];
+      for (auto cell = mesh.getCell(); identical && cell; ++cell)
+      {
+        const auto& vertices = cell->getVertices();
+        for (size_t k = 0; k < 4; ++k)
+          identical = identical && vertices[k] == topology[5 * cell->getIndex() + 1 + k];
+      }
+      m_mmgReplayPrefix = "replay-" + std::to_string(iteration);
+      recordMMGStage(mesh, "input", outerRadius);
+      std::ofstream(m_mmgReplayPrefix + "-input-exact.txt") << identical << '\n';
+      if (!identical)
+        throw std::runtime_error("Replay mesh differs from saved field ordering; refusing to use field.");
+      auto& connectivity = mesh.getConnectivity();
+      connectivity.discover(3, 2);
+      connectivity.discover(3, 1);
+      connectivity.restrict(1, 0);
+      connectivity.restrict(2, 0);
+      connectivity.restrict(2, 3);
+      connectivity.discover(0, 0);
+      P1 levelSetSpace(mesh);
+      MMG::RealGridFunction advected(levelSetSpace);
+      const std::string fieldPath = replayMMG + "/KelvinBall.Chamber.Advected." + suffix;
+      const auto field = IO::HDF5::File(H5Fopen(fieldPath.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+      if (!field)
+        throw std::runtime_error("Missing saved advected field: " + fieldPath);
+      const auto values = IO::HDF5::readVectorDataset<IO::HDF5::F64>(field.get(), "/GridFunction/Values/Data");
+      if (values.size() != mesh.getVertexCount())
+        throw std::runtime_error("Saved advected field has different vertices.");
+      std::copy(values.begin(), values.end(), advected.getData().data());
+      auto result = discretizeLevelSetMMG(mesh, advected, h, sphere,
+        configuration.adapt, configuration.mmgSnap);
+      mesh = std::move(result.mesh);
+      recordMMGStage(mesh, "output", outerRadius);
+      checkFixedGeometry(mesh, outerRadius);
+    }
+    return 0;
+  }
   if (geometryOnly)
     return 0;
   const Real targetVolume = restartMesh.empty() ? mesh.getVolume(Obstacle) : restartTargetVolume;
