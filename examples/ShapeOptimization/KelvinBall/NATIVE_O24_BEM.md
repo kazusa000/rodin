@@ -6,9 +6,15 @@
 unchanged chamber checkpoint with the production order 3, epsilon factor 0.6
 and viscosity. No gradient, transport, reconstruction or shape update is run.
 The opt-in instrumentation times full matrix/translation RHS assembly,
-rotation RHS-only assembly, each `E.transpose()*A*E`/RHS reduction, each LU
+the rotation `assemble(RHS)` request, each `E.transpose()*A*E`/RHS reduction, each LU
 factorization and each state back substitution. Both existing factorizations
 are retained. Constraint-basis construction is timed separately.
+
+The OpenMP problem assembler services a targeted RHS request by assembling a
+full temporary system and transferring only its vector (`OpenMP.h`, targeted
+problem assembly). With this backend, the rotation assembly timer therefore
+includes another matrix assembly even when `OMP_NUM_THREADS=1`. The diagnostic
+retains and measures this existing behavior; it does not implement RHS reuse.
 
 The reported condition number is the induced **one-norm** condition number of
 the actual reduced matrix in its original production basis, without scaling or
