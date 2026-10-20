@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Resume the original Cubic global10 with baseline thickness, then independent BEM."""
+"""Resume Cubic with baseline thickness, then independently evaluate its last solved state.
+
+Default: original global10 to global15. --continue-thickness: the pinned,
+completed thickness global15 to global25, reusing its exact native binary.
+"""
 import argparse
 import importlib.util
 import json
@@ -19,6 +23,9 @@ OLD = 'fed5689233fc035e99f9feb1fe4bad8d9e681eef'
 CPU = 'fa595d6f9f7f002b23127d202a9608f4b009d09c'
 LIBRARY = 'cb4260eff5d79bbc276c623d95f0119d755042de8b0e79e691959cfcdb527a66'
 INPUT = '5f2e8ab6bb31180c7447a55625d2c9abee55f3d96c12045739301bb9a0ff30d2'
+THICKNESS_RUN = 'd0c022eecd8a2d27841eb7f6ac1a1494df9d9ab8'
+THICKNESS_FINAL = 'a0b9c9f6b252eb98821fa8414cb7a1245268e4bbbe34331b116f3ca7ca34d2dc'
+THICKNESS_BINARY = 'e9f15b9b167244f18b43213d63f43b78cf3c313d054e4c78e2e30f8a9be905a4'
 PARAMETERS = ['--n=20', '--outer-radius=2', '--regularization=100', '--step=0.5',
     '--advection-quadrature=3', '--reconstruction=mmg', '--mmg-adapt',
     '--mmg-snap=0.005', '--thickness-weight=1', '--save-mesh']
@@ -148,6 +155,12 @@ def main():
     for key in ['source', 'prefix', 'build', 'output', 'input', 'exporter', 'verifier', 'cpu_source', 'library']:
         parser.add_argument('--'+key.replace('_', '-'), type=Path, required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--continue-thickness', action='store_true',
+                        help='Continue the completed d0c022ee global15 for ten more updates')
+    parser.add_argument('--binary-source', type=Path,
+                        help='Clean d0c022ee source of the unchanged, SHA-pinned existing binary')
+    parser.add_argument('--prepare-only', action='store_true',
+                        help='Validate provenance and export restart inputs without launching a solve')
     parser.add_argument('--reuse-state-validation', type=Path,
                         help='Reuse an actual state-only exit0 with identical input, geometry and binary')
     parser.add_argument('--reuse-build', action='store_true',
@@ -160,32 +173,55 @@ def main():
         pinned(source, commit)
     if digest(args.library) != LIBRARY:
         raise ValueError('Unverified native BEM library')
+    first, updates, input_sha = (15, 10, THICKNESS_FINAL) if args.continue_thickness else (10, 5, INPUT)
+    binary = args.build/'bin/KelvinBall'
+    if args.continue_thickness:
+        if not args.binary_source or args.reuse_state_validation or args.reuse_build:
+            raise ValueError('Continuation requires binary-source and fresh validation')
+        pinned(args.binary_source, THICKNESS_RUN)
+        if digest(binary) != THICKNESS_BINARY:
+            raise ValueError('Continuation binary differs from the validated thickness run')
+        # The controller may change; the numerical implementation must not.
+        if git(args.source, 'diff', THICKNESS_RUN, args.commit, '--', 'src', EXAMPLE+'*.cpp',
+               EXAMPLE+'*.h', EXAMPLE+'*.hxx', EXAMPLE+'*.hpp', EXAMPLE+'CMakeLists.txt',
+               EXAMPLE+'reproduction/CMakeLists.txt', 'CMakeLists.txt', 'cmake'):
+            raise ValueError('Continuation changed numerical code or build configuration')
     unchanged = ['src', EXAMPLE+'Sphere.cpp', EXAMPLE+'Configuration.cpp', EXAMPLE+'Common.cpp',
                  EXAMPLE+'Metrics.cpp', EXAMPLE+'RotatedNitscheIntegrator.cpp', EXAMPLE+'SewedOutput.cpp']
     if git(args.source, 'diff', OLD, args.commit, '--', *unchanged):
         raise ValueError('Old numerical core changed outside restart/thickness')
     manifest = json.loads((args.input/'campaign.json').read_text())
-    if manifest['commit'] != OLD or manifest['symmetry'] != 'cubic':
+    expected = THICKNESS_RUN if args.continue_thickness else OLD
+    if manifest['commit'] != expected or (not args.continue_thickness and manifest['symmetry'] != 'cubic'):
         raise ValueError('Wrong original experiment')
     old_rows = complete_rows(args.input/'optimization/kelvin-ball.csv')
-    original = old_rows[10]
+    original = old_rows[-1] if args.continue_thickness else old_rows[10]
+    if args.continue_thickness:
+        if (manifest.get('state') != 'completed' or not manifest.get('budget_completed')
+                or manifest.get('native_exit_code') != 0 or len(old_rows) != 6
+                or int(original['global_iteration']) != first
+                or (args.input/'exit-code.txt').read_text().strip() != '0'
+                or (args.input/'optimization/exit-code.txt').read_text().strip() != '0'):
+            raise ValueError('Parent global15 is not a complete successful thickness run')
     target = float(old_rows[0]['target_volume'])
-    snapshot = args.input/'optimization/KelvinBall.Chamber.mesh.000010.h5'
-    if digest(snapshot) != INPUT or not math.isclose(target, .17391249230727751, rel_tol=1e-14):
-        raise ValueError('Original global10 or target volume changed')
+    snapshot = args.input/'optimization'/f'KelvinBall.Chamber.mesh.{int(original["iteration"]):06d}.h5'
+    if digest(snapshot) != input_sha or not math.isclose(target, .17391249230727751, rel_tol=1e-14):
+        raise ValueError('Pinned restart snapshot or original target volume changed')
     if args.output.exists() or args.output.resolve().is_relative_to(args.source.resolve()):
         raise ValueError('Require fresh output outside source')
     if args.build.resolve().is_relative_to(args.source.resolve()):
         raise ValueError('Build must be outside source')
-    if args.build.exists():
+    if args.build.exists() and not args.continue_thickness:
         expected = 'CMAKE_HOME_DIRECTORY:INTERNAL='+str(args.source/EXAMPLE/'reproduction')
         if not args.reuse_build or expected not in (args.build/'CMakeCache.txt').read_text().splitlines():
             raise ValueError('Existing build is not the explicitly requested source-matched cache')
     args.output.mkdir(parents=True)
     record = dict(state='preparing', commit=args.commit, thickness_baseline_commit=BASELINE,
-        original_commit=OLD, input_snapshot=str(snapshot), input_sha256=INPUT,
-        original_target_volume=target, local0_global_step=10, requested_real_updates=5,
-        requested_solved_states=6, final_global_step=15, bem_feedback=False,
+        symmetry='cubic',
+        original_commit=OLD, input_snapshot=str(snapshot), input_sha256=input_sha,
+        parent_run=str(args.input), numerical_commit=THICKNESS_RUN if args.continue_thickness else args.commit,
+        original_target_volume=target, local0_global_step=first, requested_real_updates=updates,
+        requested_solved_states=updates+1, final_global_step=first+updates, bem_feedback=False,
         nominal_thickness=2*2/19, guard_distance=3*2/19, started_at=time.time(), stages=[])
     environment = dict(os.environ, KELVIN_SYMMETRY='cubic', OMP_NUM_THREADS='6',
         OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
@@ -247,13 +283,20 @@ def main():
         mesh = directory/'restart-labelled.mesh'
         record['restart_label_recovery'] = restart_mesh(snapshot, mesh)
         record['restart_mesh_sha256'] = digest(mesh)
+        if args.prepare_only:
+            record.update(state='prepared', optimization_started=False, binary_sha256=digest(binary))
+            code = 0
+            return code
         configure = ['cmake', '-S', str(args.source/EXAMPLE/'reproduction'), '-B', str(args.build),
             '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_PREFIX_PATH={args.prefix}', f'-DMUMPS_ROOT={args.prefix}',
             f'-DMPI_C_HEADER_DIR={lib/"openmpi/include"}',
             f'-DMPI_C_COMPILER_INCLUDE_DIRS={lib/"openmpi/include"};{lib/"openmpi/include/openmpi"}',
             '-DMPI_C_LIB_NAMES=mpi', f'-DMPI_mpi_LIBRARY={lib/"openmpi/lib/libmpi.so"}',
             f'-DCARLOS_MUMPS_SUPPORT_LIBRARIES={lib/"openmpi/lib/libmpi_cxx.so"}']
-        if args.reuse_build:
+        if args.continue_thickness:
+            record['reused_validated_binary'] = dict(source=str(args.binary_source),
+                commit=THICKNESS_RUN, sha256=THICKNESS_BINARY, compile_not_rerun=True)
+        elif args.reuse_build:
             layout = ['CMakeLists.txt', 'cmake', EXAMPLE+'CMakeLists.txt', EXAMPLE+'reproduction/CMakeLists.txt']
             if git(args.source, 'diff', '3e3e8aaaf796b7ffaee27d430feed1f9e664783e', args.commit, '--', *layout):
                 raise ValueError('Build layout changed; configure a fresh build instead')
@@ -262,16 +305,15 @@ def main():
             checkpoint()
         elif run('configure', configure, 1):
             raise RuntimeError('Configure failed')
-        if run('compile', ['cmake', '--build', str(args.build),
+        if not args.continue_thickness and run('compile', ['cmake', '--build', str(args.build),
                 '--target', 'KelvinBall', 'KelvinBallCubicGeometryTest', 'KelvinBallTetraGeometryTest',
                 'KelvinBallThicknessTest', '-j', '2'], 4):
             raise RuntimeError('Build failed')
-        binary = args.build/'bin/KelvinBall'
         record['binary_sha256'] = digest(binary)
-        for name in ['CubicGeometry', 'TetraGeometry', 'Thickness']:
+        for name in ([] if args.continue_thickness else ['CubicGeometry', 'TetraGeometry', 'Thickness']):
             if run('validation/'+name, [str(args.build/f'bin/KelvinBall{name}Test')], .25):
                 raise RuntimeError(name+' control failed')
-        restart = [f'--restart-mesh={mesh}', f'--restart-snapshot={snapshot}', f'--restart-target-volume={target:.17g}', '--initial-global-step=10']
+        restart = [f'--restart-mesh={mesh}', f'--restart-snapshot={snapshot}', f'--restart-target-volume={target:.17g}', f'--initial-global-step={first}']
         common = [str(binary), *PARAMETERS, *restart]
         if run('validation/geometry', [*common, '--thickness-min=0', '--geometry-only'], .25):
             raise RuntimeError('Restart mesh load failed')
@@ -323,20 +365,20 @@ def main():
         record['direction_validation'] = {key: direction[key] for key in direction
             if key.startswith('thickness_') or key in ['d_volume_theta', 'd_thickness_theta']}
         record['state'] = 'optimizing'
-        native_exit = run('optimization', [*common, *thick, '--iterations=6'], 12)
+        native_exit = run('optimization', [*common, *thick, f'--iterations={updates+1}'], 12)
         record['native_exit_code'] = native_exit
         rows = complete_rows(args.output/'optimization/kelvin-ball.csv')
         for i, row in enumerate(rows):
             check_direction(row)
-            if int(row['global_iteration']) != i+10 or float(row['target_volume']) != target:
+            if int(row['global_iteration']) != i+first or float(row['target_volume']) != target:
                 raise ValueError('Restart global numbering or original volume reference changed')
         record.update(fully_evaluated_states=len(rows), completed_real_updates=max(0, len(rows)-1),
-                      budget_completed=native_exit == 0 and len(rows) == 6)
+                      budget_completed=native_exit == 0 and len(rows) == updates+1)
         if not rows:
             raise ValueError('No complete state available for final independent BEM')
         local = len(rows)-1
         final = args.output/'optimization'/f'KelvinBall.Chamber.mesh.{local:06d}.h5'
-        record.update(selected_bem_local_step=local, selected_bem_global_step=10+local,
+        record.update(selected_bem_local_step=local, selected_bem_global_step=first+local,
             selected_bem_geometry_fem_evaluated=True, state='exporting_final')
         directory = args.output/'final-geometry'
         directory.mkdir()
@@ -348,7 +390,7 @@ def main():
         if record['final_certificate']['gamma_panels'] != panels:
             raise ValueError('Final export lost original panels')
         jobs = [dict(name='cubic-final', symmetry='cubic', input=str(mesh), sha256=digest(mesh),
-                     panels=panels, full_panels=24*panels, saved_step=10+local)]
+                     panels=panels, full_panels=24*panels, saved_step=first+local)]
         jobs_file = args.output/'bem-jobs.json'
         save(jobs_file, jobs)
         record['state'] = 'independent_bem'
@@ -359,9 +401,13 @@ def main():
             raise RuntimeError('Independent final BEM failed')
         accepted = module('cpu_acceptance', args.cpu_source/'scripts/run_saved_cpu_queue.py')
         record['independent_bem'] = accepted.accepted(args.output/'bem/cubic-final', jobs[0], args.library, CPU)
-        if digest(snapshot) != INPUT or digest(args.output/'restart/restart-labelled.mesh') != record['restart_mesh_sha256']:
+        if digest(snapshot) != input_sha or digest(args.output/'restart/restart-labelled.mesh') != record['restart_mesh_sha256']:
             raise ValueError('Original restart input changed during run')
         pinned(args.source, args.commit)
+        if args.continue_thickness:
+            pinned(args.binary_source, THICKNESS_RUN)
+            if digest(binary) != THICKNESS_BINARY:
+                raise ValueError('Numerical binary changed during continuation')
         record['state'] = 'completed' if record['budget_completed'] else 'native_failed_bem_completed'
         code = 0 if record['budget_completed'] else 1
     except Exception as error:
