@@ -1,5 +1,25 @@
 # Native infinite-exterior BEM on the original O24 chamber
 
+## Fixed-checkpoint system diagnostics
+
+`KelvinBallBEMChamberDiagnostics ACCEPTED.mesh EXPECTED_RHO` evaluates one
+unchanged chamber checkpoint with the production order 3, epsilon factor 0.6
+and viscosity. No gradient, transport, reconstruction or shape update is run.
+The opt-in instrumentation times full matrix/translation RHS assembly,
+rotation RHS-only assembly, each `E.transpose()*A*E`/RHS reduction, each LU
+factorization and each state back substitution. Both existing factorizations
+are retained. Constraint-basis construction is timed separately.
+
+The reported condition number is the induced **one-norm** condition number of
+the actual reduced matrix in its original production basis, without scaling or
+preconditioning: `norm(Ac,1)*norm(LU.solve(I),1)`. It is evaluated in FP64 using
+the second factorization; an LU reciprocal-condition estimate and normalized
+inverse residual are also recorded. This is not a two-norm/SVD condition
+number. The extra inverse solve and its residual check are excluded from state
+timings and reported as condition-diagnostic overhead. The final JSON also
+checks reproduction of the accepted rho. `--self-check` compares instrumented
+and uninstrumented evaluation on the existing coarse chamber fixture.
+
 The design mesh is the Carlos chamber `0 <= |z| <= y <= x <= L`. The frozen
 baseline is `3ae2c0414ffebf11f5814a46510ddf4d8375ba0a`. Only the state model
 changes from finite-box Stokes FEM to the free-space regularized single layer.

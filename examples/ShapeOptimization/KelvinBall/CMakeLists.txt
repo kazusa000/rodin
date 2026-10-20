@@ -41,3 +41,6 @@ target_link_libraries(KelvinBallBEMMMGValidation PRIVATE KelvinBallSupport Rodin
 
 add_executable(KelvinBallBEMChamberValidation EXCLUDE_FROM_ALL BEMChamberValidation.cpp)
 target_link_libraries(KelvinBallBEMChamberValidation PRIVATE KelvinBallSupport)
+
+add_executable(KelvinBallBEMChamberDiagnostics EXCLUDE_FROM_ALL BEMChamberDiagnostics.cpp)
+target_link_libraries(KelvinBallBEMChamberDiagnostics PRIVATE KelvinBallSupport)

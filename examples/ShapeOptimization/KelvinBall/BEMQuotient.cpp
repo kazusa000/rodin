@@ -9,11 +9,15 @@
 #include "ChamberSymmetry.h"
 #include <Rodin/Solver/PartialPivLU.h>
 #include <map>
+#include <chrono>
+#include <iostream>
 
 namespace KelvinBall
 {
-  BEM::Result BEM::evaluateQuotient(const Mesh& surface,bool derivative) const
+  BEM::Result BEM::evaluateQuotient(const Mesh& surface,bool derivative,Diagnostics* diagnostics) const
   {
+    using Clock=std::chrono::steady_clock;
+    if (diagnostics) *diagnostics=Diagnostics{};
     if (surface.getDimension()!=2 || !surface.getCellCount())
       throw std::runtime_error("O24 BEM requires a nonempty chamber interface.");
     Result result; result.panels=surface.getCellCount();
@@ -50,7 +54,9 @@ namespace KelvinBall
     auto form=Integral(Potential(imageKernel,trial),test); form.setOrder(m_order);
     DenseProblem problem(trial,test);
     Solver::PartialPivLU solver(problem);
+    const auto basisStart=Clock::now();
     const auto E=ChamberSymmetry(surface).tensorBasis(space);
+    if (diagnostics) diagnostics->basisSeconds=std::chrono::duration<Real>(Clock::now()-basisStart).count();
     result.stateDOFs=space.getSize(); result.independentDOFs=E.cols();
     Math::Matrix<Real> rhs(space.getSize(),2),solution(space.getSize(),2),A;
     for (size_t family=0;family<2;++family)
@@ -70,17 +76,54 @@ namespace KelvinBall
       });
       auto linear=Integral(rigid,test); linear.setOrder(m_order);
       problem=form-linear;
+      const auto assemblyStart=Clock::now();
       if (family==0) problem.assemble();
       else problem.assemble(AssemblyTarget::RHS);
+      if (diagnostics)
+      {
+        diagnostics->assemblySeconds[family]=std::chrono::duration<Real>(Clock::now()-assemblyStart).count();
+        std::cout<<"diagnostic family="<<family<<" assembly_seconds="<<diagnostics->assemblySeconds[family]<<std::endl;
+      }
       auto& system=problem.getLinearSystem();
       if (family==0) A=system.getOperator();
       rhs.col(family)=system.getVector();
+      const auto reductionStart=Clock::now();
       system.getOperator()=E.transpose()*A*E;
       system.getVector()=E.transpose()*rhs.col(family);
+      if (diagnostics) diagnostics->reductionSeconds[family]=std::chrono::duration<Real>(Clock::now()-reductionStart).count();
       const auto& reduced=system.getOperator();
       const Real asymmetry=(reduced-reduced.transpose()).norm()/std::max(reduced.norm(),Real(1e-30));
       if (asymmetry>1e-11) throw std::runtime_error("O24 BEM operator lost reciprocity.");
-      solver.solve(system);
+      if (diagnostics)
+      {
+        // Match PartialPivLU::solve exactly, exposing its two existing stages.
+        Eigen::PartialPivLU<Math::Matrix<Real>> lu;
+        const auto factorStart=Clock::now();
+        lu.compute(reduced);
+        diagnostics->factorSeconds[family]=std::chrono::duration<Real>(Clock::now()-factorStart).count();
+        const auto solveStart=Clock::now();
+        system.getSolution()=lu.solve(system.getVector());
+        diagnostics->solveSeconds[family]=std::chrono::duration<Real>(Clock::now()-solveStart).count();
+        std::cout<<"diagnostic family="<<family<<" reduction_seconds="<<diagnostics->reductionSeconds[family]
+          <<" factor_seconds="<<diagnostics->factorSeconds[family]<<" solve_seconds="<<diagnostics->solveSeconds[family]<<std::endl;
+        if (family==1)
+        {
+          const auto conditionStart=Clock::now();
+          diagnostics->conditionOneEstimate=1/lu.rcond();
+          // This extra all-RHS solve is diagnostic overhead, not state back substitution.
+          const Math::Matrix<Real> inverse=lu.solve(Math::Matrix<Real>::Identity(reduced.rows(),reduced.cols()));
+          diagnostics->operatorNormOne=reduced.cwiseAbs().colwise().sum().maxCoeff();
+          diagnostics->inverseNormOne=inverse.cwiseAbs().colwise().sum().maxCoeff();
+          diagnostics->conditionOne=diagnostics->operatorNormOne*diagnostics->inverseNormOne;
+          const Math::Matrix<Real> defect=reduced*inverse-Math::Matrix<Real>::Identity(reduced.rows(),reduced.cols());
+          diagnostics->inverseResidual=defect.cwiseAbs().colwise().sum().maxCoeff()/diagnostics->conditionOne;
+          diagnostics->conditionSeconds=std::chrono::duration<Real>(Clock::now()-conditionStart).count();
+          if (!inverse.allFinite() || !std::isfinite(diagnostics->conditionOne))
+            throw std::runtime_error("Nonfinite BEM condition diagnostic.");
+          std::cout<<"diagnostic condition_one="<<diagnostics->conditionOne<<std::endl;
+        }
+      }
+      else solver.solve(system);
       solution.col(family)=E*system.getSolution();
       const Real residual=(E.transpose()*(A*solution.col(family)-rhs.col(family))).norm()/
         std::max((E.transpose()*rhs.col(family)).norm(),Real(1e-30));

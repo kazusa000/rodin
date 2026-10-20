@@ -4,6 +4,7 @@
 #include "Common.h"
 #include "SewedOutput.h"
 #include <Rodin/Variational/RegularizedStokeslet.h>
+#include <array>
 
 namespace KelvinBall
 {
@@ -13,6 +14,14 @@ namespace KelvinBall
   class BEM
   {
     public:
+      /// Opt-in wall timings and raw-basis one-norm condition diagnostics.
+      struct Diagnostics
+      {
+        std::array<Real,2> assemblySeconds{}, reductionSeconds{}, factorSeconds{}, solveSeconds{};
+        Real basisSeconds=0, conditionSeconds=0, conditionOne=0, conditionOneEstimate=0;
+        Real operatorNormOne=0, inverseNormOne=0, inverseResidual=0;
+      };
+
       struct Result
       {
         Real k = 0, c = 0, q = 0, rho = 0, epsilon = 0;
@@ -25,7 +34,8 @@ namespace KelvinBall
         : m_order(order), m_epsilonFactor(epsilonFactor), m_viscosity(viscosity) {}
 
       Result evaluate(const Mesh& surface, bool derivative = true) const;
-      Result evaluateQuotient(const Mesh& surface, bool derivative = true) const;
+      Result evaluateQuotient(const Mesh& surface, bool derivative = true,
+                              Diagnostics* diagnostics = nullptr) const;
       Result evaluateChamber(const Mesh& chamber, const VelocitySpace& shapeSpace,
                              Math::Vector<Real>& load, bool derivative = true) const;
 
