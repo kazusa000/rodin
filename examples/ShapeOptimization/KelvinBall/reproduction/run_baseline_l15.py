@@ -195,7 +195,8 @@ def main():
             checkpoint = args.output / "restart-original-double.mesh"
             record["restart_input"] = export_restart(snapshot, checkpoint, 15)
             volume_reference = previous[0]["target_volume"]
-            restart = [f"--restart-mesh={checkpoint}", f"--original-target-volume={volume_reference}"]
+            restart = [f"--restart-mesh={checkpoint}", f"--restart-coordinates={snapshot}",
+                       f"--original-target-volume={volume_reference}"]
             record.update(parent_campaign=str(args.restart_from), restart_global_step=19,
                           requested_states=args.updates + 1, requested_real_updates=args.updates,
                           requested_final_global_step=19 + args.updates,

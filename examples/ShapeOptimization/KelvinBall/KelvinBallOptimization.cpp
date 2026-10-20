@@ -36,6 +36,7 @@
 #include <Rodin/Distance/Eikonal.h>
 #include <Rodin/Geometry.h>
 #include <Rodin/IO/XDMF.h>
+#include <Rodin/IO/HDF5.h>
 #include <Rodin/MMG.h>
 #include <Rodin/Variational.h>
 
@@ -89,6 +90,7 @@ namespace KelvinBall
           Math::SpatialVector<Real> motionForce;
           std::string reconstructionMethod = "swift";
           std::string restartMesh;
+          std::string restartCoordinates;
           Optional<Real> originalTargetVolume;
 
           bool parse(int argc, char** argv)
@@ -110,6 +112,8 @@ namespace KelvinBall
                 minimumThickness = std::stod(std::string(mode.substr(16)));
               else if (mode.rfind("--restart-mesh=", 0) == 0)
                 restartMesh = std::string(mode.substr(15));
+              else if (mode.rfind("--restart-coordinates=", 0) == 0)
+                restartCoordinates = std::string(mode.substr(22));
               else if (mode.rfind("--original-target-volume=", 0) == 0)
                 originalTargetVolume = std::stod(std::string(mode.substr(25)));
               else if (mode.rfind("--motion-force=", 0) == 0)
@@ -161,6 +165,8 @@ namespace KelvinBall
               throw std::runtime_error("The motion force must be finite and nonzero.");
             if (reconstructionMethod != "mmg" && reconstructionMethod != "swift")
               throw std::runtime_error("The reconstruction method must be mmg or swift.");
+            if (restartMesh.empty() != restartCoordinates.empty())
+              throw std::runtime_error("Restart requires both volume topology and original HDF5 coordinates.");
             if (!restartMesh.empty() && reconstructionMethod != "mmg")
               throw std::runtime_error("Saved volume-mesh continuation currently requires MMG.");
             if (originalTargetVolume && (restartMesh.empty() ||
@@ -773,6 +779,29 @@ namespace KelvinBall
         {
           MMG::Mesh mesh;
           mesh.load(m_options.restartMesh, IO::FileFormat::MEDIT);
+          // The MEDIT decimal parser can round a saved double by one ULP.
+          // Restore coordinates from the original binary dataset before any solve.
+          const auto file = IO::HDF5::File(H5Fopen(
+            m_options.restartCoordinates.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+          if (!file)
+            throw std::runtime_error("Cannot open original restart coordinates.");
+          const auto shape = IO::HDF5::readMatrixShape(file.get(), "/Mesh/Geometry/Vertices");
+          if (shape.first != mesh.getVertexCount() || shape.second != 3)
+            throw std::runtime_error("Restart coordinate dimensions differ from volume topology.");
+          const auto values = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+            file.get(), "/Mesh/Geometry/Vertices");
+          for (auto vertex = mesh.getVertex(); vertex; ++vertex)
+          {
+            Math::SpatialPoint coordinate = vertex->getCoordinates();
+            for (Eigen::Index component = 0; component < 3; ++component)
+            {
+              const Real value = values[3 * vertex->getIndex() + component];
+              if (!std::isfinite(value) || std::abs(value - coordinate(component)) > 1e-12)
+                throw std::runtime_error("Restart coordinate order differs from volume topology.");
+              coordinate(component) = value;
+            }
+            mesh.setVertexCoordinates(vertex->getIndex(), coordinate);
+          }
           prepare(mesh);
           const Real h = m_options.configuration.getGridSpacing();
           ReconstructionDiagnostics diagnostics{m_options.configuration.hmin,
@@ -852,7 +881,7 @@ namespace KelvinBall
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
           << Alert::Notation("--iterations=<count>")
           << "       Number of evaluated designs (default: 1)." << Alert::NewLine
-          << Alert::Notation("--restart-mesh=<file>")
+          << Alert::Notation("--restart-mesh=<file> --restart-coordinates=<original.h5>")
           << "    Continue an unchanged double-precision volume mesh (MMG only)."
           << Alert::NewLine << Alert::Notation("--original-target-volume=<value>")
           << " Retain the first campaign's volume reporting reference."
