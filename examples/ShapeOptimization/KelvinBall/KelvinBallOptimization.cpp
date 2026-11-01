@@ -93,6 +93,7 @@ namespace KelvinBall
           Real minimumThickness = 0;
           bool boundaryStep = false;
           bool bemGradient = false;
+          bool bemExportTransport = false;
           size_t bemOrder = 3;
           Real bemEpsilonFactor = 0.6;
           bool reconstructOnly = false;
@@ -121,6 +122,7 @@ namespace KelvinBall
                 minimumThickness = std::stod(std::string(mode.substr(16)));
               else if (mode == "--boundary-step") boundaryStep = true;
               else if (mode == "--bem-gradient") bemGradient = true;
+              else if (mode == "--bem-export-transport") bemExportTransport = true;
               else if (mode.rfind("--bem-order=", 0) == 0) bemOrder = std::stoul(std::string(mode.substr(12)));
               else if (mode.rfind("--bem-epsilon-factor=", 0) == 0) bemEpsilonFactor = std::stod(std::string(mode.substr(21)));
               else if (mode == "--reconstruct-only") reconstructOnly = true;
@@ -166,7 +168,10 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
-            if (bemGradient && (boundaryStep || reconstructOnly || minimumThickness > 0 ||
+            if (bemExportTransport && (!bemGradient || reconstructOnly || stateOnly ||
+                geometryOnly || maxIterations != 2))
+              throw std::runtime_error("BEM transport export needs --bem-gradient --iterations=2 and no state/geometry/reconstruction-only mode.");
+            if (bemGradient && (boundaryStep || minimumThickness > 0 ||
                 configuration.adapt || bemOrder < 2 || !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
               throw std::runtime_error("Native BEM needs order >= 2, positive epsilon factor, and disabled external states/thickness correction.");
             if (maxIterations == 0)
@@ -524,6 +529,26 @@ namespace KelvinBall
         RealFunction target(
           [&](const Geometry::Point& point) { return targetLevelSet.getValue(point); });
         const auto report = fitting.execute(target, targetGradient);
+        // Preserve failed fits as evidence; a returned candidate is not an
+        // accepted BEM update. The comparison also checks the geometric target.
+        std::ofstream fitRecord("swift-fit.json");
+        fitRecord << std::setprecision(17)
+          << "{\"quality_budget_satisfied\":" << (report.qualityBudgetSatisfied ? "true" : "false")
+          << ",\"geometric_target_reached\":"
+          << (report.geometricSup <= parameters.convergence.tolerance.geometric ? "true" : "false")
+          << ",\"geometric_sup\":" << report.geometricSup
+          << ",\"geometric_target\":" << parameters.convergence.tolerance.geometric
+          << ",\"minimum_jacobian\":" << report.minJ
+          << ",\"maximum_relative_distortion\":" << report.maxQRel
+          << ",\"iterations\":" << report.iterations
+          << ",\"reason\":\"" << report.getReasonString() << "\""
+          << ",\"setup_seconds\":" << report.tSetup
+          << ",\"assembly_seconds\":" << report.tAssembly
+          << ",\"solve_seconds\":" << report.tSolve
+          << ",\"line_search_seconds\":" << report.tLineSearch << "}\n";
+        fitRecord.close();
+        if (!fitRecord) throw std::runtime_error("Cannot save SWIFT fit evidence.");
+        saveExact(moved, "swift-fit.mesh");
         if (!report.qualityBudgetSatisfied)
           throw std::runtime_error("The SWIFT fit did not satisfy its mesh quality budget.");
         Alert::Info()
@@ -1525,7 +1550,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   MMG::Mesh mesh = std::move(initial.mesh);
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);
   Optional<MMG::Mesh> bemBackground;
-  if (m_options.bemGradient && m_options.reconstructionMethod == "mmg")
+  if (m_options.bemGradient && !m_options.reconstructOnly &&
+      m_options.reconstructionMethod == "mmg")
   {
     // A common paired trace is necessary: independent remeshed cut triangles
     // do not represent the same piecewise-linear zero contour after transport.
@@ -2684,6 +2710,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         symmetry.scalar(advectionDistance);
         symmetry.vector(advectionDirection);
       }
+      if (m_options.bemExportTransport)
+        saveExactField(advectionDistance, "transport-initial.sol");
       KelvinBall::RotatedNitscheIntegrator advectionCoupling(advectionMesh,
         FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
         rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
@@ -2753,10 +2781,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
 
     const auto stage9Start = Clock::now();
-    if (m_options.boundaryStep)
+    if (m_options.boundaryStep || m_options.bemExportTransport)
     {
       saveExact(advectionMesh, "transport.mesh");
       saveExactField(advectedDistance, "target.sol");
+    }
+    if (m_options.bemExportTransport)
+    {
+      writeHistory(nullSpaceMultiplier, xiRhoInfinityNorm, thetaInfinityNorm, dRhoTheta,
+        dVolumeTheta, requiredDVolumeTheta, rhoGradientDiagnostics,
+        volumeGradientDiagnostics);
+      Alert::Info() << "Saved the chamber transport inputs; no reconstruction or accepted update." << Alert::Raise;
+      return 0;
     }
     announce(m_options.reconstructionMethod == "swift"
         ? "Stage 9: Fitting the advected interface with SWIFT."

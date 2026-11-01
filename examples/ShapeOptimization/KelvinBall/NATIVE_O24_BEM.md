@@ -203,3 +203,34 @@ trial and verify the checkpoint, parameters and numerical binary hashes.
 It records no new measurement at the skipped step. Later iterations restart
 at trial zero. In line-search mode, files are under
 `iteration-N/trial-M/update`, with validation alongside each update directory.
+
+## Controlled reconstruction comparison
+
+`KelvinBall --bem-gradient --bem-export-transport --iterations=2 ...` stops
+before reconstruction. It exports the paired chamber background (`transport.mesh`),
+the projected, redistanced field before transport (`transport-initial.sol`), and
+one transported target (`target.sol`). It performs no accepted shape update.
+`--bem-gradient --reconstruct-only --mesh=transport.mesh --target=target.sol`
+retains the native chamber geometry protections while selecting `mmg` or `swift`.
+The same input files must be used for both backends; switching each backend's
+usual background would confound a comparison of reconstruction alone.
+
+`scripts/bem-reconstruction-compare.py --executable /absolute/KelvinBall
+--checkpoint /absolute/accepted.mesh --expected-rho VALUE --results /new/directory`
+performs this bounded comparison at step=2 and H1=4. All numerical work remains
+native; Python records commands, hashes, exit codes and acceptance diagnostics.
+The pre-transport control includes redistancing/transfer and is not an identity
+reconstruction. No result is promoted to an accepted checkpoint. Volume drift is
+recorded without any volume rejection threshold. Each native stage has a
+30-minute timeout, recorded as a timeout rather than a solver convergence result.
+
+The comparison uses the branch's existing SWIFT implementation, whose fixed-wall
+and tangential-cut constraints remain available. Upstream master at
+`0a1918166d3a6cca7d1fffe4e6e58120d08c16ff` has changed this interface:
+`SWIFT::Problem::assembleBoundaryConditions` accepts homogeneous value DOFs and
+rejects identification constraints. The old slip-boundary parameter is absent.
+This upstream version has been inspected, not merged into this solver; a port
+must preserve the chamber constraint subspace rather than freeze all cut vertices
+or remove their constraints. A successful executable exit is insufficient:
+`swift-fit.json` records geometric and quality criteria, and the independent BEM
+state must also pass the closed-image-surface check.
