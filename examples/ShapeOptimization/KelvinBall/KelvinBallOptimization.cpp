@@ -2691,12 +2691,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             "Background points fell outside the fitted mesh during the transfer.");
         Alert::Info()
           << substageHeading("Fitted-to-background transfer") << Alert::NewLine
-          << diagnosticLabel("Nodal-copy error (distance):")
-          << Alert::Notation::Number((advectionDistance.getData() - distance.getData())
-                 .lpNorm<Eigen::Infinity>())
-          << Alert::NewLine << diagnosticLabel("Nodal-copy error (direction):")
-          << Alert::Notation::Number(
-               (advectionDirection.getData() - theta.getData()).lpNorm<Eigen::Infinity>())
+          << diagnosticLabel("Fitted scalar DOFs:")
+          << Alert::Notation::Number(distance.getData().size())
+          << Alert::NewLine << diagnosticLabel("Background scalar DOFs:")
+          << Alert::Notation::Number(advectionDistance.getData().size())
+          << Alert::NewLine << diagnosticLabel("Unlocated samples:")
+          << Alert::Notation::Number(unlocated)
           << Alert::Raise;
       }
       else
