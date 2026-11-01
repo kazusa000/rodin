@@ -16,6 +16,11 @@ set(RODIN_MULTITHREADED ON CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory("${RODIN_ROOT}" rodin)
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/.." kelvin)
+# The packaged MUMPS headers expose OpenMPI C++ compatibility symbols even
+# in this serial build; keep this dependency correction local to the example.
+find_library(KELVIN_MPI_CXX NAMES mpi_cxx
+  HINTS "${MUMPS_ROOT}/lib/x86_64-linux-gnu/openmpi/lib" REQUIRED)
+target_link_libraries(KelvinBallSupport PUBLIC "${KELVIN_MPI_CXX}")
 set_target_properties(KelvinBall PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_executable(KelvinL15CheckpointTest CheckpointTest.cpp ../Configuration.cpp)
 target_include_directories(KelvinL15CheckpointTest PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")

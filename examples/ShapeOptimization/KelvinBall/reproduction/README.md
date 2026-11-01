@@ -7,7 +7,9 @@ The synthetic checkpoint fixture is an I/O and coordinate-generation test, not a
 The numerical changes from upstream are confined to the optional graded initial
 background in Configuration/Sphere. The optimizer additionally supports opt-in
 native checkpoint I/O. One missing `typename` before `decltype(classifier)::Parameters`
-is a GCC compatibility correction, not a change to the SWIFT algorithm. Framework
+is a GCC compatibility correction, not a change to the SWIFT algorithm. The standalone
+build explicitly links the packaged OpenMPI C++ compatibility library required by
+its MUMPS headers; the numerical executable still runs serial MPI / OpenMP4. Framework
 `src/`, gradients, Stokes solves, rotated coupling, transport, and fitting remain upstream.
 
 ## Fixed experiment
