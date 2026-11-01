@@ -28,6 +28,21 @@ namespace KelvinBall
     Mesh cube = Mesh::UniformGrid(Polytope::Type::Tetrahedron,
       {m_configuration.points, m_configuration.points, m_configuration.points});
     cube.scale(m_configuration.getGridSpacing());
+    if (m_configuration.gradedChamber)
+    {
+      const auto axis = m_configuration.getGridCoordinates();
+      for (auto vertex = cube.getVertex(); vertex; ++vertex)
+      {
+        Math::SpatialPoint coordinate = vertex->getCoordinates();
+        for (Eigen::Index component = 0; component < coordinate.size(); ++component)
+        {
+          const size_t index = static_cast<size_t>(
+            std::llround(coordinate(component) / m_configuration.getGridSpacing()));
+          coordinate(component) = axis.at(index);
+        }
+        cube.setVertexCoordinates(vertex->getIndex(), coordinate);
+      }
+    }
 
     using Key = std::tuple<long long, long long, long long>;
     constexpr Real tolerance = 1e-12;

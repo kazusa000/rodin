@@ -48,6 +48,7 @@
 #include "Thickness.h"
 #include "HilbertIdentification.h"
 #include "Sphere.h"
+#include "Checkpoint.h"
 #include "../../Adaptation/SWIFT/Options.h"
 
 using namespace Rodin;
@@ -88,6 +89,8 @@ namespace KelvinBall
           Real minimumThickness = 0;
           Math::SpatialVector<Real> motionForce;
           std::string reconstructionMethod = "swift";
+          std::string restartCheckpoint;
+          bool saveCheckpoints = false;
 
           bool parse(int argc, char** argv)
           {
@@ -122,6 +125,10 @@ namespace KelvinBall
                 reconstructionMethod = std::string(mode.substr(17));
               else if (mode.rfind("--swift-", 0) == 0)
                 continue;
+              else if (mode.rfind("--restart-checkpoint=", 0) == 0)
+                restartCheckpoint = std::string(mode.substr(21));
+              else if (mode == "--save-checkpoints")
+                saveCheckpoints = true;
               else if (mode == "--save-mesh")
                 saveMeshDiagnostic = true;
               else if (mode == "--geometry-only")
@@ -140,6 +147,8 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
+            if ((!restartCheckpoint.empty() || saveCheckpoints) && reconstructionMethod != "swift")
+              throw std::runtime_error("Native paired-mesh checkpoints require the SWIFT path.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
             if (!(regularizationFactor > 0))
@@ -368,7 +377,7 @@ namespace KelvinBall
         }
         const auto& options = *m_reconstructionOptions;
         MinSTCut classifier(static_cast<const KelvinBall::Mesh&>(classified));
-        decltype(classifier)::Parameters parameters;
+        typename decltype(classifier)::Parameters parameters;
         parameters.fidelity = options.classification.fidelity;
         parameters.smoothing = [&](const Polytope& face) {
           const auto& cells =
@@ -785,6 +794,36 @@ namespace KelvinBall
 
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
+        if (!m_options.restartCheckpoint.empty())
+        {
+          const std::filesystem::path directory(m_options.restartCheckpoint);
+          if (!std::filesystem::exists(directory / "READY"))
+            throw std::runtime_error("Incomplete SWIFT checkpoint.");
+          const auto file = IO::HDF5::File(H5Fopen(
+            (directory / "state.h5").c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+          if (!file)
+            throw std::runtime_error("Cannot read SWIFT checkpoint state.");
+          const auto state = IO::HDF5::readVectorDataset<IO::HDF5::F64>(file.get(), "/State");
+          if (state.size() != 10 || state[0] != 1 || !std::isfinite(state[1]) ||
+              state[1] < 0 || state[1] != std::floor(state[1]) ||
+              !std::isfinite(state[2]) || !(state[2] > 0) ||
+              !std::isfinite(state[3]) || !(state[3] > 0) ||
+              state[4] != m_options.configuration.getGridSpacing() ||
+              state[5] != m_options.configuration.outerRadius ||
+              state[6] != m_options.regularizationFactor ||
+              state[7] != m_options.stepFactor || state[8] != m_options.minimumThickness ||
+              state[9] != static_cast<Real>(m_options.configuration.adapt))
+            throw std::runtime_error("Checkpoint version, parameters or scalar state changed.");
+          m_restartStep = static_cast<size_t>(state[1]);
+          m_restartTargetVolume = state[2];
+          auto mesh = Checkpoint::loadMesh((directory / "chamber.h5").string());
+          auto background = Checkpoint::loadMesh((directory / "background.h5").string());
+          const Real h = m_options.configuration.getGridSpacing();
+          ReconstructionDiagnostics diagnostics{m_options.configuration.hmin,
+            m_options.configuration.hmax, Real(0.1) * h * h, 0,
+            mesh.getCellCount(), mesh.getCellCount()};
+          return {std::move(mesh), std::move(background), state[3], diagnostics};
+        }
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
@@ -1433,6 +1472,9 @@ namespace KelvinBall
         return diagnostics;
       }
 
+      size_t m_restartStep = 0;
+      Optional<Real> m_restartTargetVolume;
+
       int m_argc;
       char** m_argv;
   };
@@ -1461,7 +1503,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportConfiguration(requestedWelschScale);
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
-  announce(m_options.reconstructionMethod == "swift"
+  announce(!m_options.restartCheckpoint.empty()
+      ? "Stage 1: Loading full SWIFT chamber and background checkpoint."
+      : m_options.reconstructionMethod == "swift"
       ? "Stage 1: Preparing the background mesh and fitting the initial sphere with "
         "SWIFT."
       : "Stage 1: Discretizing the initial sphere with MMG.");
@@ -1487,9 +1531,25 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
+  const Real targetVolume = m_restartTargetVolume
+    ? *m_restartTargetVolume : mesh.getVolume(Obstacle);
+  const auto saveCheckpoint = [&](size_t localStep) {
+    if (m_options.saveCheckpoints)
+    {
+      if (!swiftBackground)
+        throw std::runtime_error("SWIFT checkpoint has no background.");
+      Checkpoint::save(m_restartStep + localStep, mesh, *swiftBackground,
+        {1, static_cast<Real>(m_restartStep + localStep), targetVolume, backgroundH,
+         initialGridSpacing, outerRadius, m_options.regularizationFactor,
+         m_options.stepFactor, m_options.minimumThickness,
+         static_cast<Real>(m_options.configuration.adapt)});
+    }
+  };
   if (m_options.geometryOnly)
+  {
+    saveCheckpoint(0);
     return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
+  }
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1576,6 +1636,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         backgroundH = meanElementSize(*swiftBackground);
       }
     }
+    saveCheckpoint(iteration);
     const Real h = meanElementSize(mesh);
     const auto meshDiagnostics = getMeshDiagnostics(mesh);
     const Real hilbertLength = m_options.regularizationFactor * initialGridSpacing;

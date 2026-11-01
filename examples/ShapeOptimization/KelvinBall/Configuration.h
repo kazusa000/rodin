@@ -8,6 +8,7 @@
 #define KELVIN_BALL_CONFIGURATION_H
 
 #include <string_view>
+#include <vector>
 
 #include <Rodin/Types.h>
 
@@ -26,6 +27,10 @@ namespace KelvinBall
       Real hmin = 0;
       Real hmax = 0;
       Real outerRadius = 2;
+      /// Optional graded initial background; optimization scales still use explicit --h.
+      bool gradedChamber = false;
+      Real nearFieldRadius = 2;
+      Real chamberGradation = 1.3;
       Real nitschePenalty = DefaultNitschePenalty;
       Real stabilizationFactor = DefaultStabilizationFactor;
       /// Settings of the initial SWIFT background preparation.
@@ -49,6 +54,9 @@ namespace KelvinBall
       void finalize();
 
       Real getGridSpacing() const;
+
+      /** @returns Axis coordinates with the original uniform core and a graded exterior. */
+      std::vector<Real> getGridCoordinates() const;
   };
 }
 
