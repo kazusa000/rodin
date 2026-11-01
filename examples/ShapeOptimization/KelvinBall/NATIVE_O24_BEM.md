@@ -272,7 +272,7 @@ scalar state before each state evaluation. READY certifies serialization only;
 a successful native state record is required for a valid candidate.
 `--restart-checkpoint=DIR` reloads both meshes and checks recorded model/step
 parameters. No checkpoint is automatically accepted, no volume drift rejection
-is added, and the BEM image-edge check is retained pending actual interface tests.
+is added, and the BEM image-edge check is retained for actual interface tests.
 
 The old optional seeded/frozen-cut Sphere route is retained solely for the
 existing BEM reference/finite-difference fixture; it is not used by the upstream
@@ -291,3 +291,24 @@ This is an integration check, not a restarted long optimization. Its Python
 requires h5py/numpy only to inspect persisted data; no numerical BEM is in Python.
 The older `bem-gradient-chamber-run.py` / reconstruction comparison scripts belong
 to their recorded pre-merge versions and are not current SWIFT entrypoints.
+
+
+The bounded run at numerical commit `1940202f` completed on 28h. Build, the
+full-surface reference (7.09e-12 relative error), gradient FD (3.21e-7), 97-dataset
+checkpoint round-trip and the actual old checkpoint state (1.96e-13 rho change)
+passed. The step=2, H1=4 SWIFT candidate did **not** pass acceptance. The actual
+upstream background adapted from 25,511 to 89,694 cells and produced 5,714
+interface triangles. SWIFT stopped after 13 fitting updates with
+`best-effort-step-stagnation`; geometric sup=0.01244418 exceeded target=0.00277778.
+BEM rejected the saved candidate before assembly with 5,904 unmatched image edges
+(native return code -6). No new accepted checkpoint or candidate rho exists.
+
+A read-only HDF5 audit reproduced that count. Cut-plane normal-position error was
+at most 3.14e-16, but patch seam midpoints were separated from other image boundary
+segments by up to 0.03399 (median 0.005844). This is a seam-curve compatibility
+problem in this candidate, not missing upstream cut-plane support or a mere
+numbering mismatch. Eikonal/transport rotated scalar jumps were 0.1031/0.2240;
+this run alone does not isolate classification versus fitting contributions.
+The failed candidate and complete starting paired-mesh checkpoint remain under
+`out/project-03/bem-gradient/upstream-swift-20261101-1940202f/validation` in the
+28h workspace. No long campaign or automatic parameter retry was started.
