@@ -27,11 +27,12 @@ namespace KelvinBall
       {
         using namespace Rodin;
         mesh.save(path, IO::FileFormat::HDF5);
-        const auto file = IO::HDF5::File(H5Fopen(path.c_str(), H5F_ACC_RDWR, H5P_DEFAULT));
+        const auto file =
+          IO::HDF5::File(H5Fopen(path.c_str(), H5F_ACC_RDWR, H5P_DEFAULT));
         if (!file)
           throw std::runtime_error("Cannot append checkpoint MMG tags.");
-        const auto group = IO::HDF5::Group(H5Gcreate2(file.get(), "/KelvinMMG",
-          H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+        const auto group = IO::HDF5::Group(
+          H5Gcreate2(file.get(), "/KelvinMMG", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
         if (!group)
           throw std::runtime_error("Cannot create checkpoint MMG group.");
         const std::array<const IndexSet*, 6> sets{&mesh.getCorners(), &mesh.getRidges(),
@@ -41,7 +42,8 @@ namespace KelvinBall
         {
           std::vector<IO::HDF5::U64> values(sets[i]->begin(), sets[i]->end());
           std::sort(values.begin(), values.end());
-          IO::HDF5::writeVectorDataset(file.get(), "/KelvinMMG/Tags" + std::to_string(i), values);
+          IO::HDF5::writeVectorDataset(
+            file.get(), "/KelvinMMG/Tags" + std::to_string(i), values);
         }
       }
 
@@ -51,7 +53,8 @@ namespace KelvinBall
         using namespace Rodin;
         MMG::Mesh mesh;
         mesh.load(path, IO::FileFormat::HDF5);
-        const auto file = IO::HDF5::File(H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+        const auto file =
+          IO::HDF5::File(H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
         if (!file)
           throw std::runtime_error("Cannot read checkpoint MMG tags.");
         const std::array<IndexSet*, 6> sets{&mesh.getCorners(), &mesh.getRidges(),
@@ -66,7 +69,8 @@ namespace KelvinBall
           for (const auto index : values)
           {
             if (index >= mesh.getConnectivity().getCount(dimensions[i]))
-              throw std::runtime_error("Checkpoint MMG tag index is outside its topology.");
+              throw std::runtime_error(
+                "Checkpoint MMG tag index is outside its topology.");
             sets[i]->insert(index);
           }
         }
@@ -92,7 +96,8 @@ namespace KelvinBall
         if (H5Fflush(file.get(), H5F_SCOPE_GLOBAL) < 0)
           throw std::runtime_error("Cannot flush checkpoint scalar state.");
         std::ofstream ready(directory / "READY");
-        ready << "Complete native SWIFT checkpoint; not proof of completed state evaluation.\n";
+        ready << "Complete native SWIFT checkpoint; not proof of completed state "
+                 "evaluation.\n";
         if (!ready)
           throw std::runtime_error("Cannot publish checkpoint completion marker.");
       }

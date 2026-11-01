@@ -51,7 +51,8 @@ namespace Rodin::Variational
       /** Stable, permutation-symmetric positive surface quadrature.
        * Triangle numbering must not introduce spurious chirality.
        */
-      static const QF::QuadratureFormula& getQuadrature(size_t order, Geometry::Polytope::Type geometry)
+      static const QF::QuadratureFormula& getQuadrature(
+        size_t order, Geometry::Polytope::Type geometry)
       {
         if (geometry != Geometry::Polytope::Type::Triangle ||
             !QF::WitherdenVincent::isAvailable(order, geometry))

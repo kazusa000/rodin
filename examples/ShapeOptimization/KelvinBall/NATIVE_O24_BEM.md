@@ -279,3 +279,15 @@ existing BEM reference/finite-difference fixture; it is not used by the upstream
 SWIFT reconstruction path. Earlier full-volume and old MMG experiments remain
 historical, opt-in targets. Smooth-kernel quadrature uses the new immutable
 Rodin quadrature factory while retaining its rules and exact component contraction.
+
+The bounded `scripts/bem-upstream-swift-check.py` runner checks the existing small
+full-surface reference and gradient finite differences, imports a hash-verified
+legacy chamber, checks HDF5 dataset equality after a native checkpoint round-trip,
+compares its state to the last accepted rho, then performs one SWIFT update with
+step=2 and H1=4. It records actual exit codes and requires strict rho increase,
+weak Armijo, closed image edges, state residual and volume-direction checks before
+labeling that candidate accepted. Volume drift is recorded without a cutoff.
+This is an integration check, not a restarted long optimization. Its Python
+requires h5py/numpy only to inspect persisted data; no numerical BEM is in Python.
+The older `bem-gradient-chamber-run.py` / reconstruction comparison scripts belong
+to their recorded pre-merge versions and are not current SWIFT entrypoints.

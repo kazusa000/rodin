@@ -84,11 +84,11 @@ namespace KelvinBall
           bool saveMeshDiagnostic = false;
           bool geometryOnly = false;
           bool stateOnly = false;
-          bool bemGradient = false;
-          bool saveCheckpoints = false;
-          size_t bemOrder = 3;
-          Real bemEpsilonFactor = 0.6;
-          std::string inputMesh, restartCheckpoint;
+        bool bemGradient = false;
+        bool saveCheckpoints = false;
+        size_t bemOrder = 3;
+        Real bemEpsilonFactor = 0.6;
+        std::string inputMesh, restartCheckpoint;
           bool thicknessDiagnostics = false;
           Real regularizationFactor = 4;
           Real normalRegularizationFactor = 1;
@@ -130,12 +130,18 @@ namespace KelvinBall
                 reconstructionMethod = std::string(mode.substr(17));
               else if (mode.rfind("--swift-", 0) == 0)
                 continue;
-              else if (mode == "--bem-gradient") bemGradient = true;
-              else if (mode == "--save-checkpoints") saveCheckpoints = true;
-              else if (mode.starts_with("--mesh=")) inputMesh = mode.substr(7);
-              else if (mode.starts_with("--restart-checkpoint=")) restartCheckpoint = mode.substr(21);
-              else if (mode.starts_with("--bem-order=")) bemOrder = std::stoul(std::string(mode.substr(12)));
-              else if (mode.starts_with("--bem-epsilon-factor=")) bemEpsilonFactor = std::stod(std::string(mode.substr(21)));
+            else if (mode == "--bem-gradient")
+              bemGradient = true;
+            else if (mode == "--save-checkpoints")
+              saveCheckpoints = true;
+            else if (mode.starts_with("--mesh="))
+              inputMesh = mode.substr(7);
+            else if (mode.starts_with("--restart-checkpoint="))
+              restartCheckpoint = mode.substr(21);
+            else if (mode.starts_with("--bem-order="))
+              bemOrder = std::stoul(std::string(mode.substr(12)));
+            else if (mode.starts_with("--bem-epsilon-factor="))
+              bemEpsilonFactor = std::stod(std::string(mode.substr(21)));
               else if (mode == "--save-mesh")
                 saveMeshDiagnostic = true;
               else if (mode == "--geometry-only")
@@ -154,12 +160,16 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
-            if (bemGradient && (minimumThickness > 0 || bemOrder < 2 ||
-                !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
-              throw std::runtime_error("Native BEM needs order >= 2, positive epsilon and thickness disabled.");
-            if ((!inputMesh.empty() && !restartCheckpoint.empty()) ||
-                ((!restartCheckpoint.empty() || saveCheckpoints) && reconstructionMethod != "swift"))
-              throw std::runtime_error("Use one input and SWIFT for complete checkpoints.");
+          if (bemGradient &&
+            (minimumThickness > 0 || bemOrder < 2 || !std::isfinite(bemEpsilonFactor) ||
+              bemEpsilonFactor <= 0))
+            throw std::runtime_error(
+              "Native BEM needs order >= 2, positive epsilon and thickness disabled.");
+          if ((!inputMesh.empty() && !restartCheckpoint.empty()) ||
+            ((!restartCheckpoint.empty() || saveCheckpoints) &&
+              reconstructionMethod != "swift"))
+            throw std::runtime_error(
+              "Use one input and SWIFT for complete checkpoints.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
             if (!(regularizationFactor > 0))
@@ -527,11 +537,12 @@ namespace KelvinBall
         {
           std::ofstream record("swift-fit-latest.json");
           record << std::setprecision(17) << "{\"quality_budget_satisfied\":"
-            << (report.qualityBudgetSatisfied ? "true" : "false")
-            << ",\"geometric_sup\":" << report.geometricSup
-            << ",\"geometric_target\":" << parameters.convergence.tolerance.geometric
-            << ",\"reason\":\"" << report.getReasonString() << "\"}\n";
-          if (!record) throw std::runtime_error("Cannot record SWIFT fit.");
+                 << (report.qualityBudgetSatisfied ? "true" : "false")
+                 << ",\"geometric_sup\":" << report.geometricSup
+                 << ",\"geometric_target\":" << parameters.convergence.tolerance.geometric
+                 << ",\"reason\":\"" << report.getReasonString() << "\"}\n";
+          if (!record)
+            throw std::runtime_error("Cannot record SWIFT fit.");
         }
         if (!report.qualityBudgetSatisfied)
           throw std::runtime_error(
@@ -823,28 +834,37 @@ namespace KelvinBall
           const std::filesystem::path directory(m_options.restartCheckpoint);
           if (!std::filesystem::exists(directory / "READY"))
             throw std::runtime_error("Incomplete SWIFT checkpoint.");
-          const auto file = IO::HDF5::File(H5Fopen((directory / "state.h5").c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
-          if (!file) throw std::runtime_error("Cannot read checkpoint state.");
-          const auto state = IO::HDF5::readVectorDataset<IO::HDF5::F64>(file.get(), "/State");
+          const auto file = IO::HDF5::File(
+            H5Fopen((directory / "state.h5").c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+          if (!file)
+            throw std::runtime_error("Cannot read checkpoint state.");
+          const auto state =
+            IO::HDF5::readVectorDataset<IO::HDF5::F64>(file.get(), "/State");
           if (state.size() != 14 || state[0] != 2 || !std::isfinite(state[1]) ||
-              state[1] < 0 || state[1] != std::floor(state[1]) ||
-              !std::isfinite(state[2]) || state[2] <= 0 || !std::isfinite(state[3]) || state[3] <= 0 ||
-              state[4] != m_options.configuration.getGridSpacing() || state[5] != m_options.configuration.outerRadius ||
-              state[6] != m_options.regularizationFactor || state[7] != m_options.stepFactor ||
-              state[8] != m_options.minimumThickness || state[9] != Real(m_options.configuration.adapt) ||
-              state[10] != Real(m_options.bemGradient) || state[11] != Real(m_options.bemOrder) ||
-              state[12] != m_options.bemEpsilonFactor || state[13] != m_options.configuration.seedAmplitude)
+            state[1] < 0 || state[1] != std::floor(state[1]) ||
+            !std::isfinite(state[2]) || state[2] <= 0 || !std::isfinite(state[3]) ||
+            state[3] <= 0 || state[4] != m_options.configuration.getGridSpacing() ||
+            state[5] != m_options.configuration.outerRadius ||
+            state[6] != m_options.regularizationFactor ||
+            state[7] != m_options.stepFactor || state[8] != m_options.minimumThickness ||
+            state[9] != Real(m_options.configuration.adapt) ||
+            state[10] != Real(m_options.bemGradient) ||
+            state[11] != Real(m_options.bemOrder) ||
+            state[12] != m_options.bemEpsilonFactor ||
+            state[13] != m_options.configuration.seedAmplitude)
             throw std::runtime_error("Checkpoint parameters or scalar state changed.");
-          m_restartStep = static_cast<size_t>(state[1]); m_restartTargetVolume = state[2];
+          m_restartStep = static_cast<size_t>(state[1]);
+          m_restartTargetVolume = state[2];
           auto mesh = Checkpoint::loadMesh((directory / "chamber.h5").string());
           auto background = Checkpoint::loadMesh((directory / "background.h5").string());
-          return {std::move(mesh),std::move(background),state[3],{}};
+          return {std::move(mesh), std::move(background), state[3], {}};
         }
         if (!m_options.inputMesh.empty())
         {
           MMG::Mesh mesh;
           std::ifstream input(m_options.inputMesh);
-          if (!input) throw std::runtime_error("Cannot read input chamber.");
+          if (!input)
+            throw std::runtime_error("Cannot read input chamber.");
           MMG::MeshLoader(mesh).load(input);
           prepare(mesh);
           Optional<MMG::Mesh> background;
@@ -857,7 +877,7 @@ namespace KelvinBall
             background.emplace(std::move(initial.mesh));
             h = meanElementSize(*background);
           }
-          return {std::move(mesh),std::move(background),h,diagnostics};
+          return {std::move(mesh), std::move(background), h, diagnostics};
         }
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
@@ -1561,15 +1581,19 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
-  const Real targetVolume = m_restartTargetVolume ? *m_restartTargetVolume : mesh.getVolume(Obstacle);
+  const Real targetVolume =
+    m_restartTargetVolume ? *m_restartTargetVolume : mesh.getVolume(Obstacle);
   const auto saveCheckpoint = [&](size_t iteration) {
-    if (!m_options.saveCheckpoints) return;
-    if (!swiftBackground) throw std::runtime_error("Missing SWIFT background.");
-    Checkpoint::save(m_restartStep + iteration,mesh,*swiftBackground,
-      {2,Real(m_restartStep + iteration),targetVolume,backgroundH,initialGridSpacing,outerRadius,
-       m_options.regularizationFactor,m_options.stepFactor,m_options.minimumThickness,
-       Real(m_options.configuration.adapt),Real(m_options.bemGradient),Real(m_options.bemOrder),
-       m_options.bemEpsilonFactor,m_options.configuration.seedAmplitude});
+    if (!m_options.saveCheckpoints)
+      return;
+    if (!swiftBackground)
+      throw std::runtime_error("Missing SWIFT background.");
+    Checkpoint::save(m_restartStep + iteration, mesh, *swiftBackground,
+      {2, Real(m_restartStep + iteration), targetVolume, backgroundH, initialGridSpacing,
+        outerRadius, m_options.regularizationFactor, m_options.stepFactor,
+        m_options.minimumThickness, Real(m_options.configuration.adapt),
+        Real(m_options.bemGradient), Real(m_options.bemOrder), m_options.bemEpsilonFactor,
+        m_options.configuration.seedAmplitude});
   };
   if (m_options.geometryOnly)
   {
@@ -1716,7 +1740,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reportStageTiming(2, stageSeconds[1]);
 
     const auto stage3Start = Clock::now();
-    announce(m_options.bemGradient ? "Stage 3: Solving native infinite-exterior BEM states and derivative." : "Stage 3: Solving the translational and rotational Stokes states.");
+    announce(m_options.bemGradient
+        ? "Stage 3: Solving native infinite-exterior BEM states and derivative."
+        : "Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
     const KelvinBall::Metrics resistanceMetrics(metricParameters);
     P1 shapeSpace(mesh, 3);
@@ -1724,26 +1750,42 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     KelvinBall::Values metrics;
     if (m_options.bemGradient)
     {
-      uT0.getData().setZero(); uT1.getData().setZero(); uT2.getData().setZero();
-      uR0.getData().setZero(); uR1.getData().setZero(); uR2.getData().setZero();
-      pT0.getData().setZero(); pT1.getData().setZero(); pT2.getData().setZero();
-      pR0.getData().setZero(); pR1.getData().setZero(); pR2.getData().setZero();
-      const auto result = BEM(m_options.bemOrder,m_options.bemEpsilonFactor).evaluateChamber(
-        mesh,shapeSpace,bemLoad,!m_options.stateOnly);
-      metrics.k=result.k; metrics.c=result.c; metrics.q=result.q; metrics.rho=result.rho;
-      metrics.couplingSymmetry=result.reciprocity;
-      metrics.nitscheJump=std::numeric_limits<Real>::quiet_NaN();
-      std::ofstream record("bem-state-"+std::to_string(iteration)+".json");
-      record << std::setprecision(17) << "{\"rho\":" << result.rho
-        << ",\"k\":" << result.k << ",\"c\":" << result.c << ",\"q\":" << result.q
+      uT0.getData().setZero();
+      uT1.getData().setZero();
+      uT2.getData().setZero();
+      uR0.getData().setZero();
+      uR1.getData().setZero();
+      uR2.getData().setZero();
+      pT0.getData().setZero();
+      pT1.getData().setZero();
+      pT2.getData().setZero();
+      pR0.getData().setZero();
+      pR1.getData().setZero();
+      pR2.getData().setZero();
+      const auto result =
+        BEM(m_options.bemOrder, m_options.bemEpsilonFactor)
+          .evaluateChamber(mesh, shapeSpace, bemLoad, !m_options.stateOnly);
+      metrics.k = result.k;
+      metrics.c = result.c;
+      metrics.q = result.q;
+      metrics.rho = result.rho;
+      metrics.couplingSymmetry = result.reciprocity;
+      metrics.nitscheJump = std::numeric_limits<Real>::quiet_NaN();
+      std::ofstream record("bem-state-" + std::to_string(iteration) + ".json");
+      record
+        << std::setprecision(17) << "{\"rho\":" << result.rho << ",\"k\":" << result.k
+        << ",\"c\":" << result.c << ",\"q\":" << result.q
         << ",\"residual\":" << result.residual << ",\"epsilon\":" << result.epsilon
         << ",\"panels\":" << result.panels << ",\"open_edges\":" << result.openEdges
-        << ",\"state_dofs\":" << result.stateDOFs << ",\"independent_dofs\":" << result.independentDOFs
+        << ",\"state_dofs\":" << result.stateDOFs
+        << ",\"independent_dofs\":" << result.independentDOFs
         << ",\"design_domain\":\"O24-chamber\",\"bem_domain\":\"infinite-exterior\"}\n";
-      if (!record) throw std::runtime_error("Cannot record BEM state.");
+      if (!record)
+        throw std::runtime_error("Cannot record BEM state.");
     }
-    else metrics = resistanceMetrics.evaluateChamber(
-      Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
+    else
+      metrics = resistanceMetrics.evaluateChamber(Vh, Qh, fluidCoupling, uT0, uT1, uT2,
+        uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
     stageSeconds[2] = elapsedSeconds(stage3Start);
     reportStageTiming(3, stageSeconds[2]);
     const Real k = metrics.k;
@@ -2162,9 +2204,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                       << Alert::Raise;
       }
       if (m_options.bemGradient)
-        rhoGradientDiagnostics = identifyGradient(identification, RealFunction{0}, rhoGradient, "BEM rho", &bemLoad);
+        rhoGradientDiagnostics = identifyGradient(
+          identification, RealFunction{0}, rhoGradient, "BEM rho", &bemLoad);
       else
-        rhoGradientDiagnostics = identifyGradient(identification, -rhoDensity, rhoGradient, "Rho");
+        rhoGradientDiagnostics =
+          identifyGradient(identification, -rhoDensity, rhoGradient, "Rho");
       volumeGradientDiagnostics =
         identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
     }
@@ -2176,7 +2220,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     dVolume = FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
     dRho.assemble();
     dVolume.assemble();
-    if (m_options.bemGradient) dRho.getVector() = bemLoad;
+    if (m_options.bemGradient)
+      dRho.getVector() = bemLoad;
     const Real volumeMetric = dVolume(volumeGradient);
     if (!(std::isfinite(volumeMetric) && std::abs(volumeMetric) > Real(1e-20)))
       throw std::runtime_error("The volume gradient has zero constraint derivative.");
@@ -2379,29 +2424,20 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       fluidState.clear();
       fluidState.setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
       if (!m_options.bemGradient)
+      {
         fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Rotation_0", uR0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Rotation_1", uR1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Rotation_2", uR2, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         fluidState.add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
+      }
       GridFunction chamberMotion(Vh);
       chamberMotion.getData() = motionTranslation(0) * uT0.getData() +
         motionTranslation(1) * uT1.getData() + motionTranslation(2) * uT2.getData() +
@@ -2528,29 +2564,20 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       sewedFluidOutput.clear();
       sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
       if (!m_options.bemGradient)
+      {
         sewedFluidOutput.add("Translation_0", sewedUT0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Translation_1", sewedUT1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Translation_2", sewedUT2, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Rotation_0", sewedUR0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Rotation_1", sewedUR1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Rotation_2", sewedUR2, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Pressure_Translation_0", sewedPT0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Pressure_Translation_1", sewedPT1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Pressure_Translation_2", sewedPT2, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Pressure_Rotation_0", sewedPR0, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Pressure_Rotation_1", sewedPR1, IO::XDMF::Center::Node);
-      if (!m_options.bemGradient)
         sewedFluidOutput.add("Pressure_Rotation_2", sewedPR2, IO::XDMF::Center::Node);
+      }
       GridFunction fluidMotion(sewedVelocitySpace);
       fluidMotion.getData() = motionTranslation(0) * sewedUT0.getData() +
         motionTranslation(1) * sewedUT1.getData() +

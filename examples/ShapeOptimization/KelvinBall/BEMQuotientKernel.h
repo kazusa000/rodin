@@ -59,8 +59,12 @@ namespace KelvinBall
         }
       }
       /// Same positive symmetric quadrature as the full-surface reference model.
-      static const QF::QuadratureFormula& getQuadrature(size_t order,Polytope::Type geometry)
-      { return RegularizedStokeslet::getQuadrature(order,geometry); }
+      static const QF::QuadratureFormula& getQuadrature(
+        size_t order, Polytope::Type geometry)
+      {
+        return RegularizedStokeslet::getQuadrature(order, geometry);
+      }
+
     private:
       struct Rotation { std::array<size_t,3> column{}; std::array<Real,3> sign{}; };
       std::vector<Rotation> m_rotations;

@@ -4493,8 +4493,9 @@ namespace Rodin::Variational
           if constexpr (KernelType::SmoothKernel && (FormLanguage::IsVectorRange<Range>::Value ||
               FormLanguage::IsMatrixRange<Range>::Value))
           {
-            const auto quadrature = [](size_t order, Geometry::Polytope::Type geometry)
-              -> const QF::QuadratureFormula& {
+            const auto quadrature =
+              [](size_t order,
+                Geometry::Polytope::Type geometry) -> const QF::QuadratureFormula& {
               if constexpr (requires { KernelType::getQuadrature(order, geometry); })
                 return KernelType::getQuadrature(order, geometry);
               else
@@ -4505,11 +4506,13 @@ namespace Rodin::Variational
             const auto& tx = trp.getQuadrature(trq);
             const auto& ty = tep.getQuadrature(teq);
             // Reference P1 basis values depend on rule and range, not cell coordinates.
-            const auto tabulate = [](auto& values, auto& entries, const QF::QuadratureFormula*& identity, size_t& count,
+            const auto tabulate = [](auto& values, auto& entries,
+                                    const QF::QuadratureFormula*& identity, size_t& count,
               const auto& fe, const auto& rule) {
               if (identity != &rule || count != fe.getCount())
               {
-                identity = &rule; count = fe.getCount();
+                identity = &rule;
+                count = fe.getCount();
                 values.resize(rule.getSize() * count);
                 entries.clear();
                 entries.resize(rule.getSize() * count);
