@@ -14,7 +14,7 @@
  * Provides MeshPrinter and MeshLoader specializations for
  * `Mesh<Context::MPI>` using the HDF5 file format.
  *
- * Each MPI rank persists its own local @ref Rodin::Geometry::Shard "shard" independently: the printer
+ * Each MPI rank persists its own local @ref Rodin::Geometry::Shard "shard" independently. The printer
  * delegates to @ref Rodin::IO::MeshPrinter "MeshPrinter<FileFormat::HDF5, Context::Local>" to write the
  * base mesh topology and then appends @ref Rodin::Geometry::Shard "shard"-specific metadata (ownership
  * flags, polytope index maps, ghost-to-owner maps, and halo CSR) under the
@@ -48,6 +48,8 @@ namespace Rodin::IO
    * path using the canonical local mesh HDF5 layout and the vertex/cell @ref Rodin::Geometry::Shard "shard"
    * metadata stored under `/Shard/...`.  The file is expected to have been
    * produced by `MeshPrinter<FileFormat::HDF5, Context::MPI>`.
+   * Reconstruction is collective. The maximum local dimension determines
+   * the distributed dimension and the metadata extent on empty shards.
    *
    * @note Each rank must be given a rank-specific file path (e.g. via
    *       the callable filename overload on Mesh<Context::MPI>::load).
@@ -91,14 +93,16 @@ namespace Rodin::IO
       }
 
       /**
-       * @brief Loads the local mesh shard from the given HDF5 file.
+       * @brief Collectively loads shard files and establishes the distributed dimension.
        *
        * @param[in] filename  Path to the HDF5 file for this rank's shard.
        */
       void load(const boost::filesystem::path& filename) override
       {
         auto& mesh = this->getObject();
-        mesh.getShard() = loadShard(filename);
+        mesh = Geometry::Mesh<Context::MPI>::Builder(mesh.getContext())
+                 .initialize(loadShard(filename, mesh.getContext()))
+                 .finalize();
       }
 
     private:
@@ -115,10 +119,12 @@ namespace Rodin::IO
       /**
        * @brief Loads a local mesh and its shard metadata.
        * @param filename Path of the mesh shard file.
+       * @param context Distributed context used to reconstruct shard ownership.
        * @returns Mesh shard reconstructed from the HDF5 file.
        */
 
-      static Geometry::Shard loadShard(const boost::filesystem::path& filename)
+      static Geometry::Shard loadShard(
+        const boost::filesystem::path& filename, const Context::MPI& context)
       {
         Geometry::Mesh<Context::Local> baseMesh;
         baseMesh.load(filename, FileFormat::HDF5);
@@ -133,13 +139,15 @@ namespace Rodin::IO
         }
 
         const size_t Dmax = baseMesh.getDimension();
+        const size_t dimension = boost::mpi::all_reduce(
+          context.getCommunicator(), Dmax, boost::mpi::maximum<size_t>());
         const auto vertexMetadata =
           readShardDimensionMetadata(file.get(), baseMesh, 0);
         const auto cellMetadata =
           readShardDimensionMetadata(file.get(), baseMesh, Dmax);
 
         Geometry::Shard::Builder builder;
-        builder.initialize(baseMesh);
+        builder.initialize(baseMesh, dimension);
 
         includeDimension(builder, 0, vertexMetadata);
         if (Dmax > 0)
@@ -218,7 +226,7 @@ namespace Rodin::IO
       }
       /**
        * @brief Decodes a stored shard entity-state flag.
-       * @param flag Stored entity-state flag: one for owned, two for ghost, otherwise shared.
+       * @param flag Stored entity-state flag, with one for owned, two for ghost and any other value for shared.
        * @returns Owned for flag one, Ghost for flag two, and Shared otherwise.
        */
 
@@ -482,7 +490,7 @@ namespace Rodin::IO
       /**
        * @brief Writes ownership flags for dimension `d`.
        *
-       * Encodes each Flags value as U8: 0=None, 1=Owned, 2=Ghost.
+       * Encodes each Flags value as U8, using 0 for None, 1 for Owned and 2 for Ghost.
        * @param file Open HDF5 file handle.
        * @param shard Mesh shard to inspect or restore.
        * @param d Topological entity dimension.

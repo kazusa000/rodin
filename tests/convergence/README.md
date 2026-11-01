@@ -98,12 +98,25 @@ r_i^{(h)}=\frac{\log(E_{i-1}/E_i)}{\log(h_{i-1}/h_i)}.
 $$
 
 `UniformGridHierarchy` uses the nominal coordinate spacing
-$h_i=1/(n_i-1)$ for $n_i$ points per axis. On a fixed cell family, the
-geometry-dependent ratio between this spacing and element diameter cancels
-between levels. For a sufficiently regular exact solution of a stable,
-consistent conforming degree $p$ elliptic problem on regular meshes, the
-standard expectations are $E_{1,i}=O(h_i^p)$ and, when the required dual
-regularity holds, $E_{0,i}=O(h_i^{p+1})$. These orders are not asserted
+$h_i=1/(n_i-1)$ for $n_i$ points per axis. On an affine uniform grid of a
+fixed cell family, the geometry-dependent ratio between this spacing and
+element diameter cancels between levels. For curved meshes, nominal spacing
+remains the declared refinement parameter; its interpretation requires
+uniformly regular maps and a shape-regular family with physical mesh diameter
+$h_i^{\mathrm{phys}}=\max_{K\in\mathcal{T}_i}\operatorname{diam}(K)$ satisfying
+
+$$
+c h_i\le h_i^{\mathrm{phys}}\le C h_i,
+\qquad 0<c\le C<\infty,
+$$
+
+with constants independent of the level. This comparability transfers
+asymptotic orders, but does not make the physical and nominal adjacent-size
+ratios identical on finite curved meshes. Each study must identify the size
+parameter used in its reported rates. For a sufficiently regular exact
+solution of a stable, consistent conforming degree $p$ elliptic problem on
+regular meshes, the standard expectations are $E_{1,i}=O(h_i^p)$ and, when
+the required dual regularity holds, $E_{0,i}=O(h_i^{p+1})$. These orders are not asserted
 unconditionally for singular solutions, mixed boundary corners, or
 under-resolved geometric maps. Smooth-field P0 projection instead has an
 L2 error of order one; P0g reproduces constants exactly and has no
@@ -121,7 +134,8 @@ dominate. Positive measured $\alpha_i$ over a finite degree range supports
 that case-specific observation; it is not a proof of exponential decay at
 arbitrary degree. The Poisson, Helmholtz, conductivity, and coupled
 reaction–diffusion p suites check every adjacent interval from degree 1
-through degree 4.
+through degree 4. Native Stokes checks velocity/pressure degree pairs
+$(2,1)\to(3,2)\to(4,3)$, measuring both fields separately.
 
 For hp refinement, a log ratio against $h_i$ describes only the stated
 combined path $(h_i,p_i)$; it is not a fixed-degree h order. In an
@@ -131,6 +145,60 @@ measured geometry error is needed before a field-error rate can be attributed
 to the field space.
 
 ## Acceptance and reproducibility
+
+Shared test utilities keep error integration separate from acceptance policy.
+`ErrorNorm` integrates physical scalar/vector errors; `LiftedErrorNorm`
+integrates exact-domain field, geometry and total defects for real/complex
+scalar/vector fields. `ErrorHistory` and `NormHistory` use the actual spacing
+ratio on every adjacent interval. `LiftedConvergence` composes the scalar
+decomposition, rate and independent numerical-sensitivity checks without
+containing a PDE solve. Direct utility regressions include an invalid final
+interval and both violated triangle inequalities. Physics workloads retain
+their own manufactured data, solver policy and wrong-operator controls.
+
+When field and geometry degrees differ, a single two-sided rate window for
+the total error need not describe the resolved refinement range. For each
+norm index $j\in\lbrace 0,1\rbrace$, let $F_j$ and $G_j$ be the
+independently measured lifted field and geometry errors. With adjacent
+spacing ratio $\rho=h_f/h_c<1$, the mixed-order acceptance rule uses
+
+$$
+T_{j,f}\le F_{j,c}\rho^{s_{F,j}-\delta_j}
+             +G_{j,c}\rho^{s_{G,j}-\delta_j}+\varepsilon_j.
+$$
+
+The exponents $s_{F,j}$ and $s_{G,j}$ are specified by the workload's
+field and geometry approximation estimates. The rate allowance $\delta_j$
+and absolute floor $\varepsilon_j$ are acceptance policies, not proved
+error constants. Independent component-rate windows and triangle-inequality
+checks remain required. Strict decrease of $T_j$ is an additional numerical
+policy; it does not follow from the triangle inequality when cancellation
+changes between levels. This rule avoids presuming that the slower component
+already dominates the total error on the tested meshes.
+
+Representable-field geometry studies use a distinct acceptance path.
+If $u_\ast\rvert_{\Omega_h}\in V_h$, the exact represented-domain
+field error vanishes. Its measured counterpart is tested against a stated
+absolute budget $\delta$, not fitted to a convergence rate. For
+$j\in\lbrace 0,1\rbrace$, the protocol requires
+
+$$
+E_{\mathrm{represented},j}<\delta,\qquad E_{F,j}<\delta,\qquad
+\left|E_{T,j}-E_{G,j}\right|\le\delta.
+$$
+
+Here $E_{F,j}$, $E_{G,j}$ and $E_{T,j}$ denote the lifted field,
+geometry and total norms defined above. `LiftedConvergence` retains
+only the geometry and total histories for this path; both must be finite,
+positive and decreasing over at least three levels. For geometry degree
+$q$, the expected orders are $q+1$ in L2 and $q$ in the H1 seminorm,
+subject to smooth regular maps and a nonvanishing leading interpolation
+defect. Every observed adjacent rate is checked directly. Quadrature and
+solver sensitivity remain separate controls; relative comparisons apply
+only to nonzero geometry and total norms. The budget $\delta$ is supplied
+by the physical workload in the measured norm's units. These field-error
+budgets do not identify mesh entities: chart correspondence and MPI
+ownership checks remain based on logical indices.
 
 At least three discretizations are required for a new rate claim so that two
 successive intervals are tested. The continuous data and measured quantity
@@ -144,8 +212,18 @@ quadrature order and solver tolerance are varied to identify numerical
 contamination; unexplained non-monotonicity or superconvergence is not
 absorbed by widening the bound.
 
+Rate certification also requires a finite computed rate: finite positive
+errors alone do not guarantee a finite intermediate quotient, and a lower
+bound alone does not exclude an infinite result. Logarithmic reductions must
+preserve resolved differences between nearby samples as well as handle the
+full positive floating-point range. Consequently, the rate utilities require
+independent algebraic regressions for extreme errors and scales, nearby
+samples, and genuinely unrepresentable rates. These are arithmetic and
+acceptance checks, not additional PDE convergence evidence.
+
 The present rate studies meet this minimum: h, hp and isoparametric paths
-contain three meshes, while analytic p studies contain four degrees.
+contain three meshes, while analytic p studies contain four degrees,
+except Stokes, which contains three velocity/pressure pairs.
 One-mesh patch tests and P0g exact-reproduction tests are not rate studies.
 
 Each suite README states the equations, exact fields, derived data, discrete
@@ -158,65 +236,24 @@ fails; the correct formulation is then restored. The seven `UniformGrid`
 cell types—segment, triangle, quadrilateral, tetrahedron, pyramid, hexahedron
 and wedge—are tested where the formulation is meaningful, with any exclusion
 recorded. Sequential, OpenMP, PETSc and MPI results are distinct evidence;
-none implies the others.
+none implies the others. The PETSc conductivity suite additionally checks
+nonzero-trace affine/P2 polynomial patches, P1/P2 rates on all seven geometries
+at 1–4 ranks, a coefficient-omission negative control, and quadrature/solver
+sensitivity. Its [suite specification](h/PETScConductivity/README.md) records
+the exact data, levels, acceptance bounds, and backend scope.
 
-## Coverage and execution
+## Registration and CI scheduling
 
-Current implemented coverage is summarized below; a dash means that no suite
-exists yet.
+Keep new studies under their refinement axis and physics/backend directory,
+include them from the parent CMake registration, and document the numerical
+contract in the suite README. Native baseline groups are discovered from these
+directories; dedicated isoparametric and PETSc families also require explicit
+execution selections and a matching build recipe. A `convergence` label alone
+does not create those dedicated lanes.
 
-| Context | h | p | hp | Isoparametric |
-| --- | --- | --- | --- | --- |
-| Poisson | P1–P3, boundary variants; PETSc local and MPI P1/P2 | P1/P2 patch; P1→P2→P3→P4 analytic | P1–P3 | Curved P2 |
-| Complex Helmholtz | P1/P2 | P1–P4 | P1–P3 | — |
-| Linear elasticity | Vector P1/P2, displacement and traction variants | Analytic vector P1→P2→P3→P4 | Analytic vector P1–P3 | — |
-| Stokes | Taylor–Hood velocity/pressure | — | — | — |
-| Variable conductivity | P1/P2 | P1/P2 patch; P1→P2→P3→P4 analytic | P1–P3 | Curved P2 |
-| Coupled reaction–diffusion | P1/P2 | P1→P2→P3→P4 analytic | — | — |
-| Nonlinear Poisson | P1/P2 | — | — | — |
-| P0/P0g projection | Implemented | Not applicable to fixed degree | — | — |
-
-The main refinement sequences can be read with $n$ grid points per coordinate
-axis, $h=1/(n-1)$, and field degree $p$:
-
-- h: P1 commonly uses `n=5→9→17` ($h=1/4\to1/8\to1/16$); P2/P3 commonly
-  use `n=3→5→9`. P0 projection and Taylor–Hood Stokes use `n=3→5→9`.
-- p: Poisson, complex Helmholtz, variable conductivity, coupled
-  reaction–diffusion, and linear elasticity check `p=1→2→3→4` on a fixed
-  `n=2` mesh.
-- hp: Poisson, Helmholtz, variable conductivity, and linear elasticity use
-  `(n,p)=(2,1)→(3,2)→(5,3)`.
-- isoparametric: curved P2 Poisson and conductivity use `n=5→9→17`
-  in 1D/2D and `n=3→4→5` in 3D. A separate P1 geometry-map error
-  study uses `n=5→9→17` in 1D/2D and `n=3→5→9` in 3D.
-
-These are rate-test levels, not one-mesh patch-test levels. The P1
-mixed-traction elasticity test on tetrahedra uses `n=9→17→33` because its
-coarsest mesh is pre-asymptotic. This is a coverage inventory, not a claim
-that every supported space or physical context is certified; the suite
-READMEs and test sources give all case-specific sequences and bounds.
-Distributed P2 Poisson now checks three-level rates on all seven geometries
-and one to four ranks. The ownership regression for the previously missing
-tetrahedral boundary constraints and its mathematical patch test are recorded
-in the `h/PETScMPIPoisson` README.
-The distributed P2 identification regression checks every geometry; its
-tetrahedral solve on two to four ranks also compares equivalent value and
-affine-identification boundary conditions. Homogeneous P1 and affine P2
-identification additionally have three-level rate checks on all seven
-geometries and one to four ranks.
-
-Configure with `-DRODIN_BUILD_CONVERGENCE_TESTS=ON` and run with
-`ctest --test-dir build/tests -L convergence --output-on-failure`.
-
-`Convergence.h` contains the refinement-independent layer shared by these
-modules: unit-box grid construction and boundary partitioning, direct L2/H1
-error integration, error histories, and algebraic or exponential rate
-calculation. Refinement-specific directories add only the machinery unique to
-their refinement axis.
-
-The CI convergence job runs the full local suite twice: once with sequential
-assembly and once with OpenMP assembly (`RODIN_MULTITHREADED=OFF/ON`). A
-separate PETSc job checks local-context and distributed P1/P2 Poisson
-convergence with PETSc assembly and CG. The distributed suite uses mesh
-families partitioned across one to four MPI ranks and globally reduced norms;
-it is a separate check from the local-context suites.
+Rank, geometry and Slow partitions reuse compatible directory builds. Preserve
+the complete refinement sequence inside each rate test; job splitting must not
+turn a multi-level study into independent single-level assertions. Follow the
+[CI extension guide](../../dev/ci-testing.md) for selectors, backend recipes and
+mandatory coverage contributions, and the
+[workflow overview](../../.github/workflows/README.md) for shared-build ownership.

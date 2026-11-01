@@ -16,12 +16,14 @@
 #include <iostream>
 #include <array>
 #include <optional>
+#include <variant>
 
 #include "Rodin/Configure.h"
 
 #include "Rodin/Array.h"
 #include "Rodin/Math/Vector.h"
 #include "Rodin/Math/Matrix.h"
+#include "Rodin/QF/ForwardDecls.h"
 
 #include "Polytope.h"
 #include "ForwardDecls.h"
@@ -38,13 +40,13 @@ namespace Rodin::Geometry
    *
    * # Mathematical Foundation
    *
-   * A Point represents the tuple @f$ (x, r, p, \tau) @f$ where:
+   * A Point represents the tuple @f$ (x, r, p, \tau) @f$ Here,
    * - @f$ \tau @f$ is a polytope in the mesh @f$ \mathcal{T}_h @f$
    * - @f$ x : K \rightarrow \tau @f$ is the geometric transformation
    * - @f$ r \in K @f$ are the reference coordinates
    * - @f$ p = x(r) \in \tau @f$ are the physical coordinates
    *
-   * The transformation satisfies:
+   * The transformation satisfies the following relation.
    * @f[
    *  p = x(r)
    * @f]
@@ -62,6 +64,14 @@ namespace Rodin::Geometry
    * - Jacobian determinant @f$ |\mathbf{J}_x(r)| @f$
    * - Inverse Jacobian @f$ \mathbf{J}_x^{-1}(r) @f$
    * - Distortion measure
+   *
+   * ## Architecture
+   *
+   * Unevaluated physical coordinates optionally carry the persistent formula and
+   * index of an owned reference sample. Evaluation replaces this state with
+   * owned physical coordinates. The formula remains valid until process
+   * termination; no reference table is borrowed. A missing table uses direct evaluation;
+   * rebinding clears both the provenance and the geometric caches.
    *
    * # Thread Safety
    * This class is **not** thread-safe. Each thread should use its own Point instances.
@@ -84,16 +94,26 @@ namespace Rodin::Geometry
        * @brief Constructs a point on a polytope.
        * @param[in] polytope The polytope containing this point
        */
-      explicit
-      PointBase(const Polytope& polytope);
+      explicit PointBase(const Polytope& polytope);
 
       /**
        * @brief Constructs a point with physical coordinates.
        * @param[in] polytope The polytope containing this point
        * @param[in] pc Physical coordinates
        */
-      explicit
-      PointBase(const Polytope& polytope, const Math::SpatialPoint& pc);
+      explicit PointBase(const Polytope& polytope, const Math::SpatialPoint& pc);
+
+      /**
+       * @brief Constructs a point with its geometric Jacobian already evaluated.
+       *
+       * The matrix is owned by the point, just as after lazy evaluation.
+       * Physical coordinates, inverse, determinant and distortion remain lazy.
+       * Rebinding the point invalidates this matrix with the other geometric data.
+       *
+       * @param[in] jacobian Geometric Jacobian at the point's reference coordinates.
+       * @param[in] polytope Polytope whose transformation produced the matrix.
+       */
+      PointBase(const Math::SpatialMatrix<Real>& jacobian, const Polytope& polytope);
 
       /**
        * @brief Copy constructor.
@@ -109,6 +129,12 @@ namespace Rodin::Geometry
 
       /**
        * @brief Gets the dimension of coordinates.
+       *
+       * For a bound entity @f$K^k\subset\mathbb{R}^s@f$, reference
+       * coordinates have dimension @f$k@f$ and physical coordinates have
+       * dimension @f$s@f$. The containing mesh dimension does not determine
+       * the reference dimension of a lower-dimensional entity.
+       *
        * @param[in] coords Type of coordinates (Reference or Physical)
        * @returns Dimension of the specified coordinate system
        */
@@ -208,7 +234,8 @@ namespace Rodin::Geometry
       }
 
       /**
-       * @brief Lexicographical comparison operator.
+       * @brief Lexicographical comparison of physical coordinates.
+       * @pre Both points have the same physical dimension.
        * @param[in] p Point to compare with
        * @returns True if this point is lexicographically less than p
        */
@@ -231,7 +258,8 @@ namespace Rodin::Geometry
        * @param[in] coords Type of coordinates to retrieve
        * @returns Reference to coordinate vector
        */
-      const Math::SpatialVector<Real>& getCoordinates(Coordinates coords = Coordinates::Physical) const;
+      const Math::SpatialVector<Real>& getCoordinates(
+        Coordinates coords = Coordinates::Physical) const;
 
       /**
        * @brief Computes the Jacobian matrix at this point.
@@ -280,14 +308,51 @@ namespace Rodin::Geometry
        */
       virtual const Math::SpatialVector<Real>& getReferenceCoordinates() const = 0;
 
+    protected:
+      /**
+       * @brief Constructs lazy coordinates with owned quadrature-sample provenance.
+       *
+       * The derived point must own the reference coordinates of sample @p qp.
+       * Only a persistent formula pointer and index are retained; no table is borrowed.
+       *
+       * @param jacobian Geometric Jacobian evaluated at the sample.
+       * @param polytope Polytope whose map defines the point.
+       * @param qf Formula supplying the reference sample.
+       * @param qp Sample index in the formula.
+       */
+      PointBase(const Math::SpatialMatrix<Real>& jacobian, const Polytope& polytope,
+        const QF::QuadratureFormula& qf, size_t qp);
+
     private:
+      /// @brief Logical provenance of an owned reference sample.
+      struct ReferenceSample
+      {
+        /**
+         * @brief Records the persistent formula and sample index.
+         * @param formula Persistent immutable reference formula.
+         * @param index Reference sample index.
+         */
+        ReferenceSample(const QF::QuadratureFormula& formula, size_t index)
+          : formula(&formula),
+            index(index)
+        {}
+
+        const QF::QuadratureFormula* formula; ///< Persistent reference formula.
+        size_t index; ///< Logical reference-sample index.
+      };
+
+      // The unevaluated state either has logical sample provenance or requests
+      // direct pointwise evaluation. Evaluated coordinates replace that state.
+      using PhysicalCoordinateState =
+        std::variant<Optional<ReferenceSample>, Math::SpatialPoint>;
+
       Polytope m_polytope;
 
-      mutable Optional<Math::SpatialVector<Real>> m_pc;
+      mutable PhysicalCoordinateState m_pc;
       mutable Optional<Math::SpatialMatrix<Real>> m_jacobian;
       mutable Optional<Math::SpatialMatrix<Real>> m_jacobianInverse;
-      mutable Optional<Real>                      m_jacobianDeterminant;
-      mutable Optional<Real>                      m_distortion;
+      mutable Optional<Real> m_jacobianDeterminant;
+      mutable Optional<Real> m_distortion;
   };
 
   /**
@@ -331,8 +396,7 @@ namespace Rodin::Geometry
        * @param[in] polytope Polytope containing the point
        * @param[in] rc Reference coordinates
        */
-      explicit
-      Point(const Polytope& polytope, const Math::SpatialPoint& rc);
+      explicit Point(const Polytope& polytope, const Math::SpatialPoint& rc);
 
       /**
        * @brief Constructs with both reference and physical coordinates.
@@ -340,8 +404,39 @@ namespace Rodin::Geometry
        * @param[in] rc Reference coordinates
        * @param[in] pc Physical coordinates
        */
-      explicit
-      Point(const Polytope& polytope, const Math::SpatialPoint& rc, const Math::SpatialPoint& pc);
+      explicit Point(const Polytope& polytope, const Math::SpatialPoint& rc,
+        const Math::SpatialPoint& pc);
+
+      /**
+       * @brief Constructs a reference point with a precomputed geometric Jacobian.
+       *
+       * No reference to a formula or reference tabulation is retained. Copies
+       * and moves preserve the owned geometric data independently of the
+       * quadrature object that constructed the point.
+       * The distinct Jacobian-first signature preserves existing construction
+       * from Eigen coordinate expressions without conversion ambiguity.
+       *
+       * @param[in] jacobian Jacobian of the polytope transformation at @p rc.
+       * @param[in] polytope Polytope containing the point.
+       * @param[in] rc Reference coordinates at which the Jacobian was evaluated.
+       */
+      Point(const Math::SpatialMatrix<Real>& jacobian, const Polytope& polytope,
+        const Math::SpatialPoint& rc);
+
+      /**
+       * @brief Constructs an owned reference sample with lazy physical coordinates.
+       *
+       * Reference coordinates are copied from the formula, so their logical
+       * provenance is established by construction. A retained point remains
+       * valid after formula destruction or reference-table eviction.
+       *
+       * @param jacobian Geometric Jacobian at sample @p qp.
+       * @param polytope Polytope containing the mapped sample.
+       * @param qf Formula supplying the reference coordinates.
+       * @param qp Sample index in the formula.
+       */
+      Point(const Math::SpatialMatrix<Real>& jacobian, const Polytope& polytope,
+        const QF::QuadratureFormula& qf, size_t qp);
 
       /**
        * @brief Copy constructor.
@@ -373,8 +468,7 @@ namespace Rodin::Geometry
    * @returns Result vector
    */
   template <class EigenDerived>
-  auto
-  operator+(const Geometry::Point& p, const Eigen::MatrixBase<EigenDerived>& q)
+  auto operator+(const Geometry::Point& p, const Eigen::MatrixBase<EigenDerived>& q)
   {
     return p.vector() + q;
   }
@@ -387,8 +481,7 @@ namespace Rodin::Geometry
    * @returns Result vector
    */
   template <class EigenDerived>
-  auto
-  operator+(const Eigen::MatrixBase<EigenDerived>& p, const Geometry::Point& q)
+  auto operator+(const Eigen::MatrixBase<EigenDerived>& p, const Geometry::Point& q)
   {
     return p + q.vector();
   }
@@ -401,8 +494,7 @@ namespace Rodin::Geometry
    * @returns Result vector
    */
   template <class EigenDerived>
-  auto
-  operator-(const Geometry::Point& p, const Eigen::MatrixBase<EigenDerived>& q)
+  auto operator-(const Geometry::Point& p, const Eigen::MatrixBase<EigenDerived>& q)
   {
     return p.vector() - q;
   }
@@ -415,8 +507,7 @@ namespace Rodin::Geometry
    * @returns Result vector
    */
   template <class EigenDerived>
-  auto
-  operator-(const Eigen::MatrixBase<EigenDerived>& p, const Geometry::Point& q)
+  auto operator-(const Eigen::MatrixBase<EigenDerived>& p, const Geometry::Point& q)
   {
     return p - q.vector();
   }
@@ -427,9 +518,7 @@ namespace Rodin::Geometry
    * @param[in] q Second point
    * @returns Result vector (sum of physical coordinates)
    */
-  inline
-  auto
-  operator+(const Geometry::Point& p, const Geometry::Point& q)
+  inline auto operator+(const Geometry::Point& p, const Geometry::Point& q)
   {
     return p.vector() + q.vector();
   }
@@ -440,9 +529,7 @@ namespace Rodin::Geometry
    * @param[in] q Second point
    * @returns Result vector (difference of physical coordinates)
    */
-  inline
-  auto
-  operator-(const Geometry::Point& p, const Geometry::Point& q)
+  inline auto operator-(const Geometry::Point& p, const Geometry::Point& q)
   {
     return p.vector() - q.vector();
   }
@@ -453,9 +540,7 @@ namespace Rodin::Geometry
    * @param[in] p Point
    * @returns Scaled vector
    */
-  inline
-  auto
-  operator*(Real s, const Geometry::Point& p)
+  inline auto operator*(Real s, const Geometry::Point& p)
   {
     return s * p.vector();
   }
@@ -466,9 +551,7 @@ namespace Rodin::Geometry
    * @param[in] s Scalar value
    * @returns Scaled vector
    */
-  inline
-  auto
-  operator*(const Geometry::Point& p, Real s)
+  inline auto operator*(const Geometry::Point& p, Real s)
   {
     return p.vector() * s;
   }
@@ -480,8 +563,7 @@ namespace Rodin::Geometry
    * @returns Sum of the operands.
    */
   template <class Scalar>
-  auto operator+(
-    const Math::SpatialVector<Scalar>& v, const Geometry::Point& p)
+  auto operator+(const Math::SpatialVector<Scalar>& v, const Geometry::Point& p)
   {
     return v + p.vector();
   }
@@ -493,8 +575,7 @@ namespace Rodin::Geometry
    * @returns Sum of the operands.
    */
   template <class Scalar>
-  auto operator+(
-    const Geometry::Point& p, const Math::SpatialVector<Scalar>& v)
+  auto operator+(const Geometry::Point& p, const Math::SpatialVector<Scalar>& v)
   {
     return p.vector() + v;
   }
@@ -506,8 +587,7 @@ namespace Rodin::Geometry
    * @returns Difference of the operands, or the negated operand for the unary overload.
    */
   template <class Scalar>
-  auto operator-(
-    const Math::SpatialVector<Scalar>& v, const Geometry::Point& p)
+  auto operator-(const Math::SpatialVector<Scalar>& v, const Geometry::Point& p)
   {
     return v - p.vector();
   }
@@ -519,8 +599,7 @@ namespace Rodin::Geometry
    * @returns Difference of the operands, or the negated operand for the unary overload.
    */
   template <class Scalar>
-  auto operator-(
-    const Geometry::Point& p, const Math::SpatialVector<Scalar>& v)
+  auto operator-(const Geometry::Point& p, const Math::SpatialVector<Scalar>& v)
   {
     return p.vector() - v;
   }

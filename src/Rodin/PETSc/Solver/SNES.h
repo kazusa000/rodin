@@ -25,6 +25,7 @@
 
 #include <functional>
 #include <petscsystypes.h>
+#include <utility>
 
 #include "Rodin/FormLanguage/Traits.h"
 #include "Rodin/PETSc/Object.h"
@@ -64,6 +65,15 @@ namespace Rodin::Solver
    * Supports both programmatic configuration (`setType`, `setTolerances`)
    * and PETSc command-line overrides (`-snes_type`, `-snes_rtol`, …).
    *
+   * @par Architecture
+   * The state callback synchronizes the variational fields from the iterate;
+   * targeted assembly then evaluates the residual or Jacobian. With PETSc
+   * 3.20 and newer, synchronization is keyed by the unique vector object ID
+   * and its change counter. A changed key invalidates both assembly caches.
+   * Equal counters on different vectors do not denote the same iterate.
+   * PETSc 3.19 uses uncached synchronization and assembly. Each solve resets
+   * these caches and synchronizes the final state before returning.
+   *
    * @see <a href="class_rodin_1_1_solver_1_1_k_s_p.html">Rodin::Solver::KSP</a>
    * @see <a href="class_rodin_1_1_solver_1_1_newton_solver_base.html">Rodin::Solver::NewtonSolverBase</a>
    * @see <a href="class_rodin_1_1_math_1_1_linear_system_3_1_1_mat_00_01_1_1_vec_01_4.html">Rodin::PETSc::Math::LinearSystem</a>
@@ -86,7 +96,7 @@ namespace Rodin::Solver
        *        state-dependent Rodin fields from the current SNES iterate.
        *
        * The argument is the current iterate expressed as a Rodin
-       * @ref Rodin::PETSc::Math::Vector (a PETSc @c Vec).  Typical usage:
+       * @ref Rodin::PETSc::Math::Vector (a PETSc @c Vec).  Typical usage.
        * @code
        * snes.setStateUpdate([&](const PETSc::Math::Vector& x) {
        *   uState.setData(x, 0);
@@ -199,7 +209,7 @@ namespace Rodin::Solver
       /**
        * @brief Returns `true` if the most recent @ref solve() converged.
        *
-       * Wraps @c SNESGetConvergedReason: a positive reason indicates
+       * Wraps @c SNESGetConvergedReason. A positive reason indicates
        * convergence, a negative reason indicates divergence.
        *
        * @returns `true` when converged, `false` when diverged or not yet solved.
@@ -282,7 +292,8 @@ namespace Rodin::Solver
       StateUpdate m_update; ///< Optional state synchronization callback.
       Optional<::PetscObjectState> m_lhsAssembled;
       Optional<::PetscObjectState> m_rhsAssembled;
-      Optional<::PetscObjectState> m_updated;
+      // Object state is a per-object counter, not an iterate identity.
+      Optional<std::pair<::PetscObjectId, ::PetscObjectState>> m_updated;
   };
 }
 

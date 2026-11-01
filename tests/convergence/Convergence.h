@@ -23,6 +23,11 @@
 #include "Rodin/QF.h"
 #include "Rodin/Variational.h"
 
+#ifdef RODIN_USE_MPI
+#include <boost/mpi/collectives.hpp>
+#include "Rodin/MPI/Geometry/Mesh.h"
+#endif
+
 namespace Rodin::Tests::Convergence
 {
   class ErrorNorms
@@ -87,8 +92,8 @@ namespace Rodin::Tests::Convergence
     public:
       struct Sample
       {
-          Real parameter;
-          ErrorNorms error;
+        Real parameter;
+        ErrorNorms error;
       };
 
       ErrorHistory& append(Real parameter, const ErrorNorms& error)
@@ -112,7 +117,13 @@ namespace Rodin::Tests::Convergence
         const auto& coarse = getCoarse(fineSample);
         const auto& fine = getFine(fineSample);
         assert(coarse.parameter > fine.parameter);
-        return getRates(coarse, fine, std::log(coarse.parameter / fine.parameter));
+        const Real ratio = coarse.parameter / fine.parameter;
+        // Preserve the ordinary quotient path, especially for nearby samples.
+        // Separate logarithms are needed only when division over/underflows.
+        const Real denominator = std::isfinite(ratio) && ratio > 0
+          ? std::log(ratio)
+          : std::log(coarse.parameter) - std::log(fine.parameter);
+        return getRates(coarse, fine, denominator);
       }
 
       Rates getExponentialRates(size_t fineSample) const
@@ -145,9 +156,15 @@ namespace Rodin::Tests::Convergence
         assert(fine.error.getL2() > 0);
         assert(coarse.error.getH1Seminorm() > 0);
         assert(fine.error.getH1Seminorm() > 0);
-        return {std::log(coarse.error.getL2() / fine.error.getL2()) / denominator,
-          std::log(coarse.error.getH1Seminorm() / fine.error.getH1Seminorm()) /
-            denominator};
+        const Real l2Ratio = coarse.error.getL2() / fine.error.getL2();
+        const Real h1Ratio = coarse.error.getH1Seminorm() / fine.error.getH1Seminorm();
+        const Real l2Log = std::isfinite(l2Ratio) && l2Ratio > 0
+          ? std::log(l2Ratio)
+          : std::log(coarse.error.getL2()) - std::log(fine.error.getL2());
+        const Real h1Log = std::isfinite(h1Ratio) && h1Ratio > 0
+          ? std::log(h1Ratio)
+          : std::log(coarse.error.getH1Seminorm()) - std::log(fine.error.getH1Seminorm());
+        return {l2Log / denominator, h1Log / denominator};
       }
 
       std::vector<Sample> m_samples;
@@ -159,8 +176,8 @@ namespace Rodin::Tests::Convergence
     public:
       struct Sample
       {
-          Real parameter;
-          Real error;
+        Real parameter;
+        Real error;
       };
 
       NormHistory& append(Real parameter, Real error)
@@ -186,8 +203,15 @@ namespace Rodin::Tests::Convergence
         const auto& fine = m_samples[fineSample];
         assert(coarse.parameter > fine.parameter);
         assert(coarse.error > 0 && fine.error > 0);
-        return std::log(coarse.error / fine.error) /
-          std::log(coarse.parameter / fine.parameter);
+        const Real errorRatio = coarse.error / fine.error;
+        const Real parameterRatio = coarse.parameter / fine.parameter;
+        const Real numerator = std::isfinite(errorRatio) && errorRatio > 0
+          ? std::log(errorRatio)
+          : std::log(coarse.error) - std::log(fine.error);
+        const Real denominator = std::isfinite(parameterRatio) && parameterRatio > 0
+          ? std::log(parameterRatio)
+          : std::log(coarse.parameter) - std::log(fine.parameter);
+        return numerator / denominator;
       }
 
     private:
@@ -329,35 +353,57 @@ namespace Rodin::Tests::Convergence
       }
   };
 
+  /**
+   * @brief Independently integrated physical error norms.
+   *
+   * Mapped quadrature points are owned by each cell's integration scope, not
+   * retained in the mesh cache. For @f$ N @f$ cells and at most @f$ Q @f$
+   * points per cell, the additional mapped-point storage is @f$ O(Q) @f$
+   * rather than @f$ O(NQ) @f$. This does not clear or invalidate quadratures
+   * borrowed by assembly. MPI reductions remain intentional global sums of
+   * owned-cell contributions; constructing mapped points is rank-local.
+   */
   class ErrorNorm
   {
     public:
       /** @brief Integrates scalar or vector value error with a complex modulus. */
-      template <class GF, class Exact>
-      static Real computeL2(const Geometry::LocalMesh& mesh, const GF& uh,
-        const Exact& exact, size_t quadratureOrder = 8)
+      template <class Mesh, class GF, class Exact>
+      static Real computeL2(
+        const Mesh& mesh, const GF& uh, const Exact& exact, size_t quadratureOrder = 8)
       {
         Real squared = 0;
         for (auto cell = mesh.getCell(); cell; ++cell)
         {
+          if constexpr (requires { mesh.getShard(); })
+          {
+            if (!mesh.getShard().isOwned(mesh.getDimension(), cell->getIndex()))
+              continue;
+          }
           const auto& qf =
-            QF::PolytopeQuadratureFormula::get(quadratureOrder, cell->getGeometry());
-          const auto& quadrature = cell->getQuadrature(qf);
+            QF::QuadratureFormula::get(quadratureOrder, cell->getGeometry());
+          const Geometry::PolytopeQuadrature quadrature(*cell, qf);
           for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
           {
             const auto& p = quadrature.getPoint(qp);
-            const Variational::IntegrationPoint ip(p, &qf, qp);
+            const Variational::IntegrationPoint ip(quadrature, qp);
             squared += qf.getWeight(qp) * p.getDistortion() *
               squaredMagnitude(uh(ip) - evaluate(exact, ip));
           }
         }
+#ifdef RODIN_USE_MPI
+        if constexpr (requires { mesh.getShard(); })
+        {
+          squared = boost::mpi::all_reduce(
+            mesh.getContext().getCommunicator(), squared, std::plus<Real>());
+        }
+#endif
         return std::sqrt(squared);
       }
 
-      template <class GF, class Exact, class ExactGradient>
-      static ErrorNorms compute(const Geometry::LocalMesh& mesh, const GF& uh,
-        const Exact& exact, const ExactGradient& exactGradient,
-        size_t quadratureOrder = 8)
+      /** MPI variants integrate owned cells and globally reduce squared norms. */
+      template <class Mesh, class GF, class Exact, class ExactGradient>
+      static ErrorNorms compute(const Mesh& mesh, const GF& uh, const Exact& exact,
+        const ExactGradient& exactGradient, size_t quadratureOrder = 8)
       {
         const auto gradient = Variational::Grad(uh);
         return computeWithDerivative(
@@ -370,10 +416,9 @@ namespace Rodin::Tests::Convergence
        * The value error uses the Euclidean norm and the derivative error uses
        * the Frobenius norm of the displacement Jacobian.
        */
-      template <class GF, class Exact, class ExactJacobian>
-      static ErrorNorms computeVector(const Geometry::LocalMesh& mesh, const GF& uh,
-        const Exact& exact, const ExactJacobian& exactJacobian,
-        size_t quadratureOrder = 8)
+      template <class Mesh, class GF, class Exact, class ExactJacobian>
+      static ErrorNorms computeVector(const Mesh& mesh, const GF& uh, const Exact& exact,
+        const ExactJacobian& exactJacobian, size_t quadratureOrder = 8)
       {
         const auto jacobian = Variational::Jacobian(uh);
         return computeWithDerivative(
@@ -381,26 +426,33 @@ namespace Rodin::Tests::Convergence
       }
 
       /**
-       * @brief Computes the L2 norm of the divergence of a vector field.
+       * @brief Computes the L2 norm of the divergence of a real vector field.
        *
        * The Jacobian is evaluated directly because this diagnostic concerns
        * the trace of a vector-field derivative rather than a scalar H1 norm.
+       * MPI meshes contribute owned cells only, with a global squared-norm
+       * reduction before taking the square root.
        */
-      template <class GF>
+      template <class Mesh, class GF>
       static Real computeDivergenceL2(
-        const Geometry::LocalMesh& mesh, const GF& uh, size_t quadratureOrder = 8)
+        const Mesh& mesh, const GF& uh, size_t quadratureOrder = 8)
       {
         const auto jacobian = Variational::Jacobian(uh);
         Real squared = 0;
         for (auto cell = mesh.getCell(); cell; ++cell)
         {
+          if constexpr (requires { mesh.getShard(); })
+          {
+            if (!mesh.getShard().isOwned(mesh.getDimension(), cell->getIndex()))
+              continue;
+          }
           const auto& qf =
-            QF::PolytopeQuadratureFormula::get(quadratureOrder, cell->getGeometry());
-          const auto& quadrature = cell->getQuadrature(qf);
+            QF::QuadratureFormula::get(quadratureOrder, cell->getGeometry());
+          const Geometry::PolytopeQuadrature quadrature(*cell, qf);
           for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
           {
             const auto& p = quadrature.getPoint(qp);
-            const Variational::IntegrationPoint ip(p, &qf, qp);
+            const Variational::IntegrationPoint ip(quadrature, qp);
             const auto value = jacobian(ip);
             Real divergence = 0;
             const size_t dimension = std::min(
@@ -410,26 +462,39 @@ namespace Rodin::Tests::Convergence
             squared += qf.getWeight(qp) * p.getDistortion() * divergence * divergence;
           }
         }
+#ifdef RODIN_USE_MPI
+        if constexpr (requires { mesh.getShard(); })
+        {
+          squared = boost::mpi::all_reduce(
+            mesh.getContext().getCommunicator(), squared, std::plus<Real>());
+        }
+#endif
         return std::sqrt(squared);
       }
 
     private:
-      template <class GF, class Derivative, class Exact, class ExactDerivative>
-      static ErrorNorms computeWithDerivative(const Geometry::LocalMesh& mesh,
-        const GF& uh, const Derivative& derivative, const Exact& exact,
+      template <class Mesh, class GF, class Derivative, class Exact,
+        class ExactDerivative>
+      static ErrorNorms computeWithDerivative(const Mesh& mesh, const GF& uh,
+        const Derivative& derivative, const Exact& exact,
         const ExactDerivative& exactDerivative, size_t quadratureOrder)
       {
         Real l2Squared = 0;
         Real h1SemiSquared = 0;
         for (auto cell = mesh.getCell(); cell; ++cell)
         {
+          if constexpr (requires { mesh.getShard(); })
+          {
+            if (!mesh.getShard().isOwned(mesh.getDimension(), cell->getIndex()))
+              continue;
+          }
           const auto& qf =
-            QF::PolytopeQuadratureFormula::get(quadratureOrder, cell->getGeometry());
-          const auto& quadrature = cell->getQuadrature(qf);
+            QF::QuadratureFormula::get(quadratureOrder, cell->getGeometry());
+          const Geometry::PolytopeQuadrature quadrature(*cell, qf);
           for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
           {
             const auto& p = quadrature.getPoint(qp);
-            const Variational::IntegrationPoint ip(p, &qf, qp);
+            const Variational::IntegrationPoint ip(quadrature, qp);
             const Real weight = qf.getWeight(qp) * p.getDistortion();
             const auto ev = uh(ip) - evaluate(exact, ip);
             const auto eg = derivative(ip) - evaluate(exactDerivative, ip);
@@ -437,6 +502,14 @@ namespace Rodin::Tests::Convergence
             h1SemiSquared += weight * squaredMagnitude(eg);
           }
         }
+#ifdef RODIN_USE_MPI
+        if constexpr (requires { mesh.getShard(); })
+        {
+          const auto& comm = mesh.getContext().getCommunicator();
+          l2Squared = boost::mpi::all_reduce(comm, l2Squared, std::plus<Real>());
+          h1SemiSquared = boost::mpi::all_reduce(comm, h1SemiSquared, std::plus<Real>());
+        }
+#endif
         return {std::sqrt(l2Squared), std::sqrt(h1SemiSquared)};
       }
 
@@ -449,6 +522,10 @@ namespace Rodin::Tests::Convergence
           return f(ip.getPoint());
       }
 
+    public:
+      /** @brief Squared modulus or componentwise Frobenius magnitude.
+       * Shared by physical error norms and independently integrated moments.
+       */
       template <class Scalar>
       static Real squaredMagnitude(const Scalar& value)
       {

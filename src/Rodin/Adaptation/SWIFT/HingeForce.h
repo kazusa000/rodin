@@ -5,6 +5,7 @@
 #ifndef RODIN_ADAPTATION_SWIFT_HINGEFORCE_H
 #define RODIN_ADAPTATION_SWIFT_HINGEFORCE_H
 
+#include "Rodin/Variational/Integrator.h"
 #include "../CellDeformation.h"
 #include "Hinge.h"
 #include "QualitySamples.h"
@@ -19,6 +20,7 @@ namespace Rodin::Adaptation::SWIFT
     public:
       /// @brief Scalar value type.
       using ScalarType = typename TestFunction::ScalarType;
+
       /// @brief Parent class type.
       using Parent = Variational::LinearFormIntegratorBase<ScalarType>;
 
@@ -29,7 +31,7 @@ namespace Rodin::Adaptation::SWIFT
        * @param inner Current inner displacement increment.
        * @param predictor Frozen directionally scaled predictor.
        * @param parameters Quality budgets and hinge activation weights.
-       * @param hingeCoefficient Effective hinge coefficient for this outer model.
+       * @param hingeCoefficient Predicted decrease per volume, before constraint strengths.
        */
       HingeForce(const TestFunction& z, const Displacement& current,
         const Displacement& inner, const Displacement& predictor,
@@ -72,11 +74,13 @@ namespace Rodin::Adaptation::SWIFT
         const auto& fes = m_z.getFiniteElementSpace();
         const auto& fe = fes.getFiniteElement(dim, index);
         const auto& parameters = m_parameters.get();
-        const QualitySamples samples(polytope, fe.getOrder(), parameters);
+        const QualitySamples samples(
+          polytope, fe.getDegree().value_or(2 * fe.getOrder()), parameters);
 
         m_vector.resize(static_cast<Eigen::Index>(fe.getCount()));
         m_vector.setZero();
         auto testJacobian = Variational::Jacobian(m_z);
+        testJacobian.setPolytope(polytope);
         auto currentJacobian = Variational::Jacobian(m_current.get());
         auto innerJacobian = Variational::Jacobian(m_inner.get());
         auto predictorJacobian = Variational::Jacobian(m_predictor.get());
@@ -84,23 +88,23 @@ namespace Rodin::Adaptation::SWIFT
 
         samples.forEachHinge(currentJacobian, predictorJacobian,
           [&](const Variational::IntegrationPoint& ip, Real weightJ, Real weightQ) {
-          deformation.setDisplacementGradient(currentJacobian.getValue(ip));
-          if (!deformation.isAdmissible())
-            return;
-          const HingeState state(
-            deformation, innerJacobian.getValue(ip), parameters, m_hingeCoefficient);
-          const Real coefficientJ = state.getJacobianForce();
-          const Real coefficientQ = state.getDistortionForce();
-          testJacobian.setIntegrationPoint(ip);
-          for (std::size_t local = 0; local < fe.getCount(); ++local)
-          {
-            const auto gradient = testJacobian.getBasis(local);
-            const Real rowJ = state.getJacobianRow(gradient);
-            const Real rowQ = state.getDistortionRow(gradient);
-            m_vector(static_cast<Eigen::Index>(local)) +=
-              weightJ * coefficientJ * rowJ + weightQ * coefficientQ * rowQ;
-          }
-        });
+            deformation.setDisplacementGradient(currentJacobian.getValue(ip));
+            if (!deformation.isAdmissible())
+              return;
+            const HingeState state(
+              deformation, innerJacobian.getValue(ip), parameters, m_hingeCoefficient);
+            const Real coefficientJ = state.getJacobianForce();
+            const Real coefficientQ = state.getDistortionForce();
+            testJacobian.setIntegrationPoint(ip);
+            for (std::size_t local = 0; local < fe.getCount(); ++local)
+            {
+              const auto gradient = testJacobian.getBasis(local);
+              const Real rowJ = state.getJacobianRow(gradient);
+              const Real rowQ = state.getDistortionRow(gradient);
+              m_vector(static_cast<Eigen::Index>(local)) +=
+                weightJ * coefficientJ * rowJ + weightQ * coefficientQ * rowQ;
+            }
+          });
         return *this;
       }
 

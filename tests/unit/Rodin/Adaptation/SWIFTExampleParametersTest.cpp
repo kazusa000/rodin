@@ -1,28 +1,69 @@
 /*
  *          Copyright Carlos BRITO PACHECO 2021 - 2026.
  * Distributed under the Boost Software License, Version 1.0.
+ *       (See accompanying file LICENSE or copy at
+ *          https://www.boost.org/LICENSE_1_0.txt)
  */
+#include "Rodin/Adaptation/SWIFT/QualitySamples.h"
 #include <gtest/gtest.h>
 #include <limits>
 #include <utility>
 #include "Rodin/Adaptation/SWIFT/Admissibility.h"
 #include "Rodin/Adaptation/SWIFT/HingeProblem.h"
+#include "Rodin/Adaptation/SWIFT/Report.h"
 #include "Rodin/Variational.h"
-#include "../../../../experiments/swift_calibration/Parameters.h"
+#include "../../../convergence/CurvedGeometry.h"
 #include "../../../../examples/Adaptation/SWIFT/Options.h"
 
 using namespace Rodin;
+
+/**
+ * @brief The directly included header selects witnesses using geometry order.
+ *
+ * Affine and quadratic charts use their advertised transformation orders when
+ * selecting the cached reference covering. The header is intentionally included
+ * before any other dependency so that a transitive geometry include cannot
+ * conceal an incomplete transformation type. This is a policy and header
+ * regression, not a continuous quality certificate.
+ */
+TEST(Rodin_Adaptation_SWIFTExampleParameters, DirectQualityHeaderUsesGeometryOrder)
+{
+  for (const bool curved : {false, true})
+  {
+    auto mesh =
+      Tests::Convergence::UniformGrid(Geometry::Polytope::Type::Triangle).makeMesh(2);
+    Tests::Convergence::CurvedGeometry geometry(mesh);
+    if (curved)
+      geometry.install<2>();
+    const auto cell = *mesh.getCell();
+    const auto degree = cell.getTransformation().getDegree();
+    ASSERT_TRUE(degree);
+    const size_t order = *degree;
+    EXPECT_EQ(order, curved ? size_t(2) : size_t(1));
+    const Adaptation::SWIFT::Parameters parameters;
+    const auto& formula = Adaptation::SWIFT::QualityCovering::get(
+      cell.getGeometry(), parameters.sampling.getSubdivision(1, order, true));
+    const Adaptation::SWIFT::QualitySamples samples(cell, 1, parameters);
+    size_t count = 0;
+    samples.forEach([&](const Variational::IntegrationPoint& ip, Real weight) {
+      EXPECT_EQ(ip.getQuadratureFormula(), std::addressof(formula));
+      EXPECT_GT(weight, 0);
+      ++count;
+    });
+    EXPECT_EQ(count, formula.getSize());
+  }
+}
 
 TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionNamedOptions)
 {
   std::vector<std::string> arguments = {"SWIFT_ReconstructionP2", "--n", "8",
     "--dimension=3", "--classification-fidelity=2", "--classification-smoothing=0.02",
-    "--lobes=4", "--amp=0.03", "--R0=0.2", "--phase=0.4", "--cx=0.4",
-    "--cy=0.6", "--cz=0.3", "--output=results/test", "--model-fit=2",
+    "--lobes=4", "--amp=0.03", "--R0=0.2", "--phase=0.4", "--cx=0.4", "--cy=0.6",
+    "--cz=0.3", "--output=results/test", "--model-fit=2",
     "--model-distribution-deviatoric=0.001", "--model-distribution-divergence=0.01",
-    "--model-hinge=100", "--model-jacobian=0.02", "--model-distortion=8",
-    "--convergence-iterations-outer=20", "--convergence-iterations-inner=10",
-    "--linear-solver=cg", "--linear-threads=2",
+    "--model-hinge-jacobian=10", "--model-hinge-distortion=100", "--model-jacobian=0.02",
+    "--model-distortion=8", "--convergence-iterations-outer=20",
+    "--convergence-iterations-inner=10", "--linear-solver=cg", "--linear-threads=2",
     "--convergence-tolerance-linear-relative=1e-9", "--convergence-iterations-linear=500",
     "--quadrature-order=6", "--quadrature-surface=8", "--quadrature-volume=4",
     "--sampling-subdivision=16", "--quadrature-validation=32",
@@ -48,7 +89,8 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionNamedOptions)
   EXPECT_EQ(p.model.fit, 2);
   EXPECT_EQ(p.model.distribution.deviatoric, Real(0.001));
   EXPECT_EQ(p.model.distribution.divergence, Real(0.01));
-  EXPECT_EQ(p.model.hinge, 100);
+  EXPECT_EQ(p.model.hinge.jacobian, Real(10));
+  EXPECT_EQ(p.model.hinge.distortion, Real(100));
   EXPECT_EQ(p.model.jacobian, Real(0.02));
   EXPECT_EQ(p.model.distortion, 8);
   EXPECT_EQ(p.convergence.iterations.outer, 20u);
@@ -69,16 +111,16 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionNamedOptions)
 
 TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionRejectsMalformedOptions)
 {
-  for (const char* invalid :
-    {"--n", "--n=", "--n=-1", "--n=3", "--n=8junk", "--n=184467440737095516160",
-      "--dimension=4", "--classification-fidelity=-1", "--classification-smoothing=-1",
-      "--classification-fidelity=nan", "--classification-smoothing=inf",
-      "--model-fit=nan", "--model-fit=inf", "--model-fit=1bad",
-      "--trace=2", "--linear-solver=unknown", "--wngir-fit=1", "--unknown=1",
-      "--lobes=2.5", "--amp=-0.1", "--R0=0.01", "16",
-      "--swift-equal-hinge-weights", "--swift-stratified-hinge-weights",
-      "--swift-critical-fraction=0.5", "--swift-adaptive-hinge-weights",
-      "--swift-nonlinear-hinges", "--quality-validation-order=16"})
+  for (const char* invalid : {"--n", "--n=", "--n=-1", "--n=3", "--n=8junk",
+         "--n=184467440737095516160", "--dimension=4", "--classification-fidelity=-1",
+         "--classification-smoothing=-1", "--classification-fidelity=nan",
+         "--classification-smoothing=inf", "--model-fit=nan", "--model-fit=inf",
+         "--model-fit=1bad", "--trace=2", "--linear-solver=unknown", "--wngir-fit=1",
+         "--unknown=1", "--lobes=2.5", "--amp=-0.1", "--R0=0.01", "16",
+         "--swift-equal-hinge-weights", "--swift-stratified-hinge-weights",
+         "--swift-critical-fraction=0.5", "--swift-adaptive-hinge-weights",
+         "--swift-nonlinear-hinges", "--quality-validation-order=16", "--model-hinge=100",
+         "--model-jacobian-weight=0.1", "--model-distortion-weight=1"})
   {
     SCOPED_TRACE(invalid);
     std::string executable = "SWIFT_ReconstructionP1", argument = invalid;
@@ -89,45 +131,25 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionRejectsMalformedOpti
 
 TEST(Rodin_Adaptation_SWIFTExampleParameters, FlatParameterFlagsAreRejected)
 {
-  for (const char* option : {
-    "--swift-fit=1",
-    "--swift-distribution-deviatoric=1",
-    "--swift-distribution-divergence=1",
-    "--swift-hinge=1",
-    "--swift-jacobian=1",
-    "--swift-distortion=1",
-    "--swift-quality-guard=1",
-    "--swift-jacobian-weight=1",
-    "--swift-distortion-weight=1",
-    "--swift-robust-scale=1",
-    "--swift-directional-newton=1",
-    "--swift-max-step-over-h=1",
-    "--swift-armijo=1",
-    "--swift-linear-threads=1",
-    "--swift-geometric-tolerance=1",
-    "--swift-inner-relative-tolerance=1",
-    "--swift-inner-absolute-tolerance=1",
-    "--swift-linear-relative-tolerance=1",
-    "--swift-energy-tolerance=1",
-    "--swift-step-tolerance=1",
-    "--swift-step-over-h-tolerance=1",
-    "--swift-outer-iterations=1",
-    "--swift-inner-iterations=1",
-    "--swift-linear-iterations=1",
-    "--swift-backtracks=1",
-    "--swift-stagnation-iterations=1",
-    "--quad-order=1",
-    "--surface-quadrature-order=1",
-    "--volume-quadrature-order=1",
-    "--geometric-validation-order=1",
-    "--swift-trace=1",
-    "--swift-quality-witness=1",
-    "--swift-linear-solver=1"})
+  for (const char* option :
+    {"--swift-fit=1", "--swift-distribution-deviatoric=1",
+      "--swift-distribution-divergence=1", "--swift-hinge=1", "--swift-jacobian=1",
+      "--swift-distortion=1", "--swift-quality-guard=1", "--swift-jacobian-weight=1",
+      "--swift-distortion-weight=1", "--swift-robust-scale=1",
+      "--swift-directional-newton=1", "--swift-max-step-over-h=1", "--swift-armijo=1",
+      "--swift-linear-threads=1", "--swift-geometric-tolerance=1",
+      "--swift-inner-relative-tolerance=1", "--swift-inner-absolute-tolerance=1",
+      "--swift-linear-relative-tolerance=1", "--swift-energy-tolerance=1",
+      "--swift-step-tolerance=1", "--swift-step-over-h-tolerance=1",
+      "--swift-outer-iterations=1", "--swift-inner-iterations=1",
+      "--swift-linear-iterations=1", "--swift-backtracks=1",
+      "--swift-stagnation-iterations=1", "--quad-order=1", "--surface-quadrature-order=1",
+      "--volume-quadrature-order=1", "--geometric-validation-order=1", "--swift-trace=1",
+      "--swift-quality-witness=1", "--swift-linear-solver=1"})
   {
     std::string executable = "SWIFT_ReconstructionP1", argument = option;
     char* argv[] = {executable.data(), argument.data()};
     EXPECT_THROW(Examples::ReconstructionOptions(2, argv), Alert::Exception);
-    EXPECT_THROW(Examples::makeSWIFTParameters(2, argv, Real(0.1), 10), Alert::Exception);
   }
 }
 
@@ -140,7 +162,7 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionInheritsProductionDe
   EXPECT_EQ(options.n, 16u);
   EXPECT_EQ(options.dimension, 2u);
   EXPECT_EQ(options.classification.fidelity, Real(1));
-  EXPECT_EQ(options.classification.smoothing, Real(1));
+  EXPECT_EQ(options.classification.smoothing, Real(0.01));
   EXPECT_EQ(options.lobes, 0);
   EXPECT_EQ(options.parameters.model.h, Real(1) / Real(15));
   EXPECT_EQ(options.parameters.model.fit, defaults.model.fit);
@@ -148,7 +170,8 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionInheritsProductionDe
     defaults.model.distribution.deviatoric);
   EXPECT_EQ(options.parameters.model.distribution.divergence,
     defaults.model.distribution.divergence);
-  EXPECT_EQ(options.parameters.model.hinge, defaults.model.hinge);
+  EXPECT_EQ(options.parameters.model.hinge.jacobian, defaults.model.hinge.jacobian);
+  EXPECT_EQ(options.parameters.model.hinge.distortion, defaults.model.hinge.distortion);
   EXPECT_EQ(options.parameters.convergence.iterations.outer,
     defaults.convergence.iterations.outer);
   EXPECT_EQ(options.parameters.convergence.iterations.inner,
@@ -159,11 +182,13 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, CalibratedDefaultsAreInherited)
 {
   std::string name = "example";
   char* argv[] = {name.data()};
-  const auto p = Examples::makeSWIFTParameters(1, argv, Real(0.1), 10);
+  const Examples::ReconstructionOptions options(1, argv);
+  const auto& p = options.parameters;
   EXPECT_EQ(p.model.fit, Real(1));
   EXPECT_EQ(p.model.distribution.deviatoric, Real(1e-4));
-  EXPECT_EQ(p.model.distribution.divergence, Real(1e-2));
-  EXPECT_EQ(p.model.hinge, Real(10));
+  EXPECT_EQ(p.model.distribution.divergence, Real(1e-4));
+  EXPECT_EQ(p.model.hinge.jacobian, Real(10));
+  EXPECT_EQ(p.model.hinge.distortion, Real(100));
   EXPECT_EQ(p.convergence.iterations.outer, 30u);
   EXPECT_EQ(p.convergence.iterations.inner, 15u);
   EXPECT_EQ(p.quadrature.getSurfaceOrder(1), 8u);
@@ -177,22 +202,25 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, CalibratedDefaultsAreInherited)
 
 TEST(Rodin_Adaptation_SWIFTExampleParameters, CanonicalNamesMapToHierarchicalParameters)
 {
-  std::vector<std::string> arguments = {"example", "--model-fit=2",
+  std::vector<std::string> arguments = {"example", "--n=11", "--model-fit=2",
     "--model-distribution-deviatoric=0.0003", "--model-distribution-divergence=0.0004",
-    "--model-hinge=10", "--model-jacobian=0.02", "--model-distortion=5",
-    "--convergence-iterations-outer=20", "--convergence-iterations-inner=10",
-    "--linear-solver=cg", "--convergence-tolerance-linear-relative=1e-9",
-    "--quadrature-order=12", "--quadrature-surface=8", "--quadrature-volume=2",
-    "--sampling-subdivision=16", "--quadrature-validation=32"};
+    "--model-hinge-jacobian=1", "--model-hinge-distortion=10", "--model-jacobian=0.02",
+    "--model-distortion=5", "--convergence-iterations-outer=20",
+    "--convergence-iterations-inner=10", "--linear-solver=cg",
+    "--convergence-tolerance-linear-relative=1e-9", "--quadrature-order=12",
+    "--quadrature-surface=8", "--quadrature-volume=2", "--sampling-subdivision=16",
+    "--quadrature-validation=32"};
   std::vector<char*> argv;
   for (auto& argument : arguments)
     argv.push_back(argument.data());
-  const auto p = Examples::makeSWIFTParameters(argv.size(), argv.data(), Real(0.1), 10);
+  const Examples::ReconstructionOptions options(argv.size(), argv.data());
+  const auto& p = options.parameters;
   EXPECT_EQ(p.model.h, Real(0.1));
   EXPECT_EQ(p.model.fit, Real(2));
   EXPECT_EQ(p.model.distribution.deviatoric, Real(0.0003));
   EXPECT_EQ(p.model.distribution.divergence, Real(0.0004));
-  EXPECT_EQ(p.model.hinge, Real(10));
+  EXPECT_EQ(p.model.hinge.jacobian, Real(1));
+  EXPECT_EQ(p.model.hinge.distortion, Real(10));
   EXPECT_EQ(p.model.jacobian, Real(0.02));
   EXPECT_EQ(p.model.distortion, Real(5));
   EXPECT_EQ(p.convergence.iterations.outer, 20u);
@@ -213,7 +241,7 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, RemovedOptionsAreRejected)
   {
     std::string name = "example", argument = option;
     char* argv[] = {name.data(), argument.data()};
-    EXPECT_THROW(Examples::makeSWIFTParameters(2, argv, Real(0.1), 10), Alert::Exception);
+    EXPECT_THROW(Examples::ReconstructionOptions(2, argv), Alert::Exception);
   }
 }
 
@@ -221,7 +249,7 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, PreviousMethodOptionsAreRejected)
 {
   std::string name = "example", argument = "--wngir-fit=2";
   char* argv[] = {name.data(), argument.data()};
-  EXPECT_THROW(Examples::makeSWIFTParameters(2, argv, Real(0.1), 10), Alert::Exception);
+  EXPECT_THROW(Examples::ReconstructionOptions(2, argv), Alert::Exception);
 }
 
 TEST(Rodin_Adaptation_SWIFTHingeProblem, CenteringEntersTheStationarityResidual)
@@ -274,7 +302,7 @@ TEST(Rodin_Adaptation_SWIFTAdmissibility, SamplingIsReadOnly)
     Alert::Exception);
 }
 
-  TEST(Rodin_Adaptation_SWIFTAdmissibility, UsesSharedCoveringSubdivision)
+TEST(Rodin_Adaptation_SWIFTAdmissibility, UsesSharedCoveringSubdivision)
 {
   using namespace Geometry;
   using namespace Variational;
@@ -288,10 +316,10 @@ TEST(Rodin_Adaptation_SWIFTAdmissibility, SamplingIsReadOnly)
     value(1) = 0;
     return value;
   });
-  const auto automatic = Adaptation::SWIFT::evaluateAdmissibility(
-    std::as_const(displacement), Real(0.01));
-  const auto explicitSampling = Adaptation::SWIFT::evaluateAdmissibility(
-    std::as_const(displacement), Real(0.01), 3);
+  const auto automatic =
+    Adaptation::SWIFT::evaluateAdmissibility(std::as_const(displacement), Real(0.01));
+  const auto explicitSampling =
+    Adaptation::SWIFT::evaluateAdmissibility(std::as_const(displacement), Real(0.01), 3);
   EXPECT_EQ(automatic.inadmissibleCount, 6u * mesh.getCellCount());
   EXPECT_EQ(explicitSampling.inadmissibleCount, 10u * mesh.getCellCount());
   EXPECT_NEAR(explicitSampling.minJ, Real(-1), Real(1e-12));

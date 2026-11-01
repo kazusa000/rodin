@@ -174,8 +174,8 @@ namespace KelvinBall
       // load terms. Trace diagnostics use only the located overlap; coverage
       // is reported separately by Metrics, not interpreted as a zero jump.
 
-      template <class VelocitySpace, class PressureSpace,
-        class Offsets, class LinearSystem>
+      template <class VelocitySpace, class PressureSpace, class Offsets,
+        class LinearSystem>
       void assembleStokes(const VelocitySpace& velocity, const PressureSpace& pressure,
         const Offsets& offsets, LinearSystem& system, Real viscosity, Real penalty,
         Real pressureDiffusion) const;
@@ -346,8 +346,7 @@ namespace KelvinBall
       }
   };
 
-  template <class VelocitySpace, class PressureSpace, class Offsets,
-    class LinearSystem>
+  template <class VelocitySpace, class PressureSpace, class Offsets, class LinearSystem>
   void RotatedNitscheIntegrator::assembleStokes(const VelocitySpace& velocity,
     const PressureSpace& pressure, const Offsets& offsets, LinearSystem& system,
     Real viscosity, Real penalty, Real pressureDiffusion) const
@@ -368,7 +367,7 @@ namespace KelvinBall
       {
         if (face->getAttribute() != pair.slave)
           continue;
-        const auto& qf = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+        const auto& qf = QF::QuadratureFormula::get(4, face->getGeometry());
         const auto& quadrature = face->getQuadrature(qf);
         for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
         {
@@ -410,8 +409,10 @@ namespace KelvinBall
                 Math::SpatialMatrix<Real> gradient(3, 3);
                 gradient.setZero();
                 for (size_t direction = 0; direction < 3; ++direction)
+                {
                   gradient(component, direction) =
                     masterVelocity.gradients[node](direction);
+                }
                 const Math::SpatialVector<Real> traction =
                   viscosity * (gradient + gradient.transpose()) * masterNormal;
                 Internal::StateBasis value{
@@ -448,8 +449,10 @@ namespace KelvinBall
                 Math::SpatialMatrix<Real> gradient(3, 3);
                 gradient.setZero();
                 for (size_t direction = 0; direction < 3; ++direction)
+                {
                   gradient(component, direction) =
                     slaveVelocity.gradients[node](direction);
+                }
                 const Math::SpatialVector<Real> transformedValue =
                   pair.rotation.col(component) * slaveVelocity.values[node];
                 const Math::SpatialVector<Real> transformedTraction = pair.rotation *
@@ -535,7 +538,7 @@ namespace KelvinBall
       {
         if (face->getAttribute() != pair.slave)
           continue;
-        const auto& qf = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+        const auto& qf = QF::QuadratureFormula::get(4, face->getGeometry());
         const auto& quadrature = face->getQuadrature(qf);
         for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
         {
@@ -607,7 +610,7 @@ namespace KelvinBall
       {
         if (face->getAttribute() != pair.slave)
           continue;
-        const auto& qf = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+        const auto& qf = QF::QuadratureFormula::get(4, face->getGeometry());
         const auto& quadrature = face->getQuadrature(qf);
         for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
         {
@@ -625,8 +628,10 @@ namespace KelvinBall
           Internal::setColumn(master, 2, u2.getValue(*mapped));
           const auto jump = master - pair.rotation * slave * pair.rotation.transpose();
           for (size_t i = 0; i < 3; ++i)
+          {
             for (size_t j = 0; j < 3; ++j)
               residual = std::max(residual, std::abs(jump(i, j)));
+          }
         }
       }
     }
@@ -645,7 +650,7 @@ namespace KelvinBall
       {
         if (face->getAttribute() != pair.slave)
           continue;
-        const auto& qf = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+        const auto& qf = QF::QuadratureFormula::get(4, face->getGeometry());
         const auto& quadrature = face->getQuadrature(qf);
         for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
         {
@@ -675,7 +680,7 @@ namespace KelvinBall
       {
         if (face->getAttribute() != pair.slave)
           continue;
-        const auto& qf = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+        const auto& qf = QF::QuadratureFormula::get(4, face->getGeometry());
         const auto& quadrature = face->getQuadrature(qf);
         for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
         {

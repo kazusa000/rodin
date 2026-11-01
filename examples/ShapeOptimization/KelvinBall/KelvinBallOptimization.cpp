@@ -12,7 +12,6 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -42,16 +41,15 @@
 
 #include "Configuration.h"
 #include "Metrics.h"
-#include "BEM.h"
-#include "ChamberSymmetry.h"
 #include "RotatedCharacteristicContinuation.h"
 #include "NodalTransport.h"
 #include "RotatedNitscheIntegrator.h"
 #include "SewedOutput.h"
 #include "Thickness.h"
-#include "SoftThickness.h"
-#include <Rodin/MMG/MeshPrinter.h>
 #include "HilbertIdentification.h"
+#include "BEM.h"
+#include "Checkpoint.h"
+#include <Rodin/MMG/MeshLoader.h>
 #include "Sphere.h"
 #include "../../Adaptation/SWIFT/Options.h"
 
@@ -86,20 +84,16 @@ namespace KelvinBall
           bool saveMeshDiagnostic = false;
           bool geometryOnly = false;
           bool stateOnly = false;
+          bool bemGradient = false;
+          bool saveCheckpoints = false;
+          size_t bemOrder = 3;
+          Real bemEpsilonFactor = 0.6;
+          std::string inputMesh, restartCheckpoint;
           bool thicknessDiagnostics = false;
           Real regularizationFactor = 4;
           Real normalRegularizationFactor = 1;
           Real stepFactor = 0.1;
           Real minimumThickness = 0;
-          bool boundaryStep = false;
-          bool bemGradient = false;
-          bool bemExportTransport = false;
-          size_t bemOrder = 3;
-          Real bemEpsilonFactor = 0.6;
-          bool reconstructOnly = false;
-          Real softThickness = 0;
-          Real softThicknessWeight = 1;
-          std::string inputMesh, outerValues, bemValues, targetValues;
           Math::SpatialVector<Real> motionForce;
           std::string reconstructionMethod = "swift";
 
@@ -120,20 +114,6 @@ namespace KelvinBall
                 stepFactor = std::stod(std::string(mode.substr(7)));
               else if (mode.rfind("--thickness-min=", 0) == 0)
                 minimumThickness = std::stod(std::string(mode.substr(16)));
-              else if (mode == "--boundary-step") boundaryStep = true;
-              else if (mode == "--bem-gradient") bemGradient = true;
-              else if (mode == "--bem-export-transport") bemExportTransport = true;
-              else if (mode.rfind("--bem-order=", 0) == 0) bemOrder = std::stoul(std::string(mode.substr(12)));
-              else if (mode.rfind("--bem-epsilon-factor=", 0) == 0) bemEpsilonFactor = std::stod(std::string(mode.substr(21)));
-              else if (mode == "--reconstruct-only") reconstructOnly = true;
-              else if (mode.rfind("--mesh=", 0) == 0) inputMesh = mode.substr(7);
-              else if (mode.rfind("--outer-values=", 0) == 0) outerValues = mode.substr(15);
-              else if (mode.rfind("--bem-values=", 0) == 0) bemValues = mode.substr(13);
-              else if (mode.rfind("--target=", 0) == 0) targetValues = mode.substr(9);
-              else if (mode.rfind("--thickness-absolute=", 0) == 0)
-                softThickness = std::stod(std::string(mode.substr(21)));
-              else if (mode.rfind("--thickness-weight=", 0) == 0)
-                softThicknessWeight = std::stod(std::string(mode.substr(19)));
               else if (mode.rfind("--motion-force=", 0) == 0)
               {
                 std::istringstream components{std::string(mode.substr(15))};
@@ -150,6 +130,12 @@ namespace KelvinBall
                 reconstructionMethod = std::string(mode.substr(17));
               else if (mode.rfind("--swift-", 0) == 0)
                 continue;
+              else if (mode == "--bem-gradient") bemGradient = true;
+              else if (mode == "--save-checkpoints") saveCheckpoints = true;
+              else if (mode.starts_with("--mesh=")) inputMesh = mode.substr(7);
+              else if (mode.starts_with("--restart-checkpoint=")) restartCheckpoint = mode.substr(21);
+              else if (mode.starts_with("--bem-order=")) bemOrder = std::stoul(std::string(mode.substr(12)));
+              else if (mode.starts_with("--bem-epsilon-factor=")) bemEpsilonFactor = std::stod(std::string(mode.substr(21)));
               else if (mode == "--save-mesh")
                 saveMeshDiagnostic = true;
               else if (mode == "--geometry-only")
@@ -168,12 +154,12 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
-            if (bemExportTransport && (!bemGradient || reconstructOnly || stateOnly ||
-                geometryOnly || maxIterations != 2))
-              throw std::runtime_error("BEM transport export needs --bem-gradient --iterations=2 and no state/geometry/reconstruction-only mode.");
-            if (bemGradient && (boundaryStep || minimumThickness > 0 ||
-                configuration.adapt || bemOrder < 2 || !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
-              throw std::runtime_error("Native BEM needs order >= 2, positive epsilon factor, and disabled external states/thickness correction.");
+            if (bemGradient && (minimumThickness > 0 || bemOrder < 2 ||
+                !std::isfinite(bemEpsilonFactor) || bemEpsilonFactor <= 0))
+              throw std::runtime_error("Native BEM needs order >= 2, positive epsilon and thickness disabled.");
+            if ((!inputMesh.empty() && !restartCheckpoint.empty()) ||
+                ((!restartCheckpoint.empty() || saveCheckpoints) && reconstructionMethod != "swift"))
+              throw std::runtime_error("Use one input and SWIFT for complete checkpoints.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
             if (!(regularizationFactor > 0))
@@ -195,18 +181,6 @@ namespace KelvinBall
             if (geometryOnly && stateOnly)
               throw std::runtime_error(
                 "Use either --geometry-only or --state-only, not both.");
-            if (boundaryStep && (inputMesh.empty() || outerValues.empty() ||
-                bemValues.empty() || maxIterations != 1 || geometryOnly || stateOnly ||
-                minimumThickness > 0 || reconstructOnly))
-              throw std::runtime_error("BEM step needs one update, exact mesh, six outer traces, "
-                "BEM coefficients and disabled Carlos thickness correction.");
-            if (reconstructOnly && (inputMesh.empty() || targetValues.empty() || boundaryStep))
-              throw std::runtime_error("Reconstruction needs the exact source mesh and target sol.");
-            if (!boundaryStep && (!outerValues.empty() || !bemValues.empty() || softThickness > 0))
-              throw std::runtime_error("External BEM and soft thickness require --boundary-step.");
-            if (!std::isfinite(softThickness) || softThickness < 0 ||
-                !std::isfinite(softThicknessWeight) || softThicknessWeight <= 0)
-              throw std::runtime_error("Invalid soft thickness parameters.");
             return true;
           }
       };
@@ -279,8 +253,11 @@ namespace KelvinBall
           areaTotal += area;
           for (const auto& barycentric : quadrature)
           {
-            const Geometry::Point point(
-              *face, barycentric[0] * a + barycentric[1] * b + barycentric[2] * c);
+            Math::SpatialPoint reference(2);
+            reference(0) = barycentric[1];
+            reference(1) = barycentric[2];
+            const Geometry::Point point(*face, reference,
+              barycentric[0] * a + barycentric[1] * b + barycentric[2] * c);
             const auto velocity = field.getValue(point);
             const auto normal = -fluidNormal.getValue(point);
             const Real component = velocity.dot(normal);
@@ -308,9 +285,11 @@ namespace KelvinBall
       {
         std::vector<bool> interfaceVertices(mesh.getVertexCount(), false);
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
+        {
           if (face->getAttribute() == Gamma)
             for (const Index vertex : face->getVertices())
               interfaceVertices[vertex] = true;
+        }
 
         InterfaceSeamJump jump;
         for (const auto& pair : RotationPairs)
@@ -516,7 +495,6 @@ namespace KelvinBall
         // that mesh so the locator used by SWIFT resolves both the target and
         // its exact element-wise gradient on the same geometry.
         KelvinBall::Mesh moved(mesh);
-        saveExact(MMG::Mesh(KelvinBall::Mesh(moved)), "swift-classified.mesh");
         P1<Real, KelvinBall::Mesh> targetSpace(moved);
         GridFunction targetLevelSet(targetSpace);
         targetLevelSet.getData() = levelSet.getData();
@@ -527,37 +505,45 @@ namespace KelvinBall
         fitting.setParameters(m_fittingParameters);
         const auto& parameters = fitting.getParameters();
 
+        auto& displacement = fitting.getTrialFunction();
+        auto& test = fitting.getTestFunction();
+        fitting.getProblem() +=
+          DirichletBC(displacement, VectorFunction(Real(0), Real(0), Real(0))).on(Outer);
+        // Penalize only normal increments: tangential sliding remains free.
+        // This supplements the fitting metric, not the fitting objective.
+        // The dimensionless coefficient is a heuristic compromise between
+        // cut-plane accuracy and conditioning of the direct linear solves.
+        constexpr Real tangencyPenalty = Real(1e7);
+        const Real penalty = tangencyPenalty / parameters.model.h;
+        const FaceNormal normal(moved);
+        fitting.getProblem().getMetric() +=
+          FaceIntegral(penalty * Dot(normal, displacement), Dot(normal, test))
+            .over({SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus});
+
         RealFunction target(
           [&](const Geometry::Point& point) { return targetLevelSet.getValue(point); });
         const auto report = fitting.execute(target, targetGradient);
-        // Preserve failed fits as evidence; a returned candidate is not an
-        // accepted BEM update. The comparison also checks the geometric target.
-        std::ofstream fitRecord("swift-fit.json");
-        fitRecord << std::setprecision(17)
-          << "{\"quality_budget_satisfied\":" << (report.qualityBudgetSatisfied ? "true" : "false")
-          << ",\"geometric_target_reached\":"
-          << (report.geometricSup <= parameters.convergence.tolerance.geometric ? "true" : "false")
-          << ",\"geometric_sup\":" << report.geometricSup
-          << ",\"geometric_target\":" << parameters.convergence.tolerance.geometric
-          << ",\"minimum_jacobian\":" << report.minJ
-          << ",\"maximum_relative_distortion\":" << report.maxQRel
-          << ",\"iterations\":" << report.iterations
-          << ",\"reason\":\"" << report.getReasonString() << "\""
-          << ",\"setup_seconds\":" << report.tSetup
-          << ",\"assembly_seconds\":" << report.tAssembly
-          << ",\"solve_seconds\":" << report.tSolve
-          << ",\"line_search_seconds\":" << report.tLineSearch << "}\n";
-        fitRecord.close();
-        if (!fitRecord) throw std::runtime_error("Cannot save SWIFT fit evidence.");
-        saveExact(MMG::Mesh(KelvinBall::Mesh(moved)), "swift-fit.mesh");
+        if (m_options.bemGradient)
+        {
+          std::ofstream record("swift-fit-latest.json");
+          record << std::setprecision(17) << "{\"quality_budget_satisfied\":"
+            << (report.qualityBudgetSatisfied ? "true" : "false")
+            << ",\"geometric_sup\":" << report.geometricSup
+            << ",\"geometric_target\":" << parameters.convergence.tolerance.geometric
+            << ",\"reason\":\"" << report.getReasonString() << "\"}\n";
+          if (!record) throw std::runtime_error("Cannot record SWIFT fit.");
+        }
         if (!report.qualityBudgetSatisfied)
-          throw std::runtime_error("The SWIFT fit did not satisfy its mesh quality budget.");
+          throw std::runtime_error(
+            "The SWIFT fit did not satisfy its mesh quality budget.");
         Alert::Info()
           << substageHeading("SWIFT reconstruction") << Alert::NewLine
           << diagnosticLabel("Background mean edge h:")
           << Alert::Notation::Number(backgroundH) << Alert::NewLine
           << diagnosticLabel("Fitting reference spacing h0:")
           << Alert::Notation::Number(parameters.model.h) << Alert::NewLine
+          << diagnosticLabel("Cut tangency penalty:")
+          << Alert::Notation::Number(tangencyPenalty) << Alert::NewLine
           << diagnosticLabel("Mean interface triangle size:")
           << Alert::Notation::Number(meanInterfaceSize) << Alert::NewLine
           << diagnosticLabel("Outer iteration cap:")
@@ -611,8 +597,6 @@ namespace KelvinBall
           << Alert::Notation::Number(report.minInnerAlpha) << Alert::NewLine
           << diagnosticLabel("Maximum linear iterations:")
           << Alert::Notation::Number(report.maxLinearIterations) << Alert::NewLine
-          << diagnosticLabel("Skeleton normal jump RMS:")
-          << Alert::Notation::Number(report.normalJumpRMS) << Alert::NewLine
           << diagnosticLabel("Exit reason:") << report.getReasonString() << Alert::NewLine
           << diagnosticLabel("Geometric RMS distance:")
           << Alert::Notation::Number(report.geometricRMS) << Alert::NewLine
@@ -643,12 +627,15 @@ namespace KelvinBall
           << diagnosticLabel("Total linear iterations:")
           << Alert::Notation::Number(report.linearIterations) << Alert::Raise;
 
-        checkFixedGeometry(moved, outerRadius);
-        checkMaterials(moved);
-        const MeshDiagnostics diagnostics = getMeshDiagnostics(moved);
-        return {MMG::Mesh(std::move(moved)),
-          {backgroundH, backgroundH, 0, parameters.fixedBoundaryAttributes.size(),
-            diagnostics.cells, diagnostics.cells}};
+        // Finite penalties leave small normal drift. Restore the known chamber
+        // planes before strict point-location and rotated coupling checks.
+        MMG::Mesh fitted(std::move(moved));
+        Sphere(m_options.configuration).projectFixedGeometry(fitted);
+        checkFixedGeometry(fitted, outerRadius);
+        checkMaterials(fitted);
+        const MeshDiagnostics diagnostics = getMeshDiagnostics(fitted);
+        return {std::move(fitted),
+          {backgroundH, backgroundH, 0, 0, diagnostics.cells, diagnostics.cells}};
       }
 
       void smoothReconstruction(Mesh& mesh)
@@ -668,21 +655,23 @@ namespace KelvinBall
       }
 
       template <class LevelSet>
-      MMG::Mesh adaptSWIFTBackground(const MMG::Mesh& background,
-        const LevelSet& target, const Sphere& sphere, Real requestedWelschScale)
+      MMG::Mesh adaptSWIFTBackground(const MMG::Mesh& background, const LevelSet& target,
+        const Sphere& sphere, Real requestedWelschScale)
       {
         const auto& configuration = m_options.configuration;
         const auto before = getMeshDiagnostics(background, false);
-        const Real width = requestedWelschScale > 0 ? requestedWelschScale :
-          Real(3) * configuration.getGridSpacing();
+        const Real width = requestedWelschScale > 0
+          ? requestedWelschScale
+          : Real(3) * configuration.getGridSpacing();
         const Adaptation::SWIFT::Loss welsch(width);
         P1<Real, Mesh> sizeSpace(background);
         MMG::RealGridFunction size(sizeSpace);
         for (Index vertex = 0; vertex < background.getVertexCount(); ++vertex)
         {
           const auto& dofs = target.getFiniteElementSpace().getDOFs(0, vertex);
-          size[vertex] = configuration.hmax - (configuration.hmax - configuration.hmin)
-            * welsch.getWeight(std::abs(target.getData()(dofs[0])));
+          size[vertex] = configuration.hmax -
+            (configuration.hmax - configuration.hmin) *
+              welsch.getWeight(std::abs(target.getData()(dofs[0])));
         }
         MMG::Mesh adapted;
         try
@@ -694,12 +683,12 @@ namespace KelvinBall
           Alert::Warning() << "MMG background adaptation before classification failed: "
                            << error.what() << Alert::NewLine
                            << "Retrying from the unchanged background with required "
-                              "chamber-cut triangles." << Alert::Raise;
+                              "chamber-cut triangles."
+                           << Alert::Raise;
           try
           {
             adapted = sphere.adaptBackground(background, size, true);
-            Alert::Info() << substageHeading("MMG adaptation recovery")
-                          << Alert::NewLine
+            Alert::Info() << substageHeading("MMG adaptation recovery") << Alert::NewLine
                           << "Required-cut retry accepted." << Alert::Raise;
           }
           catch (const std::exception& retryError)
@@ -713,14 +702,15 @@ namespace KelvinBall
           }
         }
         const auto after = getMeshDiagnostics(adapted, false);
-        Alert::Info() << substageHeading("MMG background adaptation before classification")
+        Alert::Info() << substageHeading(
+                           "MMG background adaptation before classification")
                       << Alert::NewLine << diagnosticLabel("Cell count:")
                       << Alert::Notation::Number(before.cells) << " -> "
                       << Alert::Notation::Number(after.cells) << Alert::NewLine
                       << diagnosticLabel("Material interfaces retained:") << 0
                       << Alert::NewLine << diagnosticLabel("Welsch size-map scale:")
-                      << Alert::Notation::Number(width)
-                      << Alert::NewLine << diagnosticLabel("Minimum tetrahedron quality:")
+                      << Alert::Notation::Number(width) << Alert::NewLine
+                      << diagnosticLabel("Minimum tetrahedron quality:")
                       << Alert::Notation::Number(before.minimumQuality) << " -> "
                       << Alert::Notation::Number(after.minimumQuality) << Alert::NewLine
                       << diagnosticLabel("Mean tetrahedron quality:")
@@ -823,23 +813,56 @@ namespace KelvinBall
           ReconstructionDiagnostics diagnostics;
       };
 
+      Optional<Real> m_restartTargetVolume;
+      size_t m_restartStep = 0;
+
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
+        if (!m_options.restartCheckpoint.empty())
+        {
+          const std::filesystem::path directory(m_options.restartCheckpoint);
+          if (!std::filesystem::exists(directory / "READY"))
+            throw std::runtime_error("Incomplete SWIFT checkpoint.");
+          const auto file = IO::HDF5::File(H5Fopen((directory / "state.h5").c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+          if (!file) throw std::runtime_error("Cannot read checkpoint state.");
+          const auto state = IO::HDF5::readVectorDataset<IO::HDF5::F64>(file.get(), "/State");
+          if (state.size() != 14 || state[0] != 2 || !std::isfinite(state[1]) ||
+              state[1] < 0 || state[1] != std::floor(state[1]) ||
+              !std::isfinite(state[2]) || state[2] <= 0 || !std::isfinite(state[3]) || state[3] <= 0 ||
+              state[4] != m_options.configuration.getGridSpacing() || state[5] != m_options.configuration.outerRadius ||
+              state[6] != m_options.regularizationFactor || state[7] != m_options.stepFactor ||
+              state[8] != m_options.minimumThickness || state[9] != Real(m_options.configuration.adapt) ||
+              state[10] != Real(m_options.bemGradient) || state[11] != Real(m_options.bemOrder) ||
+              state[12] != m_options.bemEpsilonFactor || state[13] != m_options.configuration.seedAmplitude)
+            throw std::runtime_error("Checkpoint parameters or scalar state changed.");
+          m_restartStep = static_cast<size_t>(state[1]); m_restartTargetVolume = state[2];
+          auto mesh = Checkpoint::loadMesh((directory / "chamber.h5").string());
+          auto background = Checkpoint::loadMesh((directory / "background.h5").string());
+          return {std::move(mesh),std::move(background),state[3],{}};
+        }
         if (!m_options.inputMesh.empty())
         {
-          MMG::Mesh loaded;
-          loaded.load(m_options.inputMesh, IO::FileFormat::MEDIT);
+          MMG::Mesh mesh;
+          std::ifstream input(m_options.inputMesh);
+          if (!input) throw std::runtime_error("Cannot read input chamber.");
+          MMG::MeshLoader(mesh).load(input);
+          prepare(mesh);
           Optional<MMG::Mesh> background;
-          const Real h = meanElementSize(loaded);
-          if (m_options.reconstructionMethod == "swift") background.emplace(loaded);
-          // Preserve the accepted mesh exactly. SWIFT clears old interior
-          // labels during classification; no initial fit or smoothing here.
-          return {std::move(loaded), std::move(background), h, {}};
+          ReconstructionDiagnostics diagnostics{};
+          Real h = m_options.configuration.getGridSpacing();
+          if (m_options.reconstructionMethod == "swift")
+          {
+            auto initial = sphere.prepareSWIFTBackground(requestedWelschScale);
+            diagnostics = initial.diagnostics;
+            background.emplace(std::move(initial.mesh));
+            h = meanElementSize(*background);
+          }
+          return {std::move(mesh),std::move(background),h,diagnostics};
         }
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
-          : sphere.discretize(m_options.bemGradient, requestedWelschScale, m_options.bemGradient);
+          : sphere.discretize(false, requestedWelschScale);
         ReconstructionDiagnostics reconstruction = initial.diagnostics;
         Optional<MMG::Mesh> swiftBackground;
         Real backgroundH = std::numeric_limits<Real>::quiet_NaN();
@@ -875,8 +898,8 @@ namespace KelvinBall
           backgroundInfo << Alert::Raise;
           P1 sphereSpace(*swiftBackground);
           GridFunction sphereLevelSet(sphereSpace);
-          sphereLevelSet = RealFunction([&sphere](const Geometry::Point& point) {
-            return sphere.levelSet(point.getPhysicalCoordinates());
+          sphereLevelSet = RealFunction([](const Geometry::Point& point) {
+            return point.getPhysicalCoordinates().norm() - Real(1);
           });
           MMG::Mesh classified =
             classifyLevelSetForSWIFT(*swiftBackground, sphereLevelSet);
@@ -920,22 +943,21 @@ namespace KelvinBall
           << " Thickness-normal smoothing length in h0 (default: 1)." << Alert::NewLine
           << Alert::Notation("--step=<value>")
           << "             Advection time step in multiples of h0 (default: 0.1)."
-          << Alert::NewLine
-          << Alert::Notation("--thickness-min=<value>")
+          << Alert::NewLine << Alert::Notation("--thickness-min=<value>")
           << "      Absolute minimum body thickness (default: 0, off)." << Alert::NewLine
           << Alert::Notation("--motion-force=<fx,fy,fz>")
           << "  Force for the Motion field at each iterate (default: 1,0,0)."
 
           << Alert::NewLine << Alert::Notation("--reconstruction=<method>")
-          << "  Interface reconstruction: swift or mmg (default: swift)." << Alert::NewLine
-          << Alert::Notation("--background-hausdorff=<value>")
+          << "  Interface reconstruction: swift or mmg (default: swift)."
+          << Alert::NewLine << Alert::Notation("--background-hausdorff=<value>")
           << " SWIFT background Hausdorff tolerance, in h0 (default: 0.05)."
           << Alert::NewLine << Alert::Notation("--background-gradation=<value>")
           << " SWIFT background gradation (default: 2)." << Alert::NewLine
           << Alert::Notation("--mmg-adapt")
-          << "                Adapt near the target interface:"
-          << Alert::NewLine
-          << "                              After an MMG cut; before SWIFT classification "
+          << "                Adapt near the target interface:" << Alert::NewLine
+          << "                              After an MMG cut; before SWIFT "
+             "classification "
              "and fitting."
           << Alert::NewLine
           << "                              Adaptation uses the fixed size factors times "
@@ -978,12 +1000,6 @@ namespace KelvinBall
           << "  Dimensionless quadratic-hinge weight (default: 10)." << Alert::NewLine
           << Alert::Notation("--swift-model-quality-guard=<fraction>")
           << "  Soft guard fraction for that penalty (default: 0.1)." << Alert::NewLine
-          << Alert::Notation("--bem-gradient")
-          << "              Native regularized P1 Galerkin BEM state and gradient." << Alert::NewLine
-          << Alert::Notation("--bem-order=<order>")
-          << "         Smooth surface tensor quadrature (default 3)." << Alert::NewLine
-          << Alert::Notation("--bem-epsilon-factor=<value>")
-          << " Default 0.6; epsilon follows sqrt(mean panel area)." << Alert::NewLine
           << Alert::Notation("--geometry-only")
           << "             Stop after initial reconstruction." << Alert::NewLine
           << Alert::Notation("--state-only")
@@ -1148,8 +1164,10 @@ namespace KelvinBall
       {
         std::set<Index> vertices;
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
+        {
           if (face->getAttribute() == Gamma)
             vertices.insert(face->getVertices().begin(), face->getVertices().end());
+        }
         Real squared = 0;
         Real supremum = 0;
         for (const Index vertex : vertices)
@@ -1211,9 +1229,9 @@ namespace KelvinBall
       }
 
       template <class LevelSet>
-      SphereDiscretization discretizeLevelSetMMG(MMG::Mesh& mesh, const LevelSet& levelSet,
-        Real targetSize, Real hmin, Real hmax, const Sphere& sphere, bool adapt,
-        Real snap, Real requestedWelschScale, const std::string& evidencePrefix = "")
+      SphereDiscretization discretizeLevelSetMMG(MMG::Mesh& mesh,
+        const LevelSet& levelSet, Real targetSize, Real hmin, Real hmax,
+        const Sphere& sphere, bool adapt, Real snap, Real requestedWelschScale)
       {
         const size_t previousCells = mesh.getCellCount();
         const Real hausdorff = 0.1 * targetSize * targetSize;
@@ -1256,10 +1274,9 @@ namespace KelvinBall
           if (attribute && !fixed.contains(*attribute))
             mesh.setAttribute({mesh.getDimension() - 1, face->getIndex()}, {});
         }
-        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, m_options.bemGradient, m_options.bemGradient);
+        const size_t requiredTriangles = sphere.protectFixedGeometry(mesh, false);
 
         MMG::LevelSetDiscretizer discretizer;
-        if (m_options.bemGradient) discretizer.setPreserveVolumeBoundary();
         // Under RMC, retain the body component attached to the chamber cuts;
         // Fluid is a cell label, not a boundary-face base reference.
         discretizer.split(Fluid, {Obstacle, Fluid})
@@ -1293,6 +1310,7 @@ namespace KelvinBall
           {
             const auto& vertices = cell->getVertices();
             for (size_t a = 0; a < vertices.size(); ++a)
+            {
               for (size_t b = a + 1; b < vertices.size(); ++b)
               {
                 const Real t = crossingFraction(vertices[a], vertices[b]);
@@ -1304,6 +1322,7 @@ namespace KelvinBall
                 if (distanceToVertex < Real(1e-3))
                   ++nearVertex;
               }
+            }
           }
           return std::tuple{edges, nearVertex, minimum};
         };
@@ -1326,6 +1345,7 @@ namespace KelvinBall
           {
             const auto& vertices = cell->getVertices();
             for (size_t a = 0; a < vertices.size(); ++a)
+            {
               for (size_t b = a + 1; b < vertices.size(); ++b)
               {
                 const Index i = vertices[a], j = vertices[b];
@@ -1337,10 +1357,13 @@ namespace KelvinBall
                 else if (t > 1 - snap)
                   snapped[j] = 1;
               }
+            }
           }
           for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
+          {
             if (snapped[vertex])
               sanitized[vertex] = 0;
+          }
           // MMG requires every tetrahedron to keep a vertex off the level set;
           // the vertex farthest from it keeps its value.
           size_t restored = 0;
@@ -1387,13 +1410,7 @@ namespace KelvinBall
                        << Alert::Notation::Number(snappedMinimum);
         }
         crossingInfo << Alert::Raise;
-        if (!evidencePrefix.empty())
-        {
-          saveExact(mesh, evidencePrefix + "-input.mesh");
-          saveExactField(sanitized, evidencePrefix + "-input.sol");
-        }
         MMG::Mesh reconstructed = discretizer.discretize(sanitized);
-        if (!evidencePrefix.empty()) saveExact(reconstructed, evidencePrefix + "-before-projection.mesh");
         sphere.projectFixedGeometry(reconstructed);
 
         splitSelfPairedCut(reconstructed);
@@ -1430,7 +1447,7 @@ namespace KelvinBall
           << Alert::Raise;
 
         const size_t requiredTrianglesBeforeOptimization =
-          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient, m_options.bemGradient);
+          sphere.protectFixedGeometry(reconstructed, false);
         if (adapt)
         {
           sphere.adapt(reconstructed, requestedWelschScale);
@@ -1448,7 +1465,7 @@ namespace KelvinBall
           splitSelfPairedCut(reconstructed);
         }
         const size_t requiredTrianglesAfterOptimization =
-          sphere.protectFixedGeometry(reconstructed, m_options.bemGradient, m_options.bemGradient);
+          sphere.protectFixedGeometry(reconstructed, false);
         const MeshDiagnostics outputDiagnostics =
           getMeshDiagnostics(reconstructed, false);
         Alert::Info()
@@ -1490,24 +1507,6 @@ namespace KelvinBall
         return diagnostics;
       }
 
-      static void saveExact(const MMG::Mesh& mesh, const std::string& path)
-      {
-        std::ofstream output(path);
-        output << std::setprecision(17);
-        MMG::MeshPrinter(mesh).print(output);
-        if (!output) throw std::runtime_error("Failed exporting exact chamber mesh.");
-      }
-
-      template <class Field>
-      static void saveExactField(const Field& field, const std::string& path)
-      {
-        std::ofstream output(path);
-        output << std::setprecision(17);
-        IO::GridFunctionPrinter<IO::FileFormat::MEDIT,
-          typename Field::FESType, typename Field::DataType>(field).print(output);
-        if (!output) throw std::runtime_error("Failed exporting exact target field.");
-      }
-
       int m_argc;
       char** m_argv;
   };
@@ -1528,17 +1527,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   m_reconstructionOptions.emplace(getReconstructionOptions(argc, argv));
   m_fittingParameters =
     getFittingParameters(m_options.configuration.getGridSpacing(), argc, argv);
-  // The physical container wall is fixed; each artificial cut admits motion
-  // within its plane. Intersections carry all incident cut constraints.
-  m_fittingParameters.fixedBoundaryAttributes = {Outer};
-  m_fittingParameters.slipBoundaryAttributes = {
-    SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus};
   const Real outerRadius = m_options.configuration.outerRadius;
   const Real nitschePenalty = m_options.configuration.nitschePenalty;
   const Real stabilizationFactor = m_options.configuration.stabilizationFactor;
   const Real initialGridSpacing = m_options.configuration.getGridSpacing();
-  const Real requestedWelschScale =
-    m_fittingParameters.model.robustScale;
+  const Real requestedWelschScale = m_fittingParameters.model.robustScale;
   reportConfiguration(requestedWelschScale);
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
@@ -1550,37 +1543,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   auto initial = initialize(sphere, requestedWelschScale);
   MMG::Mesh mesh = std::move(initial.mesh);
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);
-  Optional<MMG::Mesh> bemBackground;
-  if (m_options.bemGradient && !m_options.reconstructOnly &&
-      m_options.reconstructionMethod == "mmg")
-  {
-    // A common paired trace is necessary: independent remeshed cut triangles
-    // do not represent the same piecewise-linear zero contour after transport.
-    bemBackground.emplace(sphere.makeUniformChamber());
-  }
   Real backgroundH = initial.backgroundH;
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
-  if (m_options.reconstructOnly)
-  {
-    P1 targetSpace(mesh);
-    GridFunction target(targetSpace);
-    target.load(m_options.targetValues, IO::FileFormat::MEDIT);
-    SphereDiscretization result = [&]() {
-      if (m_options.reconstructionMethod == "swift")
-      {
-        auto classified = classifyLevelSetForSWIFT(mesh, target);
-        return fitLevelSetSWIFT(classified, target, meanElementSize(mesh), outerRadius);
-      }
-      return discretizeLevelSetMMG(mesh, target, initialGridSpacing,
-        m_options.configuration.hmin, m_options.configuration.hmax, sphere,
-        m_options.configuration.adapt, m_options.configuration.mmgSnap, requestedWelschScale);
-    }();
-    smoothReconstruction(result.mesh);
-    checkFixedGeometry(result.mesh, outerRadius);
-    checkMaterials(result.mesh);
-    saveExact(result.mesh, "candidate.mesh");
-    return 0;
-  }
   Optional<IO::XDMF> reconstructionXdmf;
   Optional<IO::XDMF::Grid> reconstructionOutput;
   if (m_options.reconstructionMethod == "mmg")
@@ -1593,24 +1557,25 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   checkFixedGeometry(mesh, outerRadius);
   checkMaterials(mesh);
   if (m_options.saveMeshDiagnostic)
-    saveExact(mesh, "KelvinBallInitial.mesh");
+    mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
   reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
+  const Real targetVolume = m_restartTargetVolume ? *m_restartTargetVolume : mesh.getVolume(Obstacle);
+  const auto saveCheckpoint = [&](size_t iteration) {
+    if (!m_options.saveCheckpoints) return;
+    if (!swiftBackground) throw std::runtime_error("Missing SWIFT background.");
+    Checkpoint::save(m_restartStep + iteration,mesh,*swiftBackground,
+      {2,Real(m_restartStep + iteration),targetVolume,backgroundH,initialGridSpacing,outerRadius,
+       m_options.regularizationFactor,m_options.stepFactor,m_options.minimumThickness,
+       Real(m_options.configuration.adapt),Real(m_options.bemGradient),Real(m_options.bemOrder),
+       m_options.bemEpsilonFactor,m_options.configuration.seedAmplitude});
+  };
   if (m_options.geometryOnly)
-    return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
-  std::array<Real, 3> bodyResistance{};
-  if (m_options.boundaryStep)
   {
-    std::ifstream values(m_options.bemValues);
-    if (!(values >> bodyResistance[0] >> bodyResistance[1] >> bodyResistance[2]) ||
-        !std::isfinite(bodyResistance[0]) || !std::isfinite(bodyResistance[1]) ||
-        !std::isfinite(bodyResistance[2]) || bodyResistance[0] <= 0 || bodyResistance[2] <= 0 ||
-        bodyResistance[0]*bodyResistance[2] <= bodyResistance[1]*bodyResistance[1])
-      throw std::runtime_error("Invalid positive-definite BEM k,c,q.");
+    saveCheckpoint(0);
+    return 0;
   }
-  const KelvinBall::OuterVelocity outer(m_options.outerValues);
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1673,6 +1638,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<Real> predictedVolumeChange;
   Optional<MMG::Mesh> nextMesh;
   Optional<MMG::Mesh> nextBackground;
+  Optional<Location::AABB<MMG::Mesh>> backgroundLocator;
+  Optional<KelvinBall::RotatedNitscheIntegrator> backgroundCoupling;
 
   for (size_t iteration = 0; iteration < m_options.maxIterations; ++iteration)
   {
@@ -1688,11 +1655,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       {
         // Refresh only between iterations, after the previous spaces and
         // fields have expired. The background is fixed during each fit.
+        backgroundCoupling.reset();
+        backgroundLocator.reset();
         swiftBackground.emplace(std::move(*nextBackground));
         nextBackground.reset();
         backgroundH = meanElementSize(*swiftBackground);
       }
     }
+    saveCheckpoint(iteration);
     const Real h = meanElementSize(mesh);
     const auto meshDiagnostics = getMeshDiagnostics(mesh);
     const Real hilbertLength = m_options.regularizationFactor * initialGridSpacing;
@@ -1735,7 +1705,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     fluidConnectivity.discover(2, 1);
     fluidConnectivity.restrict(1, 0);
     fluidConnectivity.restrict(2, 3);
-    if (m_options.boundaryStep) fluidConnectivity.discover(0, 0);
 
     VelocitySpace Vh(fluid, 3);
     PressureSpace Qh(fluid);
@@ -1747,48 +1716,45 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     reportStageTiming(2, stageSeconds[1]);
 
     const auto stage3Start = Clock::now();
-    announce(m_options.bemGradient ? "Stage 3: Solving six native BEM states." :
-      "Stage 3: Solving the translational and rotational Stokes states.");
+    announce(m_options.bemGradient ? "Stage 3: Solving native infinite-exterior BEM states and derivative." : "Stage 3: Solving the translational and rotational Stokes states.");
     const KelvinBall::Parameters metricParameters{h, nitschePenalty, stabilizationFactor};
-    const KelvinBall::Metrics resistanceMetrics(metricParameters,
-      m_options.boundaryStep ? &outer : nullptr);
+    const KelvinBall::Metrics resistanceMetrics(metricParameters);
     P1 shapeSpace(mesh, 3);
-    KelvinBall::Values metrics;
-    KelvinBall::BEM::Result bemResult;
     Math::Vector<Real> bemLoad;
+    KelvinBall::Values metrics;
     if (m_options.bemGradient)
     {
-      bemResult = BEM(m_options.bemOrder, m_options.bemEpsilonFactor).evaluateChamber(
-        mesh, shapeSpace, bemLoad, !m_options.stateOnly);
-      if (bemResult.openEdges)
-        throw std::runtime_error("Native BEM refuses an open sewn body surface; repair the chamber seam first.");
-      metrics.k = bemResult.k; metrics.c = bemResult.c; metrics.q = bemResult.q;
-      metrics.rho = bemResult.rho; metrics.couplingSymmetry = bemResult.reciprocity;
-      std::ofstream nativeRecord("bem-state-" + std::to_string(iteration) + ".json");
-      nativeRecord << std::setprecision(17) << "{\"k\":" << metrics.k << ",\"c\":" << metrics.c
-        << ",\"q\":" << metrics.q << ",\"rho\":" << metrics.rho
-        << ",\"residual\":" << bemResult.residual << ",\"reciprocity\":" << bemResult.reciprocity
-        << ",\"epsilon\":" << bemResult.epsilon << ",\"panels\":" << bemResult.panels
-        << ",\"open_edges\":" << bemResult.openEdges
-        << ",\"design_domain\":\"O24-chamber\",\"state_dofs\":" << bemResult.stateDOFs
-        << ",\"independent_dofs\":" << bemResult.independentDOFs << "}\n";
-      if (!nativeRecord) throw std::runtime_error("Failed saving native BEM state.");
-      saveExact(mesh, "bem-chamber-" + std::to_string(iteration) + ".mesh");
+      uT0.getData().setZero(); uT1.getData().setZero(); uT2.getData().setZero();
+      uR0.getData().setZero(); uR1.getData().setZero(); uR2.getData().setZero();
+      pT0.getData().setZero(); pT1.getData().setZero(); pT2.getData().setZero();
+      pR0.getData().setZero(); pR1.getData().setZero(); pR2.getData().setZero();
+      const auto result = BEM(m_options.bemOrder,m_options.bemEpsilonFactor).evaluateChamber(
+        mesh,shapeSpace,bemLoad,!m_options.stateOnly);
+      metrics.k=result.k; metrics.c=result.c; metrics.q=result.q; metrics.rho=result.rho;
+      metrics.couplingSymmetry=result.reciprocity;
+      metrics.nitscheJump=std::numeric_limits<Real>::quiet_NaN();
+      std::ofstream record("bem-state-"+std::to_string(iteration)+".json");
+      record << std::setprecision(17) << "{\"rho\":" << result.rho
+        << ",\"k\":" << result.k << ",\"c\":" << result.c << ",\"q\":" << result.q
+        << ",\"residual\":" << result.residual << ",\"epsilon\":" << result.epsilon
+        << ",\"panels\":" << result.panels << ",\"open_edges\":" << result.openEdges
+        << ",\"state_dofs\":" << result.stateDOFs << ",\"independent_dofs\":" << result.independentDOFs
+        << ",\"design_domain\":\"O24-chamber\",\"bem_domain\":\"infinite-exterior\"}\n";
+      if (!record) throw std::runtime_error("Cannot record BEM state.");
     }
-    else
-      metrics = resistanceMetrics.evaluateChamber(
-        Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
+    else metrics = resistanceMetrics.evaluateChamber(
+      Vh, Qh, fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
     stageSeconds[2] = elapsedSeconds(stage3Start);
     reportStageTiming(3, stageSeconds[2]);
-    const Real k = m_options.boundaryStep ? bodyResistance[0] : metrics.k;
-    const Real c = m_options.boundaryStep ? bodyResistance[1] : metrics.c;
-    const Real q = m_options.boundaryStep ? bodyResistance[2] : metrics.q;
+    const Real k = metrics.k;
+    const Real c = metrics.c;
+    const Real q = metrics.q;
     const Real resistanceDeterminant = k * q - c * c;
     const Math::SpatialVector<Real> motionTranslation =
       (q / resistanceDeterminant) * m_options.motionForce;
     const Math::SpatialVector<Real> motionAngular =
       (-c / resistanceDeterminant) * m_options.motionForce;
-    const Real rho = m_options.boundaryStep ? std::abs(c)/std::sqrt(k*q) : metrics.rho;
+    const Real rho = metrics.rho;
     const Real couplingSymmetry = metrics.couplingSymmetry;
     const Real volume = mesh.getVolume(Obstacle);
     const Real nitscheJump = metrics.nitscheJump;
@@ -1847,11 +1813,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
               << m_options.configuration.hminFactor << ','
               << m_options.configuration.hmaxFactor << ',' << m_options.configuration.hmin
               << ',' << m_options.configuration.hmax << ',' << h << ',' << dt << ','
-              << hilbertLength << ','
-              << nitschePenalty << ',' << stabilizationFactor << ',' << assemblyBackend
-              << ',' << KelvinBall::DirectSolverName << ',' << meshDiagnostics.vertices
-              << ',' << meshDiagnostics.cells << ',' << meshDiagnostics.obstacleCells
-              << ',' << meshDiagnostics.fluidCells << ','
+              << hilbertLength << ',' << nitschePenalty << ',' << stabilizationFactor
+              << ',' << assemblyBackend << ',' << KelvinBall::DirectSolverName << ','
+              << meshDiagnostics.vertices << ',' << meshDiagnostics.cells << ','
+              << meshDiagnostics.obstacleCells << ',' << meshDiagnostics.fluidCells << ','
               << meshDiagnostics.interfaceTriangles << ','
               << meshDiagnostics.minimumQuality << ',' << meshDiagnostics.meanQuality
               << ',' << meshDiagnostics.maximumQuality << ',' << backgroundH << ','
@@ -1880,8 +1845,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
               << k / determinant << ','
               << (c != 0 ? 2 * M_PI / motionAngular.norm() : nan) << ','
               << (c != 0 ? 2 * M_PI * q / std::abs(c) : nan) << ',' << std::sqrt(q / k)
-              << ',' << m_options.minimumThickness
-              << ',' << normalLength << ',' << stageDiagnostics.thicknessPenalty << ','
+              << ',' << m_options.minimumThickness << ',' << normalLength << ','
+              << stageDiagnostics.thicknessPenalty << ','
               << stageDiagnostics.thicknessNominalPenalty << ','
               << stageDiagnostics.thicknessGuardDistance << ','
               << stageDiagnostics.thicknessActiveMultiplier << ','
@@ -2173,16 +2138,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                            stageDiagnostics.predictedThicknessChange)
                       << Alert::Raise;
     }
-    Math::Vector<Real> softLoad = Math::Vector<Real>::Zero(shapeSpace.getSize());
-    SoftThicknessPenalty::Result softResult;
-    if (m_options.softThickness > 0)
-    {
-      mesh.getConnectivity().compute(2, 3);
-      const Location::AABB<MMG::Mesh> locator(mesh);
-      const SoftThicknessPenalty penalty(mesh, m_options.softThickness, true);
-      softResult = penalty.evaluate(mesh, locator, shapeSpace,
-        m_options.softThicknessWeight, softLoad);
-    }
     GradientDiagnostics rhoGradientDiagnostics{}, volumeGradientDiagnostics{};
     {
     // Retain the factorization only while identifying the three differentials.
@@ -2207,35 +2162,21 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                       << Alert::Raise;
       }
       if (m_options.bemGradient)
-      {
-        // Flow(-dt) pulls back phi: the physical boundary advances along +theta.
-        rhoGradientDiagnostics = identifyGradient(identification, RealFunction{0},
-          rhoGradient, "Native BEM rho", &bemLoad);
-      }
+        rhoGradientDiagnostics = identifyGradient(identification, RealFunction{0}, rhoGradient, "BEM rho", &bemLoad);
       else
-        rhoGradientDiagnostics = identifyGradient(identification, -rhoDensity, rhoGradient, "Rho",
-          m_options.softThickness > 0 ? &softLoad : nullptr);
+        rhoGradientDiagnostics = identifyGradient(identification, -rhoDensity, rhoGradient, "Rho");
       volumeGradientDiagnostics =
         identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
-    }
-    if (m_options.bemGradient)
-    {
-      const ChamberSymmetry quotient(mesh);
-      quotient.vector(rhoGradient);
-      quotient.vector(volumeGradient);
     }
     TestFunction testField(shapeSpace);
     auto interfaceNormal = FaceNormal(mesh);
     interfaceNormal.traceOf(Fluid);
     LinearForm dRho(testField), dVolume(testField);
-    if (m_options.bemGradient)
-      dRho = FaceIntegral(RealFunction{0}, Dot(interfaceNormal, testField)).over(Gamma);
-    else
-      dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
+    dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
     dVolume = FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
     dRho.assemble();
-    if (m_options.bemGradient) dRho.getVector() = bemLoad;
     dVolume.assemble();
+    if (m_options.bemGradient) dRho.getVector() = bemLoad;
     const Real volumeMetric = dVolume(volumeGradient);
     if (!(std::isfinite(volumeMetric) && std::abs(volumeMetric) > Real(1e-20)))
       throw std::runtime_error("The volume gradient has zero constraint derivative.");
@@ -2328,31 +2269,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const Real thetaInfinityNorm = xiRhoNorm.max();
     const Real dRhoTheta = dRho(theta);
     const Real dVolumeTheta = dVolume(theta);
-    if (m_options.boundaryStep)
-    {
-      std::ofstream direction("direction.txt");
-      direction << std::setprecision(17);
-      for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
-      {
-        const auto& x = mesh.getVertexCoordinates(vertex);
-        const auto dofs = shapeSpace.getDOFs(0, vertex);
-        direction << x(0) << ' ' << x(1) << ' ' << x(2);
-        for (Index j = 0; j < 3; ++j) direction << ' ' << theta.getData()(dofs(j));
-        direction << '\n';
-      }
-      std::ofstream diagnostic("boundary-step.json");
-      diagnostic << std::setprecision(17) << "{\"k\":" << k << ",\"c\":" << c
-        << ",\"q\":" << q << ",\"rho\":" << rho << ",\"dt\":" << dt
-        << ",\"d_rho_theta\":" << dRhoTheta << ",\"d_volume_theta\":" << dVolumeTheta
-        << ",\"merit_slope\":" << dRhoTheta + softLoad.dot(theta.getData())
-        << ",\"penalty\":" << softResult.penalty << ",\"deepest\":" << softResult.deepest
-        << ",\"violating\":" << softResult.violating << ",\"rays\":" << softResult.rays
-        << ",\"cross_cut_samples\":" << softResult.crossCut
-        << ",\"rho_gradient_residual\":" << rhoGradientDiagnostics.residual
-        << ",\"volume_gradient_residual\":" << volumeGradientDiagnostics.residual
-        << ",\"group_order\":24,\"exact_discrete_derivative\":true}\n";
-      if (!direction || !diagnostic) throw std::runtime_error("Failed exporting BEM direction.");
-    }
     if (m_options.minimumThickness > 0)
     {
       stageDiagnostics.dThicknessTheta = -thicknessLoad.dot(theta.getData());
@@ -2383,12 +2299,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     previousVolume = volume;
     predictedVolumeChange = dt * dVolumeTheta;
     GridFunction distance(levelSetSpace);
-    Distance::Eikonal(distance)
-      .setInterior(Obstacle)
-      .setInterface(Gamma)
-      .solve()
-      .sign();
-    if (m_options.bemGradient) ChamberSymmetry(mesh).scalar(distance);
+    Distance::Eikonal(distance).setInterior(Obstacle).setInterface(Gamma).solve().sign();
     stageDiagnostics.eikonalJump = shapeCoupling.scalarJump(distance);
     Alert::Info() << substageHeading("Eikonal redistancing") << Alert::NewLine
                   << diagnosticLabel("Rotated distance jump:")
@@ -2397,8 +2308,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
 
     stageSeconds[5] = elapsedSeconds(stage6Start);
     reportStageTiming(6, stageSeconds[5]);
-    MMG::Mesh& advectionMesh = bemBackground ? *bemBackground :
-      (swiftBackground ? *swiftBackground : mesh);
+    MMG::Mesh& advectionMesh = swiftBackground ? *swiftBackground : mesh;
+    // Retain background locators between iterations without adaptation.
+    // Replacement above invalidates both caches before changing the mesh.
+    Optional<Location::AABB<MMG::Mesh>> chamberLocator;
     P1 advectionLevelSetSpace(advectionMesh);
     GridFunction advectedDistance(advectionLevelSetSpace);
     // Only the transported scalar survives this scope. In particular, the
@@ -2414,8 +2327,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       SubMesh<Context::Local>::Builder interfaceBuilder;
       interfaceBuilder.initialize(mesh);
       for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
+      {
         if (face->getAttribute() == Gamma)
           interfaceBuilder.include(mesh.getDimension() - 1, face->getIndex());
+      }
       SubMesh<Context::Local> interfaceMesh = interfaceBuilder.finalize();
       P1 interfaceVectorSpace(interfaceMesh, 3);
       P1 interfaceScalarSpace(interfaceMesh);
@@ -2464,26 +2379,36 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       fluidState.clear();
       fluidState.setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
       if (!m_options.bemGradient)
-      {
-      fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
-      fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
-      fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
-      fluidState.add("Rotation_0", uR0, IO::XDMF::Center::Node);
-      fluidState.add("Rotation_1", uR1, IO::XDMF::Center::Node);
-      fluidState.add("Rotation_2", uR2, IO::XDMF::Center::Node);
-      fluidState.add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
-      fluidState.add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
-      fluidState.add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
-      fluidState.add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
-      fluidState.add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
-      fluidState.add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
+        fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Rotation_0", uR0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Rotation_1", uR1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Rotation_2", uR2, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        fluidState.add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
       GridFunction chamberMotion(Vh);
       chamberMotion.getData() = motionTranslation(0) * uT0.getData() +
         motionTranslation(1) * uT1.getData() + motionTranslation(2) * uT2.getData() +
         motionAngular(0) * uR0.getData() + motionAngular(1) * uR1.getData() +
         motionAngular(2) * uR2.getData();
-      fluidState.add("Motion", chamberMotion, IO::XDMF::Center::Node);
-      }
+      if (!m_options.bemGradient)
+        fluidState.add("Motion", chamberMotion, IO::XDMF::Center::Node);
 
       KelvinBall::SewedOutput sewedDesign(mesh, FlatSet<Attribute>{Gamma, Outer});
       P1 sewedDesignScalar(sewedDesign.getMesh());
@@ -2516,10 +2441,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       sewedInterfaceBuilder.initialize(sewedDesign.getMesh());
       for (auto face =
              sewedDesign.getMesh().getPolytope(sewedDesign.getMesh().getDimension() - 1);
-        face; ++face)
+           face; ++face)
+      {
         if (face->getAttribute() == Gamma)
           sewedInterfaceBuilder.include(
             sewedDesign.getMesh().getDimension() - 1, face->getIndex());
+      }
       SubMesh<Context::Local> sewedInterfaceMesh = sewedInterfaceBuilder.finalize();
       P1 sewedInterfaceVectorSpace(sewedInterfaceMesh, 3);
       P1 sewedInterfaceScalarSpace(sewedInterfaceMesh);
@@ -2574,10 +2501,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
 
       KelvinBall::SewedOutput sewedFluid(fluid, FlatSet<Attribute>{Gamma, Outer});
-      sewedFluidOutput.clear();
-      sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
-      if (!m_options.bemGradient)
-      {
       VelocitySpace sewedVelocitySpace(sewedFluid.getMesh(), 3);
       PressureSpace sewedPressureSpace(sewedFluid.getMesh());
       GridFunction sewedUT0(sewedVelocitySpace), sewedUT1(sewedVelocitySpace),
@@ -2602,29 +2525,43 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       sewedFluid.setScalarLoad(sewedPR0, rotationPressures, 0);
       sewedFluid.setScalarLoad(sewedPR1, rotationPressures, 1);
       sewedFluid.setScalarLoad(sewedPR2, rotationPressures, 2);
-      sewedFluidOutput.add("Translation_0", sewedUT0, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Translation_1", sewedUT1, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Translation_2", sewedUT2, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Rotation_0", sewedUR0, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Rotation_1", sewedUR1, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Rotation_2", sewedUR2, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Pressure_Translation_0", sewedPT0, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Pressure_Translation_1", sewedPT1, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Pressure_Translation_2", sewedPT2, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Pressure_Rotation_0", sewedPR0, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Pressure_Rotation_1", sewedPR1, IO::XDMF::Center::Node);
-      sewedFluidOutput.add("Pressure_Rotation_2", sewedPR2, IO::XDMF::Center::Node);
+      sewedFluidOutput.clear();
+      sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Translation_0", sewedUT0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Translation_1", sewedUT1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Translation_2", sewedUT2, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Rotation_0", sewedUR0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Rotation_1", sewedUR1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Rotation_2", sewedUR2, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Pressure_Translation_0", sewedPT0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Pressure_Translation_1", sewedPT1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Pressure_Translation_2", sewedPT2, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Pressure_Rotation_0", sewedPR0, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Pressure_Rotation_1", sewedPR1, IO::XDMF::Center::Node);
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Pressure_Rotation_2", sewedPR2, IO::XDMF::Center::Node);
       GridFunction fluidMotion(sewedVelocitySpace);
       fluidMotion.getData() = motionTranslation(0) * sewedUT0.getData() +
         motionTranslation(1) * sewedUT1.getData() +
         motionTranslation(2) * sewedUT2.getData() +
         motionAngular(0) * sewedUR0.getData() + motionAngular(1) * sewedUR1.getData() +
         motionAngular(2) * sewedUR2.getData();
-      sewedFluidOutput.add("Motion", fluidMotion, IO::XDMF::Center::Node);
-      }
+      if (!m_options.bemGradient)
+        sewedFluidOutput.add("Motion", fluidMotion, IO::XDMF::Center::Node);
       sewedInterfaceOutput.add("Motion", bodyMotion, IO::XDMF::Center::Node);
 
-      if (iteration + 1 == m_options.maxIterations && !m_options.boundaryStep)
+      if (iteration + 1 == m_options.maxIterations)
       {
         xdmf.write(static_cast<Real>(iteration)).flush();
         sewedXdmf.write(static_cast<Real>(iteration)).flush();
@@ -2646,6 +2583,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       reportStageTiming(7, stageSeconds[6]);
       const auto stage8Start = Clock::now();
       announce("Stage 8: Advecting the level set.");
+      if (swiftBackground)
+      {
+        if (!backgroundLocator)
+          backgroundLocator.emplace(advectionMesh);
+      }
+      else
+        chamberLocator.emplace(advectionMesh);
+      const auto& advectionLocator =
+        swiftBackground ? *backgroundLocator : *chamberLocator;
       auto& advectionConnectivity = advectionMesh.getConnectivity();
       advectionConnectivity.discover(3, 2);
       advectionConnectivity.discover(3, 1);
@@ -2656,11 +2602,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       P1 advectionShapeSpace(advectionMesh, 3);
       GridFunction advectionDistance(advectionLevelSetSpace);
       GridFunction advectionDirection(advectionShapeSpace);
-      if (swiftBackground || bemBackground)
+      if (swiftBackground)
       {
-      // Transfer by physical position to the fixed chamber background.
-      // Reconstructed vertices need not share its numbering or locations;
-      // copying nodal values would move the zero contour to different points.
+      // The fitted mesh is the background with its vertices moved: the same
+      // numbering at different positions. Copying nodal values would carry
+      // each one from x + u(x) back to x and undo the fit near the interface,
+      // so both fields are evaluated at the positions of the background.
         const Location::AABB<MMG::Mesh> fittedLocator(mesh);
         std::size_t unlocated = 0;
         advectionDistance = RealFunction([&](const Geometry::Point& point) {
@@ -2692,12 +2639,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             "Background points fell outside the fitted mesh during the transfer.");
         Alert::Info()
           << substageHeading("Fitted-to-background transfer") << Alert::NewLine
-          << diagnosticLabel("Fitted scalar DOFs:")
-          << Alert::Notation::Number(distance.getData().size())
-          << Alert::NewLine << diagnosticLabel("Background scalar DOFs:")
-          << Alert::Notation::Number(advectionDistance.getData().size())
-          << Alert::NewLine << diagnosticLabel("Unlocated samples:")
-          << Alert::Notation::Number(unlocated)
+          << diagnosticLabel("Nodal-copy error (distance):")
+          << Alert::Notation::Number((advectionDistance.getData() - distance.getData())
+                                       .lpNorm<Eigen::Infinity>())
+          << Alert::NewLine << diagnosticLabel("Nodal-copy error (direction):")
+          << Alert::Notation::Number(
+               (advectionDirection.getData() - theta.getData()).lpNorm<Eigen::Infinity>())
           << Alert::Raise;
       }
       else
@@ -2705,25 +2652,22 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         advectionDistance.getData() = distance.getData();
         advectionDirection.getData() = theta.getData();
       }
-      if (m_options.bemGradient)
+      // MMG transport uses the shape mesh, whose cut locator is already built.
+      // SWIFT transport uses a distinct background and needs its own locator.
+      if (swiftBackground && !backgroundCoupling)
       {
-        const ChamberSymmetry symmetry(advectionMesh);
-        symmetry.scalar(advectionDistance);
-        symmetry.vector(advectionDirection);
+        backgroundCoupling.emplace(advectionMesh,
+          FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
+          rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
       }
-      if (m_options.bemExportTransport)
-        saveExactField(advectionDistance, "transport-initial.sol");
-      KelvinBall::RotatedNitscheIntegrator advectionCoupling(advectionMesh,
-        FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
-        rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
+      const auto& advectionCoupling =
+        backgroundCoupling ? *backgroundCoupling : shapeCoupling;
       KelvinBall::RotatedCharacteristicContinuation rotationalContinuation(
         -dt, advectionMesh, advectionCoupling.getLocator(), RotationPairs);
       const auto characteristic = Flow(-dt, advectionDistance, advectionDirection,
         Math::RungeKutta::RK4{}, rotationalContinuation);
-      const KelvinBall::NodalTransport transport(
-        advectionMesh, advectionDistance, characteristic, advectedDistance);
-      if (m_options.bemGradient)
-        ChamberSymmetry(advectionMesh).scalar(advectedDistance);
+      const KelvinBall::NodalTransport transport(advectionMesh, advectionLocator,
+        advectionDistance, characteristic, advectedDistance);
       stageDiagnostics.transportAttempted = transport.getAttemptedCount();
       stageDiagnostics.transportFallback = transport.getFallbackCount();
       Alert::Info() << substageHeading("Transport coverage") << Alert::NewLine
@@ -2740,8 +2684,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       stageDiagnostics.advectedJump = advectedJump;
       Alert::Info() << substageHeading("Advected distance") << Alert::NewLine
                     << diagnosticLabel("Advection step:") << Alert::Notation::Number(dt)
-                    << Alert::NewLine
-                    << diagnosticLabel("Minimum:")
+                    << Alert::NewLine << diagnosticLabel("Minimum:")
                     << Alert::Notation::Number(advectedDistance.min()) << Alert::NewLine
                     << diagnosticLabel("Maximum:")
                     << Alert::Notation::Number(advectedDistance.max()) << Alert::NewLine
@@ -2752,16 +2695,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << diagnosticLabel("Advected rotated jump:")
                     << Alert::Notation::Number(advectedJump) << Alert::Raise;
       GridFunction advectedOutput(levelSetSpace);
-      if (bemBackground)
-      {
-        const Location::AABB<MMG::Mesh> backgroundLocator(advectionMesh);
-        advectedOutput = RealFunction([&](const Point& point) {
-          const auto located = backgroundLocator.locate(3, point.vector());
-          if (!located) throw std::runtime_error("Chamber output point is outside its background.");
-          return advectedDistance.getValue(*located);
-        });
-      }
-      else advectedOutput.getData() = advectedDistance.getData();
+      advectedOutput.getData() = advectedDistance.getData();
       chamber.add("Advected", advectedOutput, IO::XDMF::Center::Node);
       GridFunction sewedAdvected(sewedDesignScalar);
       sewedDesign.setScalar(sewedAdvected, advectedOutput);
@@ -2782,19 +2716,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
 
     const auto stage9Start = Clock::now();
-    if (m_options.boundaryStep || m_options.bemExportTransport)
-    {
-      saveExact(advectionMesh, "transport.mesh");
-      saveExactField(advectedDistance, "target.sol");
-    }
-    if (m_options.bemExportTransport)
-    {
-      writeHistory(nullSpaceMultiplier, xiRhoInfinityNorm, thetaInfinityNorm, dRhoTheta,
-        dVolumeTheta, requiredDVolumeTheta, rhoGradientDiagnostics,
-        volumeGradientDiagnostics);
-      Alert::Info() << "Saved the chamber transport inputs; no reconstruction or accepted update." << Alert::Raise;
-      return 0;
-    }
     announce(m_options.reconstructionMethod == "swift"
         ? "Stage 9: Fitting the advected interface with SWIFT."
         : "Stage 9: Reconstructing the advected interface with MMG.");
@@ -2803,17 +2724,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       {
         if (m_options.configuration.adapt)
         {
-          auto adapted = adaptSWIFTBackground(*swiftBackground, advectedDistance,
-            sphere, requestedWelschScale);
+          auto adapted = adaptSWIFTBackground(
+            *swiftBackground, advectedDistance, sphere, requestedWelschScale);
           // The old target and its space stay on the unchanged source mesh.
           // Re-evaluate it spatially; nodal copying across MMG is invalid.
           P1<Real, Mesh> targetSpace(adapted);
           GridFunction target(targetSpace);
-          const Location::AABB<MMG::Mesh> sourceLocator(*swiftBackground);
           target = RealFunction([&](const Geometry::Point& point) {
-            const auto source = sourceLocator.locate(3, point.getPhysicalCoordinates());
+            const auto source =
+              backgroundLocator->locate(3, point.getPhysicalCoordinates());
             if (!source)
-              throw std::runtime_error("An adapted background vertex is outside the source chamber.");
+              throw std::runtime_error(
+                "An adapted background vertex is outside the source chamber.");
             return advectedDistance.getValue(*source);
           });
           const Real adaptedH = meanElementSize(adapted);
@@ -2823,11 +2745,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           fitted.diagnostics.cellsAfter = fitted.mesh.getCellCount();
           fitted.diagnostics.minimumSize = m_options.configuration.hmin;
           fitted.diagnostics.maximumSize = m_options.configuration.hmax;
-          fitted.diagnostics.hausdorffTolerance = Real(0.1) * initialGridSpacing *
-            initialGridSpacing;
+          fitted.diagnostics.hausdorffTolerance =
+            Real(0.1) * initialGridSpacing * initialGridSpacing;
           fitted.diagnostics.backgroundMeanElementSize = adaptedH;
-          fitted.diagnostics.welschScale = requestedWelschScale > 0 ?
-            requestedWelschScale : Real(3) * initialGridSpacing;
+          fitted.diagnostics.welschScale = requestedWelschScale > 0
+            ? requestedWelschScale
+            : Real(3) * initialGridSpacing;
           fitted.diagnostics.requiredBoundaryTriangles =
             adapted.getRequiredTriangles().size();
           // Commit the next background only after fitting succeeds. Its old
@@ -2837,8 +2760,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         }
         MMG::Mesh classified =
           classifyLevelSetForSWIFT(*swiftBackground, advectedDistance);
-        auto fitted = fitLevelSetSWIFT(classified, advectedDistance, backgroundH,
-          outerRadius);
+        auto fitted =
+          fitLevelSetSWIFT(classified, advectedDistance, backgroundH, outerRadius);
         return fitted;
       }
       // A failed MMG stage is retried on the same advected level set with
@@ -2847,20 +2770,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       Real scale = initialGridSpacing;
       for (size_t attempt = 0;; ++attempt)
       {
-        // Retain the accepted fitted mesh. Keep the actual input alive for
-        // failure evidence as well as reconstruction.
-        Optional<MMG::Mesh> trialBackground;
-        if (bemBackground) trialBackground.emplace(*bemBackground);
-        MMG::Mesh& cutMesh = trialBackground ? *trialBackground : mesh;
         try
         {
           const Real retryFactor = scale / initialGridSpacing;
-          auto reconstructed = discretizeLevelSetMMG(cutMesh, advectedDistance, scale,
+          auto reconstructed = discretizeLevelSetMMG(mesh, advectedDistance, scale,
             retryFactor * m_options.configuration.hmin,
             retryFactor * m_options.configuration.hmax, sphere,
             m_options.configuration.adapt, m_options.configuration.mmgSnap,
-            requestedWelschScale, m_options.bemGradient ?
-              "bem-mmg-" + std::to_string(iteration + 1) + "-" + std::to_string(attempt) : "");
+            requestedWelschScale);
           reconstructed.diagnostics.scale = retryFactor;
           return reconstructed;
         }
@@ -2869,8 +2786,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           // Keep what MMG received, so that the failure can be reproduced.
           const std::string failure = "mmg-failure-" + std::to_string(iteration + 1) +
             "-" + std::to_string(attempt);
-          cutMesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
-          saveExactField(advectedDistance, failure + ".sol");
+          mesh.save(failure + ".mesh", IO::FileFormat::MEDIT);
+          advectedDistance.save(failure + ".sol", IO::FileFormat::MEDIT);
           Alert::Warning() << "Saved the failed MMG input to " << failure << ".mesh and "
                            << failure << ".sol." << Alert::Raise;
           if (attempt == m_options.configuration.mmgRetries)
@@ -2895,7 +2812,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     }
     checkFixedGeometry(result.mesh, outerRadius);
     checkMaterials(result.mesh);
-    if (m_options.boundaryStep || m_options.bemGradient) saveExact(result.mesh, "candidate.mesh");
     nextMesh.emplace(std::move(result.mesh));
     stageSeconds[8] = elapsedSeconds(stage9Start);
     reportStageTiming(9, stageSeconds[8]);

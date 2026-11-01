@@ -36,6 +36,8 @@ namespace Rodin::Geometry
     public:
       /// @brief Parent class type.
       using Parent = PolytopeTransformation;
+      using Parent::jacobian;
+      using Parent::getDegree;
 
       /**
        * @brief Constructs an identity transformation.
@@ -67,7 +69,7 @@ namespace Rodin::Geometry
        * @brief Gets the polynomial order of the transformation.
        * @returns 1 (linear transformation)
        */
-      size_t getOrder() const override
+      Optional<size_t> getDegree() const override
       {
         return 1;
       }
@@ -93,6 +95,7 @@ namespace Rodin::Geometry
        */
       void jacobian(Math::SpatialMatrix<Real>& jacobian, const Math::SpatialPoint& rc) const override
       {
+        jacobian.resize(getPhysicalDimension(), getReferenceDimension());
         jacobian.setIdentity();
       }
 

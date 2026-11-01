@@ -7,7 +7,7 @@ SWIFT's production quality witnesses or a running calibration campaign.
 
 ## Build
 
-The executable is disabled by default. CGAL is discovered only when it is enabled:
+The executable is disabled by default. CGAL is discovered only when it is enabled.
 
 ```sh
 cmake -S . -B build -DRODIN_BUILD_EXAMPLES=ON -DRODIN_BUILD_SWIFT_WITNESS=ON
@@ -26,7 +26,7 @@ obligations. Distribution of the combined Witness executable must comply with
 the applicable CGAL license. See [CGAL licensing](https://www.cgal.org/license.html)
 and the [package reference](https://doc.cgal.org/latest/Bounding_volumes/group__PkgBoundingVolumesRef.html).
 
-The visualizers require only NumPy:
+The visualizers require only NumPy.
 
 ```sh
 python3 -m pip install -r examples/Adaptation/SWIFT/Witness/requirements.txt
@@ -34,25 +34,26 @@ python3 -m pip install -r examples/Adaptation/SWIFT/Witness/requirements.txt
 
 ## Generate
 
-Run from the repository root, replacing `build` with the configured build path:
+Run from the repository root, replacing `build` with the configured build path.
 
 ```sh
 # Default triangle; all witness locations are free.
-build/examples/Adaptation/SWIFT/Witness/SWIFT_Witness 16
+build/examples/Adaptation/SWIFT/Witness/SWIFT_Witness 2
 
 # One geometry and an explicit output path.
-build/examples/Adaptation/SWIFT/Witness/SWIFT_Witness 16 \
-  --geometry tetrahedron --output /tmp/witness/tetrahedron-16.json
+build/examples/Adaptation/SWIFT/Witness/SWIFT_Witness 2 \
+  --geometry tetrahedron --output /tmp/witness/tetrahedron-subdivisions-2.json
 
 # All eight geometries, executed serially.
-build/examples/Adaptation/SWIFT/Witness/SWIFT_Witness 16 \
+build/examples/Adaptation/SWIFT/Witness/SWIFT_Witness 2 \
   --geometry all --output /tmp/witness/all.json
 ```
 
-No vertices, edges or faces are prescribed. Every positive count is accepted,
-except that the point geometry admits only one distinct location. `--geometry all`
-uses one witness for that geometry. Both `--name value` and `--name=value` are
-supported.
+The positional argument is the positive number of subdivisions per reference
+edge, not the point count. The complete Rodin `WitnessLattice` initializes the
+search. Its vertices are included initially but are not fixed during refinement.
+The point geometry always has one witness. Both `--name value` and
+`--name=value` are supported; the former `--n` option is removed.
 
 | Geometry | Reference domain | Vertices |
 |---|---|---:|
@@ -69,9 +70,9 @@ Reference coordinates and half-spaces come from `Geometry::Polytope::Traits`.
 
 | Setting | Meaning | Default |
 |---|---|---|
-| Positional count or `--n` | Number of distinct witnesses | `6` |
+| Positional subdivisions or `--subdivisions` | Subdivisions per reference edge | `2` |
 | `--geometry` | Reference geometry or `all` | `triangle` |
-| `--output` | JSON path | `witness-<geometry>-<n>.json` |
+| `--output` | JSON path | `witness-<geometry>-subdivisions-<m>.json` |
 | `--iterations` | Voronoi refinement sweep cap | `100` |
 | `--step-tolerance` | Maximum accepted site-motion stopping threshold | `1e-6` |
 | `--max-evaluations` | Candidate coverage evaluation cap | `0`: no extra cap |
@@ -92,13 +93,25 @@ For a reference polytope \(K\), the covering objective is
 \eta_K(X)=\max_{x\in K}\min_{\xi\in X}\|x-\xi\|_2.
 \]
 
-Initialization uses the smallest uniform reference lattice containing at least
-the requested number of points. Simplices use barycentric lattices; boxes use
+Initialization directly reuses Rodin's cached `SWIFT::WitnessLattice` with the
+requested subdivisions. Simplices use barycentric lattices; boxes use
 tensor-product lattices; wedges use triangle lattices times a segment; pyramids
-use shrinking square layers. If the count does not match a complete lattice,
-deterministic farthest-point selection selects the requested number, starting
-nearest the vertex barycenter. A single site starts at that barycenter. The
-construction is recorded in JSON and is independent of `--resolution`.
+use shrinking square layers. No subset selection is performed. The resulting
+point count is retained during refinement, recorded in JSON and independent of
+`--resolution`.
+
+For subdivisions \(m\), the number of sites is:
+
+| Geometry | Point count |
+|---|---:|
+| Point | \(1\) |
+| Segment | \(m+1\) |
+| Triangle | \((m+1)(m+2)/2\) |
+| Quadrilateral | \((m+1)^2\) |
+| Tetrahedron | \((m+1)(m+2)(m+3)/6\) |
+| Pyramid | \((m+1)(m+2)(2m+3)/6\) |
+| Hexahedron | \((m+1)^3\) |
+| Wedge | \((m+1)^2(m+2)/2\) |
 
 Each site's Voronoi cell is clipped against the reference polytope and the other
 sites' bisector half-spaces. Distance to a site is convex on its cell, so its
@@ -106,7 +119,7 @@ maximum is attained at a cell vertex. Continuous coverage is therefore evaluated
 from these vertices in floating-point arithmetic, not from a sampling grid.
 
 Each sweep freezes those cells and replaces every site by its cell's smallest
-enclosing-ball center:
+enclosing-ball center.
 
 \[
 \xi_i^{\mathrm{new}}
@@ -147,11 +160,12 @@ anisotropic mapping.
 
 ## Visualize
 
-Use `plot.py` with a single-geometry JSON object:
+Use `plot.py` with a single-geometry JSON object.
 
 ```sh
 python3 examples/Adaptation/SWIFT/Witness/plot.py \
-  /tmp/witness/tetrahedron-16.json --output /tmp/witness/tetrahedron-16.svg
+  /tmp/witness/tetrahedron-subdivisions-2.json \
+  --output /tmp/witness/tetrahedron-subdivisions-2.svg
 ```
 
 The plot compares initial and final sites side by side, with clipped cells and
@@ -163,7 +177,7 @@ The output is vector SVG. Python does not optimize or recompute coverage.
 
 ## Verification
 
-An independent SciPy/Qhull oracle is used only by the tests:
+An independent SciPy/Qhull oracle is used only by the tests.
 
 ```sh
 python3 -m pip install -r examples/Adaptation/SWIFT/Witness/tests/requirements.txt
@@ -179,7 +193,7 @@ refinement, evaluation budgets, invalid inputs and figure generation.
 smooth-Newton and differential-evolution measurements; it is not a CGAL timing
 benchmark.
 
-Supplied sets can be evaluated without optimization:
+Supplied sets can be evaluated without optimization.
 
 ```sh
 # Input: {"geometry": "triangle", "points": [[0,0], [1,0], [0,1]]}.

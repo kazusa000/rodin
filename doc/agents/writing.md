@@ -21,6 +21,24 @@ should therefore be explicit without replacing technical content with analogy.
 - Keep attribution visible. A citation must support the statement to which it
   is attached.
 
+## Functional tone
+
+State the mathematical object, operation, conditions and result directly.
+Use concise, explanatory prose and sentence-case headings. Repeated contrasts
+of the form “this is X, not Y”, conversational warnings and commentary about
+what the page does not claim should be replaced by a positive definition,
+an explicit scope or an actionable requirement. Keep necessary mathematical
+negations, assumptions, failure conditions and supported-backend limits.
+State a qualification once, where it affects the construction or result.
+
+Prefer connected prose and reserve colons for lists. Write clarifications,
+definitions and consequences as complete sentences. Introduce code and equations
+with grammatical prose rather than a label followed by a colon. Use bullet
+points for genuinely parallel items. Keep colons required by mathematical
+notation, qualified identifiers, URLs, citations and literal program output.
+This rule applies to guides, tutorials, captions, headings and API descriptions.
+
+
 ## Exposition
 
 Organize arguments around the mathematical need:
@@ -62,6 +80,51 @@ normalization, and remaining confounders. Define norms on their actual spaces
 and domains, and distinguish a norm of a difference from a difference of norms.
 Separate observation from interpretation; explanations should be identified as
 such unless the evidence establishes causation.
+
+## Doxygen layout
+
+Documentation comments place the brief on its own line, separate the longer
+description with a blank line, and use Markdown section headings separated
+from the surrounding text by blank lines. Use this layout for new and revised
+documentation throughout the project:
+
+```cpp
+/**
+ * @brief A concise description.
+ *
+ * The full description introduces the mathematical object and its role.
+ *
+ * ## Architecture
+ *
+ * The implementation stages and their invariants are described here.
+ */
+```
+
+Keep focused code snippets beside their explanations. Link complete programs
+to their generated example source pages with `@ref`; avoid repeating the full
+program at the end of a tutorial.
+
+Retain Doxygen mathematical delimiters for rendered expressions and explicit
+links to public concepts. A layout change must not discard assumptions,
+contracts, mathematical content, or existing cross-references.
+
+## Figure typography
+
+Use the site's bundled Manrope font for figure titles, captions, axes and
+legends. Write mathematical expressions in TeX, including labels inside
+figures. Mathematical glyphs retain mathematical typography; prose retains
+Manrope. Use `examples/plot_style.py` for Matplotlib figures and the shared
+ParaView renderer's Manrope font file for scientific field plots. Keep
+backgrounds transparent, include mesh edges when they clarify the field,
+and reserve space for labels and color bars.
+
+Export comparisons as individual panels and group related figures with
+`rodin-mesh-stages`. Use two panels per desktop row, center the final panel
+when the count is odd, and stack panels on narrow screens. Single figures use
+the same width as one desktop column. Keep each caption with its panel.
+Plot P0 fields using one value and flat color per original cell; preserve the
+point/cell data association of all exported fields and the cell-local samples
+of discontinuous higher-order fields.
 
 ## Editing checklist
 

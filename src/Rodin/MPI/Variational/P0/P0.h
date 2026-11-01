@@ -16,12 +16,13 @@
  * a rank-local P0 space on each shard and maintains local/global degree-of-
  * freedom mappings consistent across ownership and ghost layers.
  *
- * P0 degrees of freedom are associated with mesh cells: each cell carries
+ * P0 degrees of freedom are associated with mesh cells. Each cell carries
  * one DOF per field component. Cells are partitioned across ranks; owned cells receive
  * contiguous global indices, and ghost cells synchronize their global DOF
  * index from the owning rank via a direct owner-push exchange.
  */
 
+#include "Rodin/Alert/MemberFunctionException.h"
 #include <map>
 #include <limits>
 #include <algorithm>
@@ -45,7 +46,7 @@ namespace Rodin::Variational
    *
    * This specialization wraps a local shard P0 space and augments it with
    * distributed global indexing. Each cell of the distributed mesh carries
-   * exactly one degree of freedom. Owned cells receive contiguous global
+   * exactly one degree of freedom per field component. Owned cells receive contiguous global
    * indices per rank, and ghost cells synchronize their global DOF index
    * from the owning rank.
    *
@@ -53,8 +54,8 @@ namespace Rodin::Variational
    */
   template <class Range>
   class P0<Range, Geometry::Mesh<Context::MPI>>
-    : public FiniteElementSpace<
-        Geometry::Mesh<Context::MPI>, P0<Range, Geometry::Mesh<Context::MPI>>>
+    : public FiniteElementSpace<Geometry::Mesh<Context::MPI>,
+        P0<Range, Geometry::Mesh<Context::MPI>>>
   {
     public:
       /// @brief Bidirectional map between local and global DOF indices.
@@ -62,12 +63,13 @@ namespace Rodin::Variational
       {
         /**
          * @note The names `left` and `right` mirror bidirectional-map
-         * terminology:
+         * terminology.
          * - `left[local] = global`
          * - `right[global] = local`
          */
         /// Local-to-global mapping (indexed by local DOF = local cell index).
         std::vector<Index> left;
+
         /// Global-to-local mapping (keyed by global DOF).
         FlatMap<Index, Index> right;
       };
@@ -124,7 +126,8 @@ namespace Rodin::Variational
            */
           template <class Function>
           Pullback(const Geometry::Polytope& polytope, Function&& v)
-            : m_polytope(polytope), m_v(std::forward<Function>(v))
+            : m_polytope(polytope),
+              m_v(std::forward<Function>(v))
           {}
 
           /**
@@ -178,7 +181,8 @@ namespace Rodin::Variational
        * point @f$ x @f$.
        */
       template <class CallableType>
-      class Pushforward : public FiniteElementSpacePushforwardBase<Pushforward<CallableType>>
+      class Pushforward
+        : public FiniteElementSpacePushforwardBase<Pushforward<CallableType>>
       {
         public:
           /// @brief Callable type evaluated on reference coordinates.
@@ -203,8 +207,7 @@ namespace Rodin::Variational
            * @param p Physical point.
            * @return Callable value at the point reference coordinates.
            */
-          constexpr
-          auto operator()(const Geometry::Point& p) const
+          constexpr auto operator()(const Geometry::Point& p) const
           {
             return m_v(p.getReferenceCoordinates());
           }
@@ -226,8 +229,7 @@ namespace Rodin::Variational
            * @brief Returns the wrapped reference-space callable.
            * @return Callable reference.
            */
-          constexpr
-          const FunctionType& getFunction() const
+          constexpr const FunctionType& getFunction() const
           {
             return m_v;
           }
@@ -253,6 +255,7 @@ namespace Rodin::Variational
        *   (recorded in @c shard.getOwner(D)) and installs the received global
        *   DOF index in the local-to-global map.
        *
+       * @note Collective over the mesh communicator, including empty ranks.
        * @param[in] mesh Distributed mesh on which the space is defined.
        */
       P0(const MeshType& mesh)
@@ -260,7 +263,12 @@ namespace Rodin::Variational
       {}
 
       /**
-       * Constructs one constant DOF per cell and field component.
+       * @brief Collectively constructs one constant DOF per cell and component.
+       *
+       * All ranks in the mesh communicator participate, including empty ranks.
+       * Ownership numbering and global size are established for this fixed
+       * layout; subsequent size queries and copies require no communication.
+       *
        * @param mesh Mesh on which the object is defined.
        * @param vdim Number of components in the value range.
        */
@@ -268,14 +276,14 @@ namespace Rodin::Variational
         : m_mesh(mesh),
           m_fes(makeShardFES(mesh, vdim))
       {
-        const auto& ctx   = mesh.getContext();
-        const auto& comm  = ctx.getCommunicator();
+        const auto& ctx = mesh.getContext();
+        const auto& comm = ctx.getCommunicator();
         const auto& shard = mesh.getShard();
 
         const size_t D = mesh.getDimension();
 
         // halo(D):  owned local cell -> set of remote ranks that have it as ghost
-        const auto& halo  = shard.getHalo(D);
+        const auto& halo = shard.getHalo(D);
         // owner(D): ghost/shared local cell -> owner rank
         const auto& owner = shard.getOwner(D);
 
@@ -293,6 +301,7 @@ namespace Rodin::Variational
         // Assign contiguous global DOF range for owned cells via prefix scan.
         const size_t inclusive = boost::mpi::scan(comm, m_owned, std::plus<size_t>());
         m_offset = inclusive - m_owned;
+        boost::mpi::all_reduce(comm, m_owned, m_globalSize, std::plus<size_t>());
 
         // The local DOFs of cell i occupy [i * vdim, (i + 1) * vdim).
         // Pre-allocate the left map with an invalid sentinel.
@@ -334,7 +343,7 @@ namespace Rodin::Variational
           if (!shard.isOwned(D, i))
             continue;
 
-          const Index gid    = mesh.getGlobalIndex(D, i);
+          const Index gid = mesh.getGlobalIndex(D, i);
           const Index global = m_offset + dofIdx;
           for (size_t c = 0; c < vdim; ++c)
           {
@@ -353,7 +362,7 @@ namespace Rodin::Variational
               const int rpeer = static_cast<int>(peer);
               if (rpeer == rank)
                 continue;
-              send[rpeer].push_back({ gid, global });
+              send[rpeer].push_back({gid, global});
             }
           }
         }
@@ -463,7 +472,7 @@ namespace Rodin::Variational
       void getOwnershipRange(Index& begin, Index& end) const
       {
         begin = m_offset;
-        end   = m_offset + m_owned;
+        end = m_offset + m_owned;
       }
 
       /**
@@ -511,19 +520,21 @@ namespace Rodin::Variational
        *
        * For a P0 space, degrees of freedom are associated with mesh cells.
        * The global dimension of the space equals the total number of cells
-       * in the distributed mesh:
+       * in the distributed mesh.
        *
        * @f[
-       *   \dim(V_h) = N_c
+       *   \dim(V_h) = N_c \, k
        * @f]
        *
-       * where @f$ N_c @f$ is the global number of mesh cells.
+       * where @f$ N_c @f$ is the global number of mesh cells and @f$k@f$
+       * is the number of field components.
        *
+       * @note This non-collective operation returns the size established during construction.
        * @return Global number of degrees of freedom.
        */
       size_t getSize() const override
       {
-        return getMesh().getCellCount() * getVectorDimension();
+        return m_globalSize;
       }
 
       /**
@@ -577,12 +588,13 @@ namespace Rodin::Variational
        * @param[in] localDof Local basis-function index on the polytope (always 0 for P0).
        * @return Global distributed DOF index.
        */
-      Index getGlobalIndex(const std::pair<size_t, Index>& p, Index localDof) const override
+      Index getGlobalIndex(
+        const std::pair<size_t, Index>& p, Index localDof) const override
       {
         const auto& [d, i] = p;
         assert(i < static_cast<Index>(getMesh().getShard().getPolytopeCount(d)));
 
-        const Index local = m_fes.getGlobalIndex({ d, i }, localDof);
+        const Index local = m_fes.getGlobalIndex({d, i}, localDof);
         return getGlobalIndex(local);
       }
 
@@ -657,6 +669,7 @@ namespace Rodin::Variational
 
       size_t m_offset;
       size_t m_owned;
+      size_t m_globalSize;
       IndexBimap m_localToGlobal;
   };
 }
@@ -678,21 +691,29 @@ namespace Rodin::Variational
     public:
       /// @brief Local matrix space on the mesh shard.
       using FESType = P0<Math::SpatialMatrix<Scalar>, Geometry::Mesh<Context::Local>>;
+
       /// @brief Mesh and execution context of this specialization.
       using MeshType = Geometry::Mesh<Context::MPI>;
+
       /// @brief Scalar space supplying this family's DOF numbering.
       using ScalarSpace = P0<Scalar, Geometry::Mesh<Context::MPI>>;
+
       /// @brief Matrix reference element for this family.
       using ElementType = P0Element<Math::SpatialMatrix<Scalar>>;
+
       /// @brief Existing finite-element-space interface.
       using Parent = FiniteElementSpace<MeshType,
         P0<Math::SpatialMatrix<Scalar>, Geometry::Mesh<Context::MPI>>>;
+
       /// @brief Scalar type of matrix or tensor entries.
       using ScalarType = typename ScalarSpace::ScalarType;
+
       /// @brief Evaluated matrix, tensor, or scalar range type.
       using RangeType = Math::SpatialMatrix<ScalarType>;
+
       /// @brief Local or distributed execution context.
       using ContextType = typename ScalarSpace::ContextType;
+
       /**
        * @brief Expands scalar DOF maps into interleaved row-major matrix components.
        * @param mesh Mesh on which the object is defined.
@@ -703,12 +724,15 @@ namespace Rodin::Variational
         : m_scalar(ScalarSpace(mesh)),
           m_rows(rows),
           m_cols(cols),
-          m_shard(mesh.getShard(), rows, cols)
+          m_shard(mesh.getShard(), rows, cols),
+          m_size(0)
       {
         if (rows == 0 || cols == 0 || rows > RODIN_MAXIMAL_SPACE_DIMENSION ||
           cols > RODIN_MAXIMAL_SPACE_DIMENSION)
-          Alert::Exception() << "SpatialMatrix ranges require 1 to 3 rows and columns."
-                             << Alert::Raise;
+        {
+          Alert::MemberFunctionException(*this, __func__)
+            << "SpatialMatrix ranges require 1 to 3 rows and columns." << Alert::Raise;
+        }
         // Distributed scalar spaces may compute their size collectively.
         // Resolve it at construction, never from a local evaluation loop.
         m_size = m_scalar.getSize() * rows * cols;
@@ -739,17 +763,20 @@ namespace Rodin::Variational
        * @param other Object to copy from.
        */
       P0(const P0& other) = default;
+
       /**
        * @brief Moves the space and its DOF maps.
        * @param other Object to move from.
        */
       P0(P0&& other) = default;
+
       /**
        * @brief Copies the space and its DOF maps.
        * @returns Reference to this object after the operation.
        * @param other Object to copy from.
        */
       P0& operator=(const P0& other) = default;
+
       /**
        * @brief Moves the space and its DOF maps.
        * @returns Reference to this object after the operation.
@@ -765,6 +792,7 @@ namespace Rodin::Variational
       {
         return m_rows * m_cols;
       }
+
       /**
        * @brief Returns the number of matrix rows.
        * @returns The number of matrix rows.
@@ -773,6 +801,7 @@ namespace Rodin::Variational
       {
         return m_rows;
       }
+
       /**
        * @brief Returns the number of matrix columns.
        * @returns The number of matrix columns.
@@ -785,6 +814,7 @@ namespace Rodin::Variational
       {
         return m_scalar.getMesh();
       }
+
       /**
        * @brief Returns the scalar space supplying topology and component-independent maps.
        * @returns The scalar space supplying topology and component-independent maps.
@@ -893,7 +923,7 @@ namespace Rodin::Variational
       size_t m_rows, m_cols;
       FESType m_shard;
       std::map<Index, Index> m_globalToLocal;
-      size_t m_size = 0;
+      size_t m_size;
       std::vector<std::vector<IndexArray>> m_dofs;
       std::map<Geometry::Polytope::Type, ElementType> m_elements;
   };

@@ -51,15 +51,12 @@ namespace Rodin::Variational
       /** Stable, permutation-symmetric positive surface quadrature.
        * Triangle numbering must not introduce spurious chirality.
        */
-      static const QF::QuadratureFormulaBase& getQuadrature(size_t order, Geometry::Polytope::Type geometry)
+      static const QF::QuadratureFormula& getQuadrature(size_t order, Geometry::Polytope::Type geometry)
       {
         if (geometry != Geometry::Polytope::Type::Triangle ||
             !QF::WitherdenVincent::isAvailable(order, geometry))
           throw std::invalid_argument("Stokeslet surface quadrature needs a supported triangle order.");
-        static thread_local std::map<size_t, std::unique_ptr<QF::WitherdenVincent>> rules;
-        auto& rule = rules[order];
-        if (!rule) rule = std::make_unique<QF::WitherdenVincent>(order, geometry);
-        return *rule;
+        return QF::QuadratureFormula::get<QF::WitherdenVincent>(order, geometry);
       }
 
       Real getEpsilon() const { return m_epsilon; }

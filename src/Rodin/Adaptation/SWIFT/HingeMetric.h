@@ -5,6 +5,7 @@
 #ifndef RODIN_ADAPTATION_SWIFT_HINGEMETRIC_H
 #define RODIN_ADAPTATION_SWIFT_HINGEMETRIC_H
 
+#include "Rodin/Variational/Integrator.h"
 #include "../CellDeformation.h"
 #include "Hinge.h"
 #include "QualitySamples.h"
@@ -19,6 +20,7 @@ namespace Rodin::Adaptation::SWIFT
     public:
       /// @brief Scalar value type.
       using ScalarType = typename TrialFunction::ScalarType;
+
       /// @brief Parent class type.
       using Parent = Variational::LocalBilinearFormIntegratorBase<ScalarType>;
 
@@ -30,11 +32,12 @@ namespace Rodin::Adaptation::SWIFT
        * @param inner Current inner displacement increment.
        * @param predictor Frozen directionally scaled predictor.
        * @param parameters Quality budgets and hinge activation weights.
-       * @param hingeCoefficient Effective hinge coefficient for this outer model.
+       * @param hingeCoefficient Predicted decrease per volume, before constraint strengths.
        */
       HingeMetric(const TrialFunction& du, const TestFunction& z,
         const Displacement& current, const Displacement& inner,
-        const Displacement& predictor, const Parameters& parameters, Real hingeCoefficient)
+        const Displacement& predictor, const Parameters& parameters,
+        Real hingeCoefficient)
         : Parent(du.getLeaf(), z.getLeaf()),
           m_du(du),
           m_z(z),
@@ -76,7 +79,8 @@ namespace Rodin::Adaptation::SWIFT
         const auto& trialFE = trialFES.getFiniteElement(dim, index);
         const auto& testFE = testFES.getFiniteElement(dim, index);
         const auto& parameters = m_parameters.get();
-        const QualitySamples samples(polytope, trialFE.getOrder(), parameters);
+        const QualitySamples samples(
+          polytope, trialFE.getDegree().value_or(2 * trialFE.getOrder()), parameters);
         const std::size_t nTrial = trialFE.getCount();
         const std::size_t nTest = testFE.getCount();
 
@@ -89,7 +93,9 @@ namespace Rodin::Adaptation::SWIFT
         m_qTest.resize(nTest);
 
         auto trialJacobian = Variational::Jacobian(m_du.get());
+        trialJacobian.setPolytope(polytope);
         auto testJacobian = Variational::Jacobian(m_z.get());
+        testJacobian.setPolytope(polytope);
         auto currentJacobian = Variational::Jacobian(m_current.get());
         auto innerJacobian = Variational::Jacobian(m_inner.get());
         auto predictorJacobian = Variational::Jacobian(m_predictor.get());
@@ -98,47 +104,47 @@ namespace Rodin::Adaptation::SWIFT
 
         samples.forEachHinge(currentJacobian, predictorJacobian,
           [&](const Variational::IntegrationPoint& ip, Real measureJ, Real measureQ) {
-          deformation.setDisplacementGradient(currentJacobian.getValue(ip));
-          if (!deformation.isAdmissible())
-            return;
-          const HingeState state(
-            deformation, innerJacobian.getValue(ip), parameters, m_hingeCoefficient);
-          trialJacobian.setIntegrationPoint(ip);
-          for (std::size_t local = 0; local < nTrial; ++local)
-          {
-            const auto gradient = trialJacobian.getBasis(local);
-            m_jTrial[local] = state.getJacobianRow(gradient);
-            m_qTrial[local] = state.getDistortionRow(gradient);
-          }
-          if (sameSpace)
-          {
-            m_jTest = m_jTrial;
-            m_qTest = m_qTrial;
-          }
-          else
-          {
-            testJacobian.setIntegrationPoint(ip);
-            for (std::size_t local = 0; local < nTest; ++local)
+            deformation.setDisplacementGradient(currentJacobian.getValue(ip));
+            if (!deformation.isAdmissible())
+              return;
+            const HingeState state(
+              deformation, innerJacobian.getValue(ip), parameters, m_hingeCoefficient);
+            trialJacobian.setIntegrationPoint(ip);
+            for (std::size_t local = 0; local < nTrial; ++local)
             {
-              const auto gradient = testJacobian.getBasis(local);
-              m_jTest[local] = state.getJacobianRow(gradient);
-              m_qTest[local] = state.getDistortionRow(gradient);
+              const auto gradient = trialJacobian.getBasis(local);
+              m_jTrial[local] = state.getJacobianRow(gradient);
+              m_qTrial[local] = state.getDistortionRow(gradient);
             }
-          }
+            if (sameSpace)
+            {
+              m_jTest = m_jTrial;
+              m_qTest = m_qTrial;
+            }
+            else
+            {
+              testJacobian.setIntegrationPoint(ip);
+              for (std::size_t local = 0; local < nTest; ++local)
+              {
+                const auto gradient = testJacobian.getBasis(local);
+                m_jTest[local] = state.getJacobianRow(gradient);
+                m_qTest[local] = state.getDistortionRow(gradient);
+              }
+            }
 
-          const Real weightJ = state.getJacobianHessian();
-          const Real weightQ = state.getDistortionHessian();
-          for (std::size_t test = 0; test < nTest; ++test)
-          {
-            for (std::size_t trial = 0; trial < nTrial; ++trial)
+            const Real weightJ = state.getJacobianHessian();
+            const Real weightQ = state.getDistortionHessian();
+            for (std::size_t test = 0; test < nTest; ++test)
             {
-              m_matrix(static_cast<Eigen::Index>(test),
-                static_cast<Eigen::Index>(trial)) +=
-                measureJ * weightJ * m_jTrial[trial] * m_jTest[test] +
-                measureQ * weightQ * m_qTrial[trial] * m_qTest[test];
+              for (std::size_t trial = 0; trial < nTrial; ++trial)
+              {
+                m_matrix(
+                  static_cast<Eigen::Index>(test), static_cast<Eigen::Index>(trial)) +=
+                  measureJ * weightJ * m_jTrial[trial] * m_jTest[test] +
+                  measureQ * weightQ * m_qTrial[trial] * m_qTest[test];
+              }
             }
-          }
-        });
+          });
         return *this;
       }
 

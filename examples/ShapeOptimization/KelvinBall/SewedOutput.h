@@ -45,79 +45,6 @@ namespace KelvinBall
 
       static const std::vector<Math::SpatialMatrix<Real>>& getCubeRotations();
 
-      /** Enforce the quotient trace by averaging coincident scalar representatives. */
-      template <class Field>
-      void enforceScalarRepresentatives(Field& field) const
-      {
-        const auto& space = field.getFiniteElementSpace();
-        Math::Vector<Real> values = Math::Vector<Real>::Zero(field.getData().size());
-        Math::Vector<Real> counts = values;
-        for (const auto& sources : m_sources)
-        {
-          Real mean = 0;
-          for (const auto& source : sources)
-            mean += field.getData()(space.getDOFs(0, source.vertex)(0));
-          mean /= sources.size();
-          for (const auto& source : sources)
-          {
-            const Index dof = space.getDOFs(0, source.vertex)(0);
-            values(dof) += mean; counts(dof) += 1;
-          }
-        }
-        if (counts.minCoeff() <= 0) throw std::runtime_error("Incomplete scalar quotient map.");
-        field.getData() = values.cwiseQuotient(counts);
-      }
-
-      /** Enforce vector covariance, including stabilizers on cuts and axes. */
-      template <class Field>
-      void enforceVectorRepresentatives(Field& field) const
-      {
-        const auto& space = field.getFiniteElementSpace();
-        Math::Vector<Real> values = Math::Vector<Real>::Zero(field.getData().size());
-        Math::Vector<Real> counts = values;
-        for (const auto& sources : m_sources)
-        {
-          Math::SpatialVector<Real> mean(3); mean.setZero();
-          for (const auto& source : sources)
-          {
-            const auto& dofs = space.getDOFs(0, source.vertex);
-            Math::SpatialVector<Real> value(3);
-            for (size_t j = 0; j < 3; ++j) value(j) = field.getData()(dofs(j));
-            mean += m_rotations[source.rotation] * value;
-          }
-          mean /= sources.size();
-          for (const auto& source : sources)
-          {
-            const auto& dofs = space.getDOFs(0, source.vertex);
-            const auto value = m_rotations[source.rotation].transpose() * mean;
-            for (size_t j = 0; j < 3; ++j)
-            { values(dofs(j)) += value(j); counts(dofs(j)) += 1; }
-          }
-        }
-        if (counts.minCoeff() <= 0) throw std::runtime_error("Incomplete vector quotient map.");
-        field.getData() = values.cwiseQuotient(counts);
-      }
-
-      /** Symmetric pullback for admissible, rotation-compatible coordinate motions.
-       * Shared representatives must describe the same full-vertex motion.
-       */
-      template <class Space>
-      Math::Vector<Real> pullBackCoordinateGradient(
-        const Math::Matrix<Real>& gradient, const Space& space) const
-      {
-        Math::Vector<Real> load(space.getSize()); load.setZero();
-        for (Index vertex = 0; vertex < m_mesh.getVertexCount(); ++vertex)
-          for (const auto& source : m_sources[vertex])
-          {
-            const Math::SpatialVector<Real> value = m_rotations[source.rotation].transpose() *
-              Math::SpatialVector<Real>(gradient.row(vertex).transpose()) / m_sources[vertex].size();
-            const auto dofs = space.getDOFs(0, source.vertex);
-            for (size_t component = 0; component < 3; ++component)
-              load(dofs(component)) += value(component);
-          }
-        return load;
-      }
-
       template <class Output, class Input>
       void setScalar(Output& output, const Input& input) const
       {
@@ -175,8 +102,10 @@ namespace KelvinBall
                 family[sourceLoad]->getFiniteElementSpace().getDOFs(0, source.vertex);
               Math::SpatialVector<Real> chamberValue(3);
               for (size_t component = 0; component < 3; ++component)
+              {
                 chamberValue(component) =
                   family[sourceLoad]->getData()(sourceDOFs(component));
+              }
               value += rotation(load, sourceLoad) * rotation * chamberValue;
             }
           }

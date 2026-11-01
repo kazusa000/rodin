@@ -79,8 +79,10 @@ namespace KelvinBall
         SubMesh<Context::Local>::Builder builder;
         builder.initialize(mesh);
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
+        {
           if (face->getAttribute() == Gamma)
             builder.include(mesh.getDimension() - 1, face->getIndex());
+        }
         SubMesh<Context::Local> surface = builder.finalize();
         P1 surfaceSpace(surface, 3);
         TrialFunction projected(surfaceSpace);
@@ -93,7 +95,7 @@ namespace KelvinBall
             const Index parent = parentFaces[point.getPolytope().getIndex()];
             const Geometry::Point parentPoint(
               *mesh.getPolytope(mesh.getDimension() - 1, parent),
-              point.getPhysicalCoordinates());
+              point.getReferenceCoordinates(), point.getPhysicalCoordinates());
             const Math::SpatialVector<Real> normal = -fluidNormal.getValue(parentPoint);
             return normal;
           });
@@ -116,8 +118,10 @@ namespace KelvinBall
           const auto source = surfaceSpace.getDOFs(0, vertex);
           const auto target = space.getDOFs(0, parentVertices[vertex]);
           for (size_t component = 0; component < 3; ++component)
+          {
             normal.getData()(target(component)) =
               projected.getSolution().getData()(source(component));
+          }
         }
         return normal;
       }
@@ -139,7 +143,8 @@ namespace KelvinBall
             triangle.x[k] = mesh.getVertexCoordinates(vertices[k]);
           const Math::SpatialVector<Real> midpoint =
             (triangle.x[0] + triangle.x[1] + triangle.x[2]) / 3;
-          triangle.normal = -fluidNormal.getValue(Geometry::Point(*face, midpoint));
+          triangle.normal = -fluidNormal.getValue(Geometry::Point(
+            *face, Polytope::Traits(face->getGeometry()).getCentroid(), midpoint));
           triangle.normal.normalize();
           triangle.face = face->getIndex();
           for (size_t d = 0; d < 3; ++d)
@@ -236,12 +241,14 @@ namespace KelvinBall
               const Math::SpatialVector<Real> gradientBasis =
                 cross(edgeOpposite[k], orientation) / doubledArea;
               for (size_t i = 0; i < 3; ++i)
+              {
                 for (size_t j = 0; j < 3; ++j)
                 {
                   gradientNormal(i, j) += value(i) * gradientBasis(j);
                   gradientPosition(i, j) +=
                     mesh.getVertexCoordinates(vertices[k])(i) * gradientBasis(j);
                 }
+              }
             }
             if (std::abs(gradientPosition.trace() - Real(2)) > Real(1e-8))
               throw std::runtime_error(
@@ -252,12 +259,17 @@ namespace KelvinBall
           {
             const Math::SpatialVector<Real> s =
               barycentric[0] * a + barycentric[1] * b + barycentric[2] * c;
-            const Geometry::Point surfacePoint(*face, s);
+            Math::SpatialPoint reference(2);
+            reference(0) = barycentric[1];
+            reference(1) = barycentric[2];
+            const Geometry::Point surfacePoint(*face, reference, s);
             const Math::SpatialVector<Real> geometricNormal =
               -fluidNormal.getValue(surfacePoint);
             for (size_t k = 0; k < 3; ++k)
+            {
               result.geometricNormal[vertices[k]] +=
                 area * barycentric[k] / 3 * geometricNormal;
+            }
             ++result.samples;
             if (projectedNormal)
             {
@@ -267,8 +279,10 @@ namespace KelvinBall
               {
                 const auto dofs = space.getDOFs(0, vertices[k]);
                 for (size_t component = 0; component < 3; ++component)
+                {
                   rawNormal(component) +=
                     barycentric[k] * projectedNormal->getData()(dofs(component));
+                }
               }
               const Real magnitude = rawNormal.norm();
               if (std::isfinite(magnitude) && magnitude > Real(1e-12))
@@ -414,8 +428,10 @@ namespace KelvinBall
         {
           size_t axis = 0;
           for (size_t d = 1; d < 3; ++d)
+          {
             if (node.hi[d] - node.lo[d] > node.hi[axis] - node.lo[axis])
               axis = d;
+          }
           const size_t middle = (first + end) / 2;
           std::nth_element(m_order.begin() + first, m_order.begin() + middle,
             m_order.begin() + end, [&](Index a, Index b) {

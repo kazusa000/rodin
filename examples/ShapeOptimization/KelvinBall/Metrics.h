@@ -21,9 +21,6 @@
 #include "Common.h"
 #include "RotatedNitscheIntegrator.h"
 #include "SewedOutput.h"
-#include "OuterVelocity.h"
-#include "PressureGauge.h"
-#include <iomanip>
 
 namespace KelvinBall
 {
@@ -88,8 +85,8 @@ namespace KelvinBall
   class Metrics
   {
     public:
-      explicit Metrics(const Parameters& parameters, const OuterVelocity* outer = nullptr)
-        : m_parameters(parameters), m_outer(outer)
+      explicit Metrics(const Parameters& parameters)
+        : m_parameters(parameters)
       {}
 
       Values evaluateChamber(Mesh& fluid) const;
@@ -112,7 +109,7 @@ namespace KelvinBall
           {
             if (face->getAttribute() != pair.slave)
               continue;
-            const auto& qf = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+            const auto& qf = QF::QuadratureFormula::get(4, face->getGeometry());
             const auto& quadrature = face->getQuadrature(qf);
             for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
             {
@@ -163,7 +160,7 @@ namespace KelvinBall
         const RotatedNitscheIntegrator& coupling, const Rigid0& rigid0,
         const Rigid1& rigid1, const Rigid2& rigid2, Velocity0& velocity0,
         Velocity1& velocity1, Velocity2& velocity2, Pressure0& pressure0,
-        Pressure1& pressure1, Pressure2& pressure2, size_t loadOffset) const
+        Pressure1& pressure1, Pressure2& pressure2) const
       {
         TrialFunction u0(Vh), u1(Vh), u2(Vh);
         TrialFunction p0(Qh), p1(Qh), p2(Qh);
@@ -193,34 +190,15 @@ namespace KelvinBall
           Integral(p2, Div(v2)) - Integral(Div(u2), q2) -
           Integral(tau * Grad(p2), Grad(q2)) + DirichletBC(u0, rigid0).on(Gamma) +
           DirichletBC(u1, rigid1).on(Gamma) + DirichletBC(u2, rigid2).on(Gamma) +
-          DirichletBC(u0, outerTrace(loadOffset)).on(Outer) +
-          DirichletBC(u1, outerTrace(loadOffset + 1)).on(Outer) +
-          DirichletBC(u2, outerTrace(loadOffset + 2)).on(Outer);
+          DirichletBC(u0, VectorFunction{0, 0, 0}).on(Outer) +
+          DirichletBC(u1, VectorFunction{0, 0, 0}).on(Outer) +
+          DirichletBC(u2, VectorFunction{0, 0, 0}).on(Outer);
         stokes.assemble();
         auto& system = stokes.getLinearSystem();
-        const auto references = m_outer ? enclosedPressureReferences(Qh) : IndexSet{};
-        Math::SparseMatrix<Real> originalOperator;
-        Math::Vector<Real> originalVector;
-        if (!references.empty())
-        {
-          originalOperator = system.getOperator();
-          originalVector = system.getVector();
-          IndexMap<Real> gauges;
-          for (size_t block : {1, 3, 5})
-            for (Index dof : references)
-              gauges.emplace(stokes.getTrialOffsets()[block] + dof, Real(0));
-          system.eliminate(gauges);
-        }
         solveDirect(stokes);
-        const auto& checkedOperator = references.empty() ? system.getOperator() : originalOperator;
-        const auto& checkedVector = references.empty() ? system.getVector() : originalVector;
         const Real residual =
-          (checkedOperator * system.getSolution() - checkedVector).norm() /
-          std::max(checkedVector.norm(), Real(1));
-        if (m_outer)
-          std::cerr << std::setprecision(17) << "Chamber Stokes loadOffset=" << loadOffset
-                    << " residual=" << residual << " tolerance=" << LinearResidualTolerance
-                    << " enclosedPressureReferences=" << references.size() << '\n';
+          (system.getOperator() * system.getSolution() - system.getVector()).norm() /
+          std::max(system.getVector().norm(), Real(1));
         if (!std::isfinite(residual) || residual > LinearResidualTolerance)
           throw std::runtime_error("The chamber Stokes system did not converge.");
         velocity0 = u0.getSolution();
@@ -344,14 +322,14 @@ namespace KelvinBall
                       << Alert::Raise;
         const Real translationJump = solveChamberFamily(Vh, Qh, coupling,
           VectorFunction{1, 0, 0}, VectorFunction{0, 1, 0}, VectorFunction{0, 0, 1}, uT0,
-          uT1, uT2, pT0, pT1, pT2, 0);
+          uT1, uT2, pT0, pT1, pT2);
         Alert::Info() << Alert::Text<Alert::YellowT>(
                            Alert::Yellow, "Rotational Stokes family")
                            .setBold()
                       << Alert::Raise;
         const Real rotationJump = solveChamberFamily(Vh, Qh, coupling,
           VectorFunction{0, -F::z, F::y}, VectorFunction{F::z, 0, -F::x},
-          VectorFunction{-F::y, F::x, 0}, uR0, uR1, uR2, pR0, pR1, pR2, 3);
+          VectorFunction{-F::y, F::x, 0}, uR0, uR1, uR2, pR0, pR1, pR2);
         Values result = resistance(
           Vh, uT0, uT1, uT2, uR0, uR1, uR2, static_cast<Real>(ChamberMultiplicity));
         result.nitscheJump = std::max(translationJump, rotationJump);
@@ -359,16 +337,7 @@ namespace KelvinBall
       }
 
     private:
-      auto outerTrace(size_t load) const
-      {
-        return VectorFunction(static_cast<size_t>(3), [this, load](const Geometry::Point& point) {
-          return m_outer ? m_outer->value(point, load) : Math::SpatialVector<Real>{0, 0, 0};
-        });
-      }
-
       Parameters m_parameters;
-      /// Borrowed during fixed-shape evaluation; null preserves the original wall.
-      const OuterVelocity* m_outer = nullptr;
   };
 }
 

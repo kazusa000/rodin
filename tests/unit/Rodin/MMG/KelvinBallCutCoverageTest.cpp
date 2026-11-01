@@ -112,7 +112,7 @@ namespace KelvinBall
         const auto face = mesh.getPolytope(2, faces[local]);
         if (face->getAttribute() != SigmaMinus)
           continue;
-        const auto& formula = QF::PolytopeQuadratureFormula::get(2, face->getGeometry());
+        const auto& formula = QF::QuadratureFormula::get(2, face->getGeometry());
         const auto& point = face->getQuadrature(formula).getPoint(0);
         Math::SpatialPoint reference;
         cell->getTransformation().inverse(reference, point.getPhysicalCoordinates());
@@ -132,7 +132,8 @@ namespace KelvinBall
     P1 space(mesh);
     GridFunction distance(space), result(space);
     distance = Real(3);
-    NodalTransport transport(mesh, distance, SamplingFlow{-1}, result);
+    const Location::AABB locator(mesh);
+    NodalTransport transport(mesh, locator, distance, SamplingFlow{-1}, result);
     EXPECT_EQ(transport.getAttemptedCount(), mesh.getVertexCount());
     EXPECT_EQ(transport.getFallbackCount(), 0);
     EXPECT_LT((result.getData() - distance.getData()).norm(), 1e-14);
@@ -145,7 +146,8 @@ namespace KelvinBall
     GridFunction distance(space), result(space);
     distance = RealFunction(
       [](const Geometry::Point& p) { return Real(2) + p.getPhysicalCoordinates()(0); });
-    NodalTransport transport(mesh, distance, SamplingFlow{2}, result);
+    const Location::AABB locator(mesh);
+    NodalTransport transport(mesh, locator, distance, SamplingFlow{2}, result);
     EXPECT_EQ(transport.getFallbackCount(), mesh.getVertexCount());
     EXPECT_LT((result.getData() - distance.getData()).norm(), 1e-14);
   }
@@ -156,7 +158,8 @@ namespace KelvinBall
     P1 space(mesh);
     GridFunction distance(space), result(space);
     distance = Real(3);
-    NodalTransport transport(mesh, distance, SamplingFlow{0.03}, result);
+    const Location::AABB locator(mesh);
+    NodalTransport transport(mesh, locator, distance, SamplingFlow{0.03}, result);
     EXPECT_GT(transport.getFallbackCount(), 0);
     EXPECT_LT(transport.getFallbackCount(), transport.getAttemptedCount());
     EXPECT_LT((result.getData() - distance.getData()).norm(), 1e-14);
@@ -168,10 +171,61 @@ namespace KelvinBall
     P1 space(mesh);
     GridFunction distance(space), result(space);
     distance = Real(3);
-    NodalTransport successful(mesh, distance, SamplingFlow{-1, 2}, result);
+    const Location::AABB locator(mesh);
+    NodalTransport successful(mesh, locator, distance, SamplingFlow{-1, 2}, result);
     EXPECT_LT((result.getData().array() - 5).matrix().norm(), 1e-14);
-    NodalTransport failed(mesh, distance, SamplingFlow{2, 2}, result);
+    NodalTransport failed(mesh, locator, distance, SamplingFlow{2, 2}, result);
     EXPECT_LT((result.getData() - distance.getData()).norm(), 1e-14);
+  }
+
+  TEST_F(CutCoverageTest, SharedTransportLocatorTransfersAffineFieldToAnotherMesh)
+  {
+    auto source = makeMesh(0);
+    auto target = makeMesh(0);
+    P1 sourceSpace(source), targetSpace(target);
+    GridFunction distance(sourceSpace), transported(sourceSpace),
+      transferred(targetSpace);
+    distance = RealFunction([](const Geometry::Point& point) {
+      const auto& x = point.getPhysicalCoordinates();
+      return Real(2) + x(0) + Real(3) * x(1) - x(2);
+    });
+    const Location::AABB locator(source);
+    NodalTransport transport(source, locator, distance, SamplingFlow{-1, 2}, transported);
+    transferred = RealFunction([&](const Geometry::Point& point) {
+      const auto located = locator.locate(point.getPhysicalCoordinates());
+      if (!located)
+        throw std::runtime_error("A regression transfer point was not located.");
+      return transported.getValue(*located);
+    });
+    EXPECT_LT(
+      ((transferred.getData() - distance.getData()).array() - 2).matrix().norm(), 1e-13);
+    EXPECT_EQ(transport.getFallbackCount(), 0);
+  }
+
+  TEST_F(CutCoverageTest, RebuiltLocatorsFollowReplacementGeometryWithSameCellCount)
+  {
+    for (const Real shift : {Real(0), Real(2)})
+    {
+      auto mesh = makeMesh(shift);
+      const Location::AABB locator(mesh);
+      AttributeFaceLocator cuts(mesh, FlatSet<Attribute>{SigmaPlus, SigmaMinus});
+      Math::SpatialPoint interior(3), trace(3);
+      interior(0) = shift + Real(0.3);
+      interior(1) = Real(0.375);
+      interior(2) = Real(0.25);
+      trace(0) = shift + Real(1) / Real(3);
+      trace(1) = Real(1) / Real(3);
+      trace(2) = Real(1) / Real(3);
+      const auto located = locator.locate(interior);
+      ASSERT_TRUE(located);
+      EXPECT_EQ(located->getPolytope().getIndex(), 1);
+      for (size_t repeat = 0; repeat < 3; ++repeat)
+      {
+        const auto mapped = cuts.locate(SigmaPlus, trace);
+        ASSERT_TRUE(mapped);
+        EXPECT_LT((mapped->getPhysicalCoordinates() - trace).norm(), 1e-13);
+      }
+    }
   }
 
   TEST_F(CutCoverageTest, CompletelyMissingTraceAddsNeitherMatrixNorLoad)
@@ -225,7 +279,7 @@ namespace KelvinBall
       {
         if (face->getAttribute() != pair.slave)
           continue;
-        const auto& formula = QF::PolytopeQuadratureFormula::get(4, face->getGeometry());
+        const auto& formula = QF::QuadratureFormula::get(4, face->getGeometry());
         const auto& quadrature = face->getQuadrature(formula);
         for (size_t qp = 0; qp < quadrature.getSize(); ++qp)
         {
@@ -255,11 +309,13 @@ namespace KelvinBall
     auto mesh = makeMesh(0);
     bool fixedFace = false;
     for (auto face = mesh.getBoundary(); face; ++face)
+    {
       if (face->getAttribute() == Outer)
       {
         mesh.setAttribute({2, face->getIndex()}, fixedFace ? Gamma : Outer);
         fixedFace = true;
       }
+    }
     P1 space(mesh, 3);
     TrialFunction u(space);
     TestFunction v(space);
@@ -272,9 +328,11 @@ namespace KelvinBall
     Math::Vector<Real> rhs = unconstrained.getLinearSystem().getVector();
     IndexSet fixed;
     for (auto face = mesh.getBoundary(); face; ++face)
+    {
       if (face->getAttribute() == Outer)
         for (const auto dof : space.getDOFs(2, face->getIndex()))
           fixed.insert(dof);
+    }
     ASSERT_FALSE(fixed.empty());
     for (const auto dof : fixed)
       rhs -= Real(2) * expected.col(dof);
@@ -318,11 +376,13 @@ namespace KelvinBall
     auto mesh = makeMesh(0);
     bool fixedFace = false;
     for (auto face = mesh.getBoundary(); face; ++face)
+    {
       if (face->getAttribute() == Outer)
       {
         mesh.setAttribute({2, face->getIndex()}, fixedFace ? Gamma : Outer);
         fixedFace = true;
       }
+    }
     VelocitySpace space(mesh, 3);
     RotatedNitscheIntegrator coupling(mesh);
     HilbertIdentification reused(space, coupling, Real(0.3), 320);
@@ -342,12 +402,16 @@ namespace KelvinBall
     Math::Vector<Real> additional = Math::Vector<Real>::Zero(space.getSize());
     IndexSet fixed;
     for (auto face = mesh.getBoundary(); face; ++face)
+    {
       if (face->getAttribute() == Outer)
         for (const auto dof : space.getDOFs(2, face->getIndex()))
           fixed.insert(dof);
+    }
     for (Index dof = 0; dof < space.getSize(); ++dof)
+    {
       if (!fixed.contains(dof))
         additional(dof) = Real(0.1) * (dof + 1);
+    }
     ASSERT_GT(additional.norm(), 0);
     HilbertIdentification fresh(space, coupling, Real(0.3), 320);
     reused.identify(RealFunction{0}, actual, &additional);
@@ -384,6 +448,9 @@ namespace KelvinBall
     Math::Vector<Real> diagnosticLoad = load;
     Math::Vector<Real> nominalLoad = load;
     ThicknessPenalty guarded(mesh, Real(1.5));
+    const auto projectedNormal = guarded.projectNormal(space, Real(0.1));
+    EXPECT_TRUE(projectedNormal.getData().allFinite());
+    EXPECT_GT(projectedNormal.getData().norm(), 0);
     const auto result = guarded.evaluate(mesh, space, load, Real(1.2));
     const auto diagnostic =
       guarded.evaluate(mesh, space, diagnosticLoad, Real(1.2), &diagnosticNormal);

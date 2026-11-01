@@ -15,7 +15,7 @@
 #include <gtest/gtest.h>
 #include <Rodin/Geometry.h>
 #include <Rodin/IO/HDF5.h>
-#include <Rodin/QF/PolytopeQuadratureFormula.h>
+#include <Rodin/QF/QuadratureFormula.h>
 
 namespace Rodin::Tests::Unit
 {
@@ -32,10 +32,10 @@ namespace Rodin::Tests::Unit
     constexpr size_t GridPoints = 4;
     const Real h = Real(1) / Real(GridPoints - 1);
     auto mesh = d == 2
-      ? Geometry::LocalMesh::UniformGrid(Geometry::Polytope::Type::Triangle,
-          {GridPoints, GridPoints})
-      : Geometry::LocalMesh::UniformGrid(Geometry::Polytope::Type::Tetrahedron,
-          {GridPoints, GridPoints, GridPoints});
+      ? Geometry::LocalMesh::UniformGrid(
+          Geometry::Polytope::Type::Triangle, {GridPoints, GridPoints})
+      : Geometry::LocalMesh::UniformGrid(
+          Geometry::Polytope::Type::Tetrahedron, {GridPoints, GridPoints, GridPoints});
     mesh.scale(h);
     mesh.getConnectivity().compute(d - 1, d);
     Geometry::MinSTCut classifier(mesh);
@@ -45,7 +45,7 @@ namespace Rodin::Tests::Unit
     };
     classifier.setParameters(parameters);
     const auto expected = classifier.classify([&](const Geometry::Polytope& cell) {
-      const auto& formula = QF::PolytopeQuadratureFormula::get(2, cell.getGeometry());
+      const auto& formula = QF::QuadratureFormula::get(2, cell.getGeometry());
       const auto& quadrature = cell.getQuadrature(formula);
       Real integral = 0;
       for (size_t q = 0; q < quadrature.getSize(); ++q)

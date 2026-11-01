@@ -6,7 +6,6 @@
 #define RODIN_ADAPTATION_SWIFT_HINGEPROBLEM_H
 
 #include <chrono>
-#include <functional>
 #include <type_traits>
 #include <utility>
 #include "Rodin/Assembly.h"
@@ -33,6 +32,7 @@ namespace Rodin::Adaptation::SWIFT
       /// @brief Native variational tangent problem type.
       using Parent = std::decay_t<decltype(Variational::Problem(
         std::declval<TrialFunction&>(), std::declval<TestFunction&>()))>;
+
       /// @brief Solution field holding the current increment.
       using Displacement = typename Parent::SolutionType;
       using Parent::operator=;
@@ -94,13 +94,13 @@ namespace Rodin::Adaptation::SWIFT
           (Real(0.5) * (matrix + Math::SparseMatrix<Real>(matrix.transpose()))).eval();
         if (m_boundaryDOFs && !m_boundaryDOFs->empty())
           system.eliminate(*m_boundaryDOFs);
-        if (m_systemTransform)
-          m_systemTransform(system);
         matrix.makeCompressed();
         system.getVector() -= matrix * m_state->getData();
         if (m_centering.size() != 0)
+        {
           system.getVector() +=
             m_centering * (m_centering.transpose() * m_state->getData());
+        }
         m_assemblySeconds =
           std::chrono::duration<Real>(std::chrono::steady_clock::now() - start).count();
         return *this;
@@ -113,14 +113,6 @@ namespace Rodin::Adaptation::SWIFT
       Real getAssemblySeconds() const noexcept
       {
         return m_assemblySeconds;
-      }
-
-      /// Apply the same admissible-subspace restriction as the predictor.
-      HingeProblem& setSystemTransform(
-        std::function<void(typename Parent::LinearSystemType&)> transform)
-      {
-        m_systemTransform = std::move(transform);
-        return *this;
       }
 
       /**
@@ -137,7 +129,6 @@ namespace Rodin::Adaptation::SWIFT
       const IndexMap<Real>* m_boundaryDOFs = nullptr;
       Math::Matrix<Real> m_centering;
       Real m_assemblySeconds = 0;
-      std::function<void(typename Parent::LinearSystemType&)> m_systemTransform;
   };
 }
 #endif

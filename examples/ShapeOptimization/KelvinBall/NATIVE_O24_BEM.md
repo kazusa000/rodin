@@ -253,3 +253,29 @@ retains the epsilon-area derivative and all image interactions; it changes only
 repeated work and floating-point accumulation order, not the objective or shape
 space. The chamber/full-surface reference and finite-difference test must pass
 again after changes to this path.
+
+## Upstream SWIFT integration (2026-11-01)
+
+The branch merges the frozen compilable upstream KelvinBall baseline `0f099b8d`
+(upstream `a9f1115a`, with its compiler-only typename fix). The SWIFT implementation,
+background preparation/adaptation, classification, fitted-to-background transfer,
+transport, cut-plane restoration, and H1/volume projection follow that example.
+`--bem-gradient` selects native infinite-exterior states and their coordinate
+load for the existing Hilbert identification; thickness must remain disabled.
+FEM volume-state fields are not exported in BEM mode.
+
+For first migration from a legacy MEDIT chamber, `--mesh=FILE` preserves the input
+fitted chamber and prepares a separate upstream SWIFT background. With
+`--mmg-adapt`, the transported target drives upstream background adaptation before
+classification/fitting. `--save-checkpoints` persists both meshes, MMG tags and
+scalar state before each state evaluation. READY certifies serialization only;
+a successful native state record is required for a valid candidate.
+`--restart-checkpoint=DIR` reloads both meshes and checks recorded model/step
+parameters. No checkpoint is automatically accepted, no volume drift rejection
+is added, and the BEM image-edge check is retained pending actual interface tests.
+
+The old optional seeded/frozen-cut Sphere route is retained solely for the
+existing BEM reference/finite-difference fixture; it is not used by the upstream
+SWIFT reconstruction path. Earlier full-volume and old MMG experiments remain
+historical, opt-in targets. Smooth-kernel quadrature uses the new immutable
+Rodin quadrature factory while retaining its rules and exact component contraction.

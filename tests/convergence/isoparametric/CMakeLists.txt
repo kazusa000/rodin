@@ -7,7 +7,16 @@ target_link_libraries(RodinConvergenceIsoparametric
     Rodin::Solver
 )
 
-gtest_discover_tests(RodinConvergenceIsoparametric
+rodin_discover_tests(RodinConvergenceIsoparametric
   PROPERTIES
     LABELS "convergence;slow"
 )
+
+add_subdirectory(Helmholtz)
+add_subdirectory(LinearElasticity)
+add_subdirectory(Stokes)
+add_subdirectory(ReactionDiffusion)
+add_subdirectory(NonlinearPoisson)
+add_subdirectory(P0Projection)
+add_subdirectory(Diffusion)
+add_subdirectory(GeometryApproximation)
