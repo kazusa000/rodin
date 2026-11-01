@@ -224,16 +224,27 @@ reconstruction. No result is promoted to an accepted checkpoint. Volume drift is
 recorded without any volume rejection threshold. Each native stage has a
 30-minute timeout, recorded as a timeout rather than a solver convergence result.
 
-The comparison uses the branch's existing SWIFT implementation, whose fixed-wall
-and tangential-cut constraints remain available. Upstream master at
-`0a1918166d3a6cca7d1fffe4e6e58120d08c16ff` has changed this interface:
-`SWIFT::Problem::assembleBoundaryConditions` accepts homogeneous value DOFs and
-rejects identification constraints. The old slip-boundary parameter is absent.
-This upstream version has been inspected, not merged into this solver; a port
-must preserve the chamber constraint subspace rather than freeze all cut vertices
-or remove their constraints. A successful executable exit is insufficient:
-`swift-fit.json` records geometric and quality criteria, and the independent BEM
-state must also pass the closed-image-surface check.
+The comparison uses this branch's older SWIFT implementation on an exported
+uniform background. It does not reproduce the current upstream KelvinBall
+workflow. In particular, its 45-panel SWIFT output and failed image-edge audit
+cannot establish that upstream SWIFT is unsupported or unusable.
+
+Correction after inspecting upstream `example/KelvinBall` at
+`a9f1115ae71525978f086917a73958f95d77d1bf`: that example already integrates
+`SWIFT::Adapt` on the chamber. It fixes the outer wall with a Dirichlet condition,
+adds a normal-increment penalty through `getMetric()` on the cuts, and restores
+the known cut planes with `Sphere::projectFixedGeometry` after fitting. Its
+background is prepared separately and can be adapted before classification and
+fitting (`--mmg-adapt`). The absence of this branch's old slip-boundary parameter
+in upstream master is therefore not evidence of missing KelvinBall adaptation.
+
+The existing upstream FEM example has separately completed a one-update
+validation in the workspace. That evidence does not yet validate the native BEM
+integration or its exact image-edge audit. Migration should start from this
+actual upstream workflow and test its outputs against the BEM interface contract;
+the legacy comparison does not establish a need to rewrite the classifier or
+add new identification machinery. The legacy data and speed measurements remain
+valid within their recorded versions and settings.
 
 The gradient caches source image positions and rotated densities once per
 sample/group element. Source/target separation and area derivatives are summed
