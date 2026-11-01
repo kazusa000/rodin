@@ -218,14 +218,37 @@ namespace KelvinBall
       for (size_t i=0;i<3;++i) result.gradient.row(s.vertices[i])+=
         (s.barycentric[i]*dx+dArea*s.areaGradient[i]).getData().transpose();
     };
-    for (const auto& x:samples)
+    // Source images depend on the source sample and group element only.
+    // Cache them once instead of repeating these rotations for every target.
+    const auto& rotations=SewedOutput::getCubeRotations();
+    struct Image
     {
-      Math::SpatialMatrix<Real> rigid(3,3);
-      for (size_t i=0;i<3;++i)
+      Math::SpatialVector<Real> x;
+      std::array<Math::SpatialMatrix<Real>,2> density;
+    };
+    std::vector<std::vector<Image>> images(samples.size());
+    for (size_t j=0;j<samples.size();++j)
+    {
+      images[j].resize(rotations.size());
+      for (size_t group=0;group<rotations.size();++group)
       {
-        Math::SpatialVector<Real> axis(3);axis.setZero();axis(i)=1;
+        const auto& g=rotations[group];
+        images[j][group].x=g*samples[j].x;
+        for (size_t family=0;family<2;++family)
+          images[j][group].density[family]=g*samples[j].density[family]*g.transpose();
+      }
+    }
+    Math::Matrix<Real> separationGradient=Math::Matrix<Real>::Zero(samples.size(),3);
+    Math::Vector<Real> measureGradient=Math::Vector<Real>::Zero(samples.size());
+    for (size_t i=0;i<samples.size();++i)
+    {
+      const auto& x=samples[i];
+      Math::SpatialMatrix<Real> rigid(3,3);
+      for (size_t columnIndex=0;columnIndex<3;++columnIndex)
+      {
+        Math::SpatialVector<Real> axis(3);axis.setZero();axis(columnIndex)=1;
         const auto column=axis.cross(x.x);
-        for (size_t j=0;j<3;++j) rigid(j,i)=column(j);
+        for (size_t row=0;row<3;++row) rigid(row,columnIndex)=column(row);
       }
       const Math::SpatialMatrix<Real> P=2*x.weighted[1];
       Math::SpatialVector<Real> dx(3);
@@ -233,24 +256,31 @@ namespace KelvinBall
       const Real value=2*x.weight*(x.weighted[0].trace()+
         x.weighted[1].getData().cwiseProduct(rigid.getData()).sum());
       deposit(x,Math::SpatialVector<Real>(x.weight*dx),value/x.area);
-      for (const auto& y:samples)
-        for (const auto& g:SewedOutput::getCubeRotations())
+      for (size_t j=0;j<samples.size();++j)
+        for (size_t group=0;group<rotations.size();++group)
         {
+          const auto& y=samples[j];
+          const auto& g=rotations[group];
+          const auto& image=images[j][group];
           Math::SpatialMatrix<Real> H(3,3);H.setZero();
           for (size_t family=0;family<2;++family)
-          {
-            const Math::SpatialMatrix<Real> image=g*y.density[family]*g.transpose();
-            H=H-x.weight*y.weight*x.weighted[family]*image.transpose();
-          }
-          const Math::SpatialVector<Real> r=x.x-g*y.x;
+            H=H-x.weight*y.weight*x.weighted[family]*image.density[family].transpose();
+          const Math::SpatialVector<Real> r=x.x-image.x;
           Math::SpatialMatrix<Real> K(3,3);kernel.evaluate(K,r);
           Math::SpatialVector<Real> dr(3);Real de;kernel.differential(r,H,dr,de);
           const Real value=H.getData().cwiseProduct(K.getData()).sum();
-          deposit(x,dr,value/x.area);
-          deposit(y,Math::SpatialVector<Real>(-g.transpose()*dr),value/y.area);
+          separationGradient.row(i)+=dr.getData().transpose();
+          const Math::SpatialVector<Real> sourceDerivative=-g.transpose()*dr;
+          separationGradient.row(j)+=sourceDerivative.getData().transpose();
+          measureGradient(i)+=value/x.area;
+          measureGradient(j)+=value/y.area;
           epsilonGradient+=de;
         }
     }
+    // Barycentric/area pullbacks are linear in these sample derivatives.
+    // Deposit once per sample, retaining all source and target contributions.
+    for (size_t i=0;i<samples.size();++i)
+      deposit(samples[i],Math::SpatialVector<Real>(separationGradient.row(i).transpose()),measureGradient(i));
     const Real coefficient=epsilonGradient*result.epsilon/(2*totalArea);
     for (auto cell=surface.getCell();cell;++cell)
     {

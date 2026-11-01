@@ -234,3 +234,11 @@ must preserve the chamber constraint subspace rather than freeze all cut vertice
 or remove their constraints. A successful executable exit is insufficient:
 `swift-fit.json` records geometric and quality criteria, and the independent BEM
 state must also pass the closed-image-surface check.
+
+The gradient caches source image positions and rotated densities once per
+sample/group element. Source/target separation and area derivatives are summed
+at quadrature samples before the linear barycentric pullback to vertices. This
+retains the epsilon-area derivative and all image interactions; it changes only
+repeated work and floating-point accumulation order, not the objective or shape
+space. The chamber/full-surface reference and finite-difference test must pass
+again after changes to this path.
