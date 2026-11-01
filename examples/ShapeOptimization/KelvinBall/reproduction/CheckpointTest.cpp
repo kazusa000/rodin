@@ -60,8 +60,11 @@ int main(int argc, char** argv)
     throw std::runtime_error("Native MMG tag roundtrip changed indices.");
   for (Index i = 0; i < mesh.getVertexCount(); ++i)
   {
-    if (loaded.getVertexCoordinates(i) != mesh.getVertexCoordinates(i))
-      throw std::runtime_error("Native coordinate roundtrip changed doubles.");
+    for (size_t d = 0; d < mesh.getSpaceDimension(); ++d)
+    {
+      if (loaded.getVertexCoordinates(i)(d) != mesh.getVertexCoordinates(i)(d))
+        throw std::runtime_error("Native coordinate roundtrip changed doubles.");
+    }
   }
   std::cout << "L15 spacing, grading, invalid configuration and native MMG-tag roundtrip passed.\n";
 }

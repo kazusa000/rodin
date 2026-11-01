@@ -183,7 +183,8 @@ def main():
         directory = args.output / name
         directory.mkdir(parents=True, exist_ok=False)
         item = {"name": name, "command": list(map(str, command)), "started_at": time.time(),
-                "timeout_seconds": budget, "status": "running"}
+                "timeout_seconds": budget, "status": "running",
+                "expected_exit": "zero" if expected == 0 else "nonzero"}
         record["stages"].append(item)
         record["status"] = name
         checkpoint()
@@ -210,7 +211,8 @@ def main():
                 active = None
                 raise
         active = None
-        item.update(exit_code=code, finished_at=time.time(), status="completed" if code == expected else "failed")
+        accepted = code == 0 if expected == 0 else code != 0
+        item.update(exit_code=code, finished_at=time.time(), status="completed" if accepted else "failed")
         (directory / "exit-code.txt").write_text(str(code) + "\n")
         checkpoint()
         if (expected == 0 and code != 0) or (expected != 0 and code == 0):
@@ -258,7 +260,7 @@ def main():
                    f"-DMPI_mpi_LIBRARY={mpi}/lib/libmpi.so"]
         execute("configure", command, 4*3600)
         execute("compile", ["cmake", "--build", args.build, "--target", "KelvinBall",
-                            "KelvinL15CheckpointTest", "-j", "2"], 4*3600)
+                            "KelvinL15CheckpointTest", "-j", "4"], 4*3600)
         binary = args.build / "bin/KelvinBall"
         test = args.build / "bin/KelvinL15CheckpointTest"
         record["binary_sha256"] = sha(binary)
