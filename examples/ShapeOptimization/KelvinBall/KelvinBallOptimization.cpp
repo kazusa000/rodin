@@ -516,6 +516,7 @@ namespace KelvinBall
         // that mesh so the locator used by SWIFT resolves both the target and
         // its exact element-wise gradient on the same geometry.
         KelvinBall::Mesh moved(mesh);
+        saveExact(MMG::Mesh(KelvinBall::Mesh(moved)), "swift-classified.mesh");
         P1<Real, KelvinBall::Mesh> targetSpace(moved);
         GridFunction targetLevelSet(targetSpace);
         targetLevelSet.getData() = levelSet.getData();
