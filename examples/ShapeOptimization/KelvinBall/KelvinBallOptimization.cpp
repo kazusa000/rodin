@@ -548,7 +548,7 @@ namespace KelvinBall
           << ",\"line_search_seconds\":" << report.tLineSearch << "}\n";
         fitRecord.close();
         if (!fitRecord) throw std::runtime_error("Cannot save SWIFT fit evidence.");
-        saveExact(moved, "swift-fit.mesh");
+        saveExact(MMG::Mesh(KelvinBall::Mesh(moved)), "swift-fit.mesh");
         if (!report.qualityBudgetSatisfied)
           throw std::runtime_error("The SWIFT fit did not satisfy its mesh quality budget.");
         Alert::Info()
