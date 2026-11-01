@@ -41,7 +41,8 @@ namespace Rodin::Variational
         const Real r2 = r.squaredNorm(), e2 = m_epsilon * m_epsilon;
         const Real pi = std::acos(Real(-1));
         out.resize(3, 3);
-        const Real factor = 1 / (8 * pi * m_viscosity * std::pow(r2 + e2, Real(1.5)));
+        const Real d = r2 + e2;
+        const Real factor = 1 / (8 * pi * m_viscosity * d * std::sqrt(d));
         for (size_t i = 0; i < 3; ++i)
           for (size_t j = 0; j < 3; ++j)
             out(i, j) = factor * ((i == j ? r2 + 2 * e2 : 0) + r(i) * r(j));
@@ -69,7 +70,7 @@ namespace Rodin::Variational
         const Math::SpatialMatrix<Real>& H, Math::SpatialVector<Real>& dr, Real& de) const
       {
         const Real e = m_epsilon, r2 = r.squaredNorm(), d = r2 + e * e;
-        const Real inv3 = std::pow(d, Real(-1.5)), inv5 = inv3 / d;
+        const Real inv3 = 1 / (d * std::sqrt(d)), inv5 = inv3 / d;
         const Real factor = 1 / (8 * std::acos(Real(-1)) * m_viscosity);
         const Real trace = H.trace();
         const Real contraction = (r2 + 2 * e * e) * trace + r.dot(H * r);

@@ -2,6 +2,17 @@
 
 ## Fixed-checkpoint system diagnostics
 
+The current chamber solve assembles the operator and reduces/factorizes it once.
+The second response family uses a native `LinearForm` and the retained reduced
+matrix/LU. The orbit basis is stored sparsely with every nonzero retained, without
+scaling or numerical dropping. Matrix-valued P1 smooth-kernel quadrature contracts
+the exact nonzero components of the existing reference basis; O24 kernel actions
+use the exact signed-permutation structure. Quadrature order, kernel epsilon,
+state checks and shape objective are unchanged. The diagnostic's second-family
+factor time is therefore zero. The dense cross-component moment oracle, original
+full-surface reference, finite differences and fixed-checkpoint reproduction
+check these changes. The description below records the original profiling path.
+
 `KelvinBallBEMChamberDiagnostics ACCEPTED.mesh EXPECTED_RHO` evaluates one
 unchanged chamber checkpoint with the production order 3, epsilon factor 0.6
 and viscosity. No gradient, transport, reconstruction or shape update is run.

@@ -4494,19 +4494,37 @@ namespace Rodin::Variational
             const auto& tx = trp.getQuadrature(trq);
             const auto& ty = tep.getQuadrature(teq);
             // Reference P1 basis values depend on rule and range, not cell coordinates.
-            const auto tabulate = [](auto& values, size_t& identity, size_t& count,
+            const auto tabulate = [](auto& values, auto& entries, size_t& identity, size_t& count,
               const auto& fe, const auto& rule) {
               if (identity != rule.getCacheIdentity() || count != fe.getCount())
               {
                 identity = rule.getCacheIdentity(); count = fe.getCount();
                 values.resize(rule.getSize() * count);
+                entries.clear();
+                entries.resize(rule.getSize() * count);
                 for (size_t q = 0; q < rule.getSize(); ++q)
+                {
                   for (size_t i = 0; i < count; ++i)
+                  {
                     values[q * count + i] = fe.getBasis(i)(rule.getPoint(q));
+                    if constexpr (std::is_same_v<KernelValue, Math::SpatialTensor<ScalarType, 4>>)
+                    {
+                      const auto& value = values[q * count + i];
+                      for (size_t r = 0; r < static_cast<size_t>(value.rows()); ++r)
+                      {
+                        for (size_t c = 0; c < static_cast<size_t>(value.cols()); ++c)
+                        {
+                          if (value(r,c) != ScalarType(0))
+                            entries[q * count + i].push_back({r,c,value(r,c)});
+                        }
+                      }
+                    }
+                  }
+                }
               }
             };
-            tabulate(m_smoothTrialBasis, m_smoothTrialIdentity, m_smoothTrialCount, trialfe, trq);
-            tabulate(m_smoothTestBasis, m_smoothTestIdentity, m_smoothTestCount, testfe, teq);
+            tabulate(m_smoothTrialBasis, m_smoothTrialEntries, m_smoothTrialIdentity, m_smoothTrialCount, trialfe, trq);
+            tabulate(m_smoothTestBasis, m_smoothTestEntries, m_smoothTestIdentity, m_smoothTestCount, testfe, teq);
             m_matrix.setZero(testfe.getCount(), trialfe.getCount());
             for (size_t a = 0; a < tx.getSize(); ++a)
             {
@@ -4520,10 +4538,31 @@ namespace Rodin::Variational
                   x.getDistortion() * y.getDistortion();
                 for (size_t m = 0; m < trialfe.getCount(); ++m)
                 {
-                  const auto value = m_mk * m_smoothTrialBasis[a * m_smoothTrialCount + m];
-                  for (size_t l = 0; l < testfe.getCount(); ++l)
-                    m_matrix(l, m) += weight * Math::dot(value,
-                      m_smoothTestBasis[b * m_smoothTestCount + l]);
+                  if constexpr (std::is_same_v<KernelValue, Math::SpatialTensor<ScalarType, 4>>)
+                  {
+                    // Contract only actual reference-basis entries. P1 tensor
+                    // basis functions contain structural zeros; no DOF ordering
+                    // or component number is assumed and no tolerance is used.
+                    for (size_t l = 0; l < testfe.getCount(); ++l)
+                    {
+                      ScalarType value = 0;
+                      for (const auto& u : m_smoothTrialEntries[a * m_smoothTrialCount + m])
+                      {
+                        for (const auto& v : m_smoothTestEntries[b * m_smoothTestCount + l])
+                          value += m_mk(v.row,v.col,u.row,u.col) * u.value * Math::conj(v.value);
+                      }
+                      m_matrix(l,m) += weight * value;
+                    }
+                  }
+                  else
+                  {
+                    const auto value = m_mk * m_smoothTrialBasis[a * m_smoothTrialCount + m];
+                    for (size_t l = 0; l < testfe.getCount(); ++l)
+                    {
+                      m_matrix(l, m) += weight * Math::dot(value,
+                        m_smoothTestBasis[b * m_smoothTestCount + l]);
+                    }
+                  }
                 }
               }
             }
@@ -5033,6 +5072,9 @@ namespace Rodin::Variational
       KernelValue m_mk;
 
       std::vector<Range> m_smoothTrialBasis, m_smoothTestBasis;
+      /// Exact nonzero components of the already tabulated reference basis.
+      struct SmoothEntry { size_t row, col; ScalarType value; };
+      std::vector<std::vector<SmoothEntry>> m_smoothTrialEntries, m_smoothTestEntries;
       size_t m_smoothTrialIdentity = 0, m_smoothTestIdentity = 0;
       size_t m_smoothTrialCount = 0, m_smoothTestCount = 0;
       Range m_trv, m_tev;

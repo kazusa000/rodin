@@ -22,8 +22,17 @@ namespace
     void operator()(Math::SpatialTensor<Real,4>& out,const Point& target,const Point& source) const
     {
       out.resize({3,3,3,3});out.setZero();
-      for (size_t i=0;i<3;++i) for (size_t j=0;j<3;++j)
-        out(i,j,i,j)=1+target.x()+2*source.x();
+      for (size_t i=0;i<3;++i)
+      {
+        for (size_t j=0;j<3;++j)
+        {
+          for (size_t k=0;k<3;++k)
+          {
+            for (size_t l=0;l<3;++l)
+              out(i,j,k,l)=(1+2*(3*i+j)+3*(3*k+l))*(1+target.x()+2*source.x());
+          }
+        }
+      }
     }
   };
 }
@@ -65,7 +74,7 @@ int main(int argc,char** argv)
           firstMoment.getVector()(si)*mass.getVector()(sj)+2*mass.getVector()(si)*firstMoment.getVector()(sj);
         const auto& ti=tensorSpace.getDOFs(0,i);const auto& tj=tensorSpace.getDOFs(0,j);
         for (size_t a=0;a<9;++a) for (size_t b=0;b<9;++b)
-          conventionError=std::max(conventionError,std::abs(matrix(ti(a),tj(b))-(a==b ? expected : 0)));
+          conventionError=std::max(conventionError,std::abs(matrix(ti(a),tj(b))-(1+2*a+3*b)*expected));
       }
     std::cout<<std::setprecision(17)<<"kernel_convention_error="<<conventionError<<std::endl;
     if (conventionError>1e-11) throw std::runtime_error("Nonlocal target/source convention failed.");

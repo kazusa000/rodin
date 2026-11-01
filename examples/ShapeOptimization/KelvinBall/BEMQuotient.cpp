@@ -55,10 +55,12 @@ namespace KelvinBall
     DenseProblem problem(trial,test);
     Solver::PartialPivLU solver(problem);
     const auto basisStart=Clock::now();
-    const auto E=ChamberSymmetry(surface).tensorBasis(space);
+    // Preserve every nonzero of the existing orbit basis; no truncation/scaling.
+    const Eigen::SparseMatrix<Real> E=ChamberSymmetry(surface).tensorBasis(space).sparseView(0,0);
     if (diagnostics) diagnostics->basisSeconds=std::chrono::duration<Real>(Clock::now()-basisStart).count();
     result.stateDOFs=space.getSize(); result.independentDOFs=E.cols();
     Math::Matrix<Real> rhs(space.getSize(),2),solution(space.getSize(),2),A;
+    Eigen::PartialPivLU<Math::Matrix<Real>> diagnosticLU;
     for (size_t family=0;family<2;++family)
     {
       MatrixFunction rigid(size_t(3),size_t(3),[family](const Point& p) {
@@ -75,10 +77,21 @@ namespace KelvinBall
         return value;
       });
       auto linear=Integral(rigid,test); linear.setOrder(m_order);
-      problem=form-linear;
       const auto assemblyStart=Clock::now();
-      if (family==0) problem.assemble();
-      else problem.assemble(AssemblyTarget::RHS);
+      if (family==0)
+      {
+        problem=form-linear;
+        problem.assemble();
+      }
+      else
+      {
+        // A separate native LinearForm avoids OpenMP's full scratch-system
+        // assembly for an RHS-only Problem request.
+        LinearForm load(test);
+        load=linear;
+        load.assemble();
+        problem.getLinearSystem().getVector()=load.getVector();
+      }
       if (diagnostics)
       {
         diagnostics->assemblySeconds[family]=std::chrono::duration<Real>(Clock::now()-assemblyStart).count();
@@ -88,7 +101,7 @@ namespace KelvinBall
       if (family==0) A=system.getOperator();
       rhs.col(family)=system.getVector();
       const auto reductionStart=Clock::now();
-      system.getOperator()=E.transpose()*A*E;
+      if (family==0) system.getOperator()=E.transpose()*(A*E);
       system.getVector()=E.transpose()*rhs.col(family);
       if (diagnostics) diagnostics->reductionSeconds[family]=std::chrono::duration<Real>(Clock::now()-reductionStart).count();
       const auto& reduced=system.getOperator();
@@ -97,10 +110,13 @@ namespace KelvinBall
       if (diagnostics)
       {
         // Match PartialPivLU::solve exactly, exposing its two existing stages.
-        Eigen::PartialPivLU<Math::Matrix<Real>> lu;
-        const auto factorStart=Clock::now();
-        lu.compute(reduced);
-        diagnostics->factorSeconds[family]=std::chrono::duration<Real>(Clock::now()-factorStart).count();
+        auto& lu=diagnosticLU;
+        if (family==0)
+        {
+          const auto factorStart=Clock::now();
+          lu.compute(reduced);
+          diagnostics->factorSeconds[family]=std::chrono::duration<Real>(Clock::now()-factorStart).count();
+        }
         const auto solveStart=Clock::now();
         system.getSolution()=lu.solve(system.getVector());
         diagnostics->solveSeconds[family]=std::chrono::duration<Real>(Clock::now()-solveStart).count();
@@ -123,7 +139,8 @@ namespace KelvinBall
           std::cout<<"diagnostic condition_one="<<diagnostics->conditionOne<<std::endl;
         }
       }
-      else solver.solve(system);
+      else if (family==0) solver.solve(system);
+      else system.getSolution()=solver.getSolver().solve(system.getVector());
       solution.col(family)=E*system.getSolution();
       const Real residual=(E.transpose()*(A*solution.col(family)-rhs.col(family))).norm()/
         std::max((E.transpose()*rhs.col(family)).norm(),Real(1e-30));
