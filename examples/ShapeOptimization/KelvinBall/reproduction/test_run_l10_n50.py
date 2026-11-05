@@ -51,6 +51,17 @@ class HistoryTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.read([row])
 
+    def test_requested_state_limit_rejected(self):
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=self.row().keys())
+        writer.writeheader()
+        writer.writerows([self.row(), self.row(1)])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"history.csv"
+            path.write_text(output.getvalue())
+            with self.assertRaises(ValueError):
+                complete_history(path, states=1)
+
 
 if __name__ == "__main__":
     unittest.main()
