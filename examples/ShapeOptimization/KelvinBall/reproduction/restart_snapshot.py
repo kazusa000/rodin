@@ -71,13 +71,32 @@ def export_restart(snapshot, output, outer_radius):
             native_face_vertices[key] = ordered
     templates = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
     faces = np.sort(tets[:, templates].reshape(-1, 3), axis=1)
-    unique, inverse, counts = np.unique(faces, axis=0, return_inverse=True, return_counts=True)
+    unique, first, inverse, counts = np.unique(faces, axis=0, return_index=True, return_inverse=True, return_counts=True)
     if counts.max() > 2:
         raise ValueError('Nonmanifold tetrahedral faces')
     solid_owners = np.bincount(inverse, weights=np.repeat(labels == 2, 4))
     gamma = (counts == 2) & (solid_owners == 1)
     selected = (counts == 1) | gamma
     triangles = unique[selected]
+    # MMG5_idir: boundary winding is the outward face of the sole owning
+    # tetrahedron. Native fluid faces below retain their exact saved vertex order.
+    mmg_oriented_faces = np.array([[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]])
+    first_owner = first[selected]
+    solid_boundary_order = {}
+    for face, source in zip(triangles, first_owner):
+        key = tuple(face)
+        if key in native_face_vertices:
+            continue
+        cell, local = divmod(int(source), 4)
+        if labels[cell] != 2:
+            raise ValueError('A fluid boundary is missing its original native winding')
+        ordered = tets[cell, mmg_oriented_faces[local]]
+        points = vertices[ordered]
+        normal = np.cross(points[1]-points[0], points[2]-points[0])
+        if np.dot(normal, points.mean(axis=0)-vertices[tets[cell]].mean(axis=0)) <= 0:
+            raise ValueError('Original tetrahedron has nonpositive boundary orientation')
+        solid_boundary_order[key] = ordered
+
     triangle_labels = np.zeros(len(triangles), dtype=np.int64)
     triangle_labels[gamma[selected]] = 13
     # The upstream projection fixes these planes. This tolerance classifies
@@ -171,7 +190,9 @@ def export_restart(snapshot, output, outer_radius):
             file.write(f'{a+1} {b+1} {label}\n')
         file.write('Triangles\n'+str(len(triangles))+'\n')
         for face, label in zip(triangles, triangle_labels):
-            ordered = native_face_vertices.get(tuple(face), face)
+            ordered = native_face_vertices.get(tuple(face))
+            if ordered is None:
+                ordered = solid_boundary_order[tuple(face)]
             file.write(' '.join(str(int(v)+1) for v in ordered)+f' {label}\n')
         file.write('Tetrahedra\n'+str(len(tets))+'\n')
         for tet, label in zip(tets, labels):
@@ -188,7 +209,7 @@ def export_restart(snapshot, output, outer_radius):
                   output_sha256=digest(output), vertices=len(vertices), tetrahedra=len(tets),
                   gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges), edge_label_counts=actual_edges,
                   original_tet_order_and_materials=True, exact_double_roundtrip=True,
-                  geometry_modified=False, native_fluid_triangle_vertex_order_preserved=True, boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
+                  geometry_modified=False, native_fluid_triangle_vertex_order_preserved=True, solid_cut_winding='MMG5_idir outward face of original sole owning tetrahedron', boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
                   native_fluid=str(native), native_fluid_sha256=native_hash, solid_cut_fallback='whole-triangle hemisphere only when no original vertex cut reference exists; full direction regression required', fluid_snapshot=str(fluid_snapshot),
                   fluid_snapshot_sha256=digest(fluid_snapshot),
                   plane_classification_tolerance=plane_tolerance)
