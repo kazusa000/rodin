@@ -21,3 +21,7 @@ find_library(KELVIN_MPI_CXX NAMES mpi_cxx
   HINTS "${MUMPS_ROOT}/lib/x86_64-linux-gnu/openmpi/lib" REQUIRED)
 target_link_libraries(KelvinBallSupport PUBLIC "${KELVIN_MPI_CXX}")
 set_target_properties(KelvinBall PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+add_executable(KelvinCheckpointTest CheckpointTest.cpp)
+target_link_libraries(KelvinCheckpointTest PRIVATE KelvinBallSupport)
+set_target_properties(KelvinCheckpointTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

@@ -6,6 +6,7 @@
  */
 #include "KelvinBallOptimization.h"
 #include "LaplacianSmoothing.h"
+#include "Checkpoint.h"
 
 #include <algorithm>
 #include <array>
@@ -78,6 +79,10 @@ namespace KelvinBall
 
           Configuration configuration;
           size_t maxIterations = 1;
+          std::string restartMesh, restartCoordinates;
+          Optional<Real> originalTargetVolume;
+          size_t globalOffset = 0;
+          bool saveCheckpoint = false;
           bool saveMeshDiagnostic = false;
           bool geometryOnly = false;
           bool stateOnly = false;
@@ -98,6 +103,16 @@ namespace KelvinBall
                 continue;
               if (mode.rfind("--iterations=", 0) == 0)
                 maxIterations = std::stoul(std::string(mode.substr(13)));
+              else if (mode.rfind("--restart-mesh=", 0) == 0)
+                restartMesh = std::string(mode.substr(15));
+              else if (mode.rfind("--restart-coordinates=", 0) == 0)
+                restartCoordinates = std::string(mode.substr(22));
+              else if (mode.rfind("--target-volume=", 0) == 0)
+                originalTargetVolume = std::stod(std::string(mode.substr(16)));
+              else if (mode.rfind("--global-offset=", 0) == 0)
+                globalOffset = std::stoul(std::string(mode.substr(16)));
+              else if (mode == "--save-checkpoint")
+                saveCheckpoint = true;
               else if (mode.rfind("--regularization=", 0) == 0)
                 regularizationFactor = std::stod(std::string(mode.substr(17)));
               else if (mode.rfind("--normal-regularization=", 0) == 0)
@@ -155,6 +170,12 @@ namespace KelvinBall
               throw std::runtime_error("The motion force must be finite and nonzero.");
             if (reconstructionMethod != "mmg" && reconstructionMethod != "swift")
               throw std::runtime_error("The reconstruction method must be mmg or swift.");
+            if (restartMesh.empty() != restartCoordinates.empty())
+              throw std::runtime_error("Restart requires topology and original binary coordinates.");
+            if (!restartMesh.empty() && (reconstructionMethod != "swift" ||
+                !originalTargetVolume || !std::isfinite(*originalTargetVolume) ||
+                !(*originalTargetVolume > 0)))
+              throw std::runtime_error("SWIFT recovery requires the original positive target volume.");
             if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
               throw std::runtime_error(
                 "--mmg-snap applies only to --reconstruction=mmg.");
@@ -785,6 +806,46 @@ namespace KelvinBall
 
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
+        if (!m_options.restartMesh.empty())
+        {
+          MMG::Mesh mesh;
+          mesh.load(m_options.restartMesh, IO::FileFormat::MEDIT);
+          const auto file = IO::HDF5::File(H5Fopen(
+            m_options.restartCoordinates.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+          if (!file)
+            throw std::runtime_error("Cannot open original restart coordinates.");
+          const auto shape = IO::HDF5::readMatrixShape(file.get(), "/Mesh/Geometry/Vertices");
+          if (shape.first != mesh.getVertexCount() || shape.second != 3)
+            throw std::runtime_error("Restart vertex dimensions differ.");
+          const auto values = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+            file.get(), "/Mesh/Geometry/Vertices");
+          for (auto vertex = mesh.getVertex(); vertex; ++vertex)
+          {
+            Math::SpatialPoint coordinate = vertex->getCoordinates();
+            for (Eigen::Index component = 0; component < 3; ++component)
+            {
+              const Real value = values[3 * vertex->getIndex() + component];
+              if (!std::isfinite(value) || std::abs(value - coordinate(component)) > 1e-12)
+                throw std::runtime_error("Restart coordinate ordering differs.");
+              coordinate(component) = value;
+            }
+            mesh.setVertexCoordinates(vertex->getIndex(), coordinate);
+          }
+          prepare(mesh);
+          Optional<MMG::Mesh> background;
+          // The interrupted XDMF run omitted the independent SWIFT background.
+          // Explicit recovery policy: copy the saved fitted chamber, never refit it.
+          background.emplace(mesh);
+          const Real backgroundH = meanElementSize(*background);
+          const Real h = m_options.configuration.getGridSpacing();
+          ReconstructionDiagnostics diagnostics{m_options.configuration.hmin,
+            m_options.configuration.hmax, Real(0.1) * h * h, 0,
+            mesh.getCellCount(), mesh.getCellCount()};
+          Alert::Info() << "Recovery: preserved chamber; SWIFT background reinitialized "
+                        << "from the chamber, without fitting or moving vertices."
+                        << Alert::Raise;
+          return {std::move(mesh), std::move(background), backgroundH, diagnostics};
+        }
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
@@ -1489,7 +1550,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)
     return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
+  const Real targetVolume = m_options.originalTargetVolume
+    ? *m_options.originalTargetVolume : mesh.getVolume(Obstacle);
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1578,6 +1640,18 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         nextBackground.reset();
         backgroundH = meanElementSize(*swiftBackground);
       }
+    }
+    if (m_options.saveCheckpoint)
+    {
+      if (!swiftBackground)
+        throw std::runtime_error("Full SWIFT checkpoint requires both meshes.");
+      Checkpoint::save(m_options.globalOffset + iteration, mesh, *swiftBackground,
+        {Real(1), Real(m_options.globalOffset + iteration), targetVolume, backgroundH,
+         previousRho.value_or(nan), predictedRhoChange.value_or(nan),
+         previousVolume.value_or(nan), previousThicknessPenalty.value_or(nan),
+         predictedThicknessChange.value_or(nan), predictedVolumeChange.value_or(nan),
+         initialGridSpacing, m_options.regularizationFactor, m_options.stepFactor,
+         m_options.minimumThickness, m_options.configuration.hmin, m_options.configuration.hmax});
     }
     const Real h = meanElementSize(mesh);
     const auto meshDiagnostics = getMeshDiagnostics(mesh);
