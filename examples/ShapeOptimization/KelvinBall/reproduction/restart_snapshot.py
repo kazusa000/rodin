@@ -61,10 +61,14 @@ def export_restart(snapshot, output, outer_radius):
     except KeyError as error:
         raise ValueError('A preserved fluid coordinate is absent from the complete volume') from error
     native_faces = {}
+    native_face_vertices = {}
     for line in section("Triangles"):
         a, b, c, label = map(int, line.split())
         if label in (7, 13, 31, 32, 33, 35):
-            native_faces[tuple(sorted(fluid_to_full[np.array([a, b, c])-1]))] = label
+            ordered = tuple(fluid_to_full[np.array([a, b, c])-1])
+            key = tuple(sorted(ordered))
+            native_faces[key] = label
+            native_face_vertices[key] = ordered
     templates = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
     faces = np.sort(tets[:, templates].reshape(-1, 3), axis=1)
     unique, inverse, counts = np.unique(faces, axis=0, return_inverse=True, return_counts=True)
@@ -167,7 +171,8 @@ def export_restart(snapshot, output, outer_radius):
             file.write(f'{a+1} {b+1} {label}\n')
         file.write('Triangles\n'+str(len(triangles))+'\n')
         for face, label in zip(triangles, triangle_labels):
-            file.write(' '.join(str(int(v)+1) for v in face)+f' {label}\n')
+            ordered = native_face_vertices.get(tuple(face), face)
+            file.write(' '.join(str(int(v)+1) for v in ordered)+f' {label}\n')
         file.write('Tetrahedra\n'+str(len(tets))+'\n')
         for tet, label in zip(tets, labels):
             file.write(' '.join(str(int(v)+1) for v in tet)+f' {label}\n')
@@ -183,7 +188,7 @@ def export_restart(snapshot, output, outer_radius):
                   output_sha256=digest(output), vertices=len(vertices), tetrahedra=len(tets),
                   gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges), edge_label_counts=actual_edges,
                   original_tet_order_and_materials=True, exact_double_roundtrip=True,
-                  geometry_modified=False, boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
+                  geometry_modified=False, native_fluid_triangle_vertex_order_preserved=True, boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
                   native_fluid=str(native), native_fluid_sha256=native_hash, solid_cut_fallback='whole-triangle hemisphere only when no original vertex cut reference exists; full direction regression required', fluid_snapshot=str(fluid_snapshot),
                   fluid_snapshot_sha256=digest(fluid_snapshot),
                   plane_classification_tolerance=plane_tolerance)

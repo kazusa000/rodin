@@ -39,12 +39,13 @@ def main():
     for name in ('source', 'build', 'output', 'prefix', 'parent', 'blas-library-dir'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--compiled-campaign', type=Path)
     args = parser.parse_args()
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if platform.node() != '28h':
         raise RuntimeError('All compilation, tests and numerical work require 28h')
     pinned(args.source, args.commit)
-    for path in (args.build, args.output):
+    for path in ((args.output,) if args.compiled_campaign else (args.build, args.output)):
         if path.exists() or path.resolve().is_relative_to(args.source.resolve()):
             raise ValueError('Require fresh external build/output paths')
     parent = json.loads((args.parent / 'campaign.json').read_text())
@@ -138,10 +139,27 @@ def main():
                      '-B', args.build, '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_PREFIX_PATH={args.prefix}',
                      f'-DMUMPS_ROOT={args.prefix}', f'-DMPI_C_COMPILER_INCLUDE_DIRS={mpi}/include;{mpi}/include/openmpi',
                      f'-DMPI_C_HEADER_DIR={mpi}/include', '-DMPI_C_LIB_NAMES=mpi', f'-DMPI_mpi_LIBRARY={mpi}/lib/libmpi.so']
-        for name, command in [('configure', configure), ('compile', ['cmake', '--build', args.build,
-                               '--target', 'KelvinBall', 'KelvinCheckpointTest', '-j', '4'])]:
-            if execute(name, command, 4*3600):
-                raise RuntimeError(f'{name} failed')
+        if args.compiled_campaign:
+            compiled = json.loads(args.compiled_campaign.read_text())
+            pinned(Path(compiled['source']), compiled['commit'])
+            changed = git(args.source, 'diff', '--name-only', compiled['commit'], args.commit, '--', 'src', 'examples')
+            if any(not path.startswith('examples/ShapeOptimization/KelvinBall/reproduction/')
+                   for path in changed.splitlines()):
+                raise RuntimeError('Reused binary numerical source differs')
+            for name in ('configure', 'compile'):
+                stage = next(item for item in compiled['stages'] if item['name'] == name)
+                actual = int((args.compiled_campaign.parent/name/'exit-code.txt').read_text())
+                if actual != 0 or stage['exit_code'] != 0:
+                    raise RuntimeError('Reused build lacks successful exits')
+            if sha(args.build/'bin/KelvinBall') != compiled['binary_sha256']:
+                raise RuntimeError('Reused binary hash differs')
+            record['compiled_build_provenance'] = dict(campaign=str(args.compiled_campaign),
+                source=compiled['source'], commit=compiled['commit'], binary_sha256=compiled['binary_sha256'])
+        else:
+            for name, command in [('configure', configure), ('compile', ['cmake', '--build', args.build,
+                                   '--target', 'KelvinBall', 'KelvinCheckpointTest', '-j', '4'])]:
+                if execute(name, command, 4*3600):
+                    raise RuntimeError(f'{name} failed')
         binary, test = args.build/'bin/KelvinBall', args.build/'bin/KelvinCheckpointTest'
         record['binary_sha256'] = sha(binary)
         record['math_libraries'] = verify_blas(binary, env, args.blas_library_dir)
