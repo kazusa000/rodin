@@ -45,6 +45,6 @@ def compare_native(a, b):
             file.visititems(lambda name, item: names.append(name) if isinstance(item, h5py.Dataset) else None)
             return names
         names = datasets(x)
-        if names != datasets(y) or any(not np.array_equal(x[n][:], y[n][:]) for n in names):
+        if names != datasets(y) or any(not np.array_equal(x[n][()], y[n][()]) for n in names):
             raise ValueError('Full native checkpoint roundtrip changed a dataset')
     return len(names)

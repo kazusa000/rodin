@@ -47,6 +47,7 @@ def export_restart(snapshot, output, outer_radius):
         fluid_vertices = data['Mesh/Geometry/Vertices'][:]
         fluid_stream = data['Mesh/XDMF/Topology'][:].reshape(-1, 5)
         fluid_labels = data['Mesh/Attributes/3'][:]
+        fluid_edge_labels = data['Mesh/Attributes/1'][:]
     if ascii_vertices.shape != fluid_vertices.shape or not np.allclose(ascii_vertices, fluid_vertices, rtol=6e-6, atol=1e-9):
         raise ValueError('The native coverage mesh is not the matching saved fluid state')
     ascii_tets = np.array([[int(x) for x in line.split()] for line in section("Tetrahedra")])
@@ -133,18 +134,37 @@ def export_restart(snapshot, output, outer_radius):
         for edge in ((face[0], face[1]), (face[0], face[2]), (face[1], face[2])):
             edge_labels.setdefault(edge, set()).add(int(label))
     fixed = {7, 31, 32, 33, 35}
-    ridges = [edge for edge, refs in edge_labels.items() if len(refs) >= 2 and refs & fixed]
+    # New SWIFT snapshots retain explicit zero-labelled fluid edges. The native
+    # writer emits every edge in its original index order; recover the labels
+    # from the matching HDF5 attributes rather than treating every Gamma/cut
+    # intersection as a geometric ridge.
+    ridges = {edge for edge, refs in edge_labels.items() if len(refs & fixed) >= 2}
+    ascii_edges = np.array([[int(x) for x in line.split()] for line in section('Edges')])
+    if len(ascii_edges) != len(fluid_edge_labels) or not np.array_equal(
+            ascii_edges[:, 2], np.where(fluid_edge_labels == null, 0, fluid_edge_labels)):
+        raise ValueError('Matching native fluid edge ordering or references differ')
+    recovered_edges = {tuple(sorted(fluid_to_full[edge[:2]-1])): int(label)
+                       for edge, label in zip(ascii_edges, fluid_edge_labels) if label != null}
+    native_ridges = {edge for edge, label in recovered_edges.items() if label == 40}
+    fluid_edges = {tuple(sorted(fluid_to_full[edge[:2]-1])) for edge in ascii_edges}
+    if native_ridges != ridges & fluid_edges:
+        raise ValueError('Recovered fixed-cut ridge labels disagree with original fluid edges')
+    for edge in ridges:
+        if edge in recovered_edges and recovered_edges[edge] != 40:
+            raise ValueError('A recovered ridge overwrites an original zero edge reference')
+        recovered_edges[edge] = 40
     expected_edges = {int(v): int(n) for v, n in zip(*np.unique(attributes[1], return_counts=True)) if v != null}
-    if expected_edges != {40: len(ridges)}:
-        raise ValueError(f'Ridge labels differ from original: {expected_edges} vs {len(ridges)}')
+    actual_edges = {int(v): int(n) for v, n in zip(*np.unique(list(recovered_edges.values()), return_counts=True))}
+    if expected_edges != actual_edges:
+        raise ValueError(f'Edge labels differ from original: {expected_edges} vs {actual_edges}')
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('w') as file:
         file.write('MeshVersionFormatted 2\nDimension 3\nVertices\n'+str(len(vertices))+'\n')
         for point, label in zip(vertices, attributes[0]):
             file.write(' '.join(format(float(x), '.17g') for x in point)+f' {int(label)}\n')
-        file.write('Edges\n'+str(len(ridges))+'\n')
-        for a, b in ridges:
-            file.write(f'{a+1} {b+1} 40\n')
+        file.write('Edges\n'+str(len(recovered_edges))+'\n')
+        for (a, b), label in sorted(recovered_edges.items()):
+            file.write(f'{a+1} {b+1} {label}\n')
         file.write('Triangles\n'+str(len(triangles))+'\n')
         for face, label in zip(triangles, triangle_labels):
             file.write(' '.join(str(int(v)+1) for v in face)+f' {label}\n')
@@ -161,7 +181,7 @@ def export_restart(snapshot, output, outer_radius):
         raise ValueError('Original double coordinates or source changed')
     record = dict(source=str(snapshot), source_sha256=source_hash, output=str(output),
                   output_sha256=digest(output), vertices=len(vertices), tetrahedra=len(tets),
-                  gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges),
+                  gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges), edge_label_counts=actual_edges,
                   original_tet_order_and_materials=True, exact_double_roundtrip=True,
                   geometry_modified=False, boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
                   native_fluid=str(native), native_fluid_sha256=native_hash, solid_cut_fallback='whole-triangle hemisphere only when no original vertex cut reference exists; full direction regression required', fluid_snapshot=str(fluid_snapshot),
