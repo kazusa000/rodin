@@ -37,3 +37,32 @@ previous thickness penalty, predicted thickness change, predicted volume change,
 initial h0, regularization factor, step factor, minimum thickness, hmin, hmax.
 Absent prior scalars use NaN. Checkpoint I/O must pass a synthetic native dataset
 roundtrip and reject out-of-range MMG marker indices before recovery evaluation.
+
+## Direction restoration in the final recovery version
+
+The rejected fresh reevaluations are retained. Restoring native fluid face winding
+reproduced all six velocities and all six pressures bit for bit. Recovering the
+original interior/Gamma face indices still left a fresh-Theta maximum discrepancy
+of 0.0014755124310432757: the visualization outputs omit remaining solid-cut
+parameterization. Fresh recomputed direction equivalence is not established.
+
+The final recovery loads the original already computed state24 Theta at local0
+only, before directional derivatives and transport. Later iterations compute
+normal upstream directions. The full-field Theta comparison verifies saved-data
+restoration at original vertex/component indices; flow and Distance are freshly
+reevaluated. This checkpoint-restoration policy was disclosed before launch.
+The original field comparison tolerances are retained.
+
+Only fixed boundary triangles are seeded in MEDIT. Interior faces are discovered
+in original tetrahedron order, Gamma is traced at the 2/3 interface, and all
+interior face attributes must match their original HDF5 indices. All known native
+fluid boundary vertex orders are retained. The original target volume is kept.
+The independent SWIFT background is still explicitly reinitialized from the saved
+chamber, and the resulting trajectory is recorded separately from the parent.
+
+The updated synthetic I/O test checks every restored vector component and rejects
+wrong dimensions. `build_recovery_from_framework.py` compiles recovery I/O and its
+test against the immutable, identical framework/support build, records the exact
+compiler/link commands and hashes all reused link inputs. Earlier binaries and
+outputs remain unchanged. The running source remains pinned to its launch commit;
+subsequent documentation-only commits do not replace that frozen source.
