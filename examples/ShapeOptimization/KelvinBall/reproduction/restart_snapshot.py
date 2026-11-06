@@ -188,8 +188,9 @@ def export_restart(snapshot, output, outer_radius):
         file.write('Edges\n'+str(len(recovered_edges))+'\n')
         for (a, b), label in sorted(recovered_edges.items()):
             file.write(f'{a+1} {b+1} {label}\n')
-        file.write('Triangles\n'+str(len(triangles))+'\n')
-        for face, label in zip(triangles, triangle_labels):
+        fixed_mask = triangle_labels != 13
+        file.write('Triangles\n'+str(int(fixed_mask.sum()))+'\n')
+        for face, label in zip(triangles[fixed_mask], triangle_labels[fixed_mask]):
             ordered = native_face_vertices.get(tuple(face))
             if ordered is None:
                 ordered = solid_boundary_order[tuple(face)]
@@ -209,7 +210,7 @@ def export_restart(snapshot, output, outer_radius):
                   output_sha256=digest(output), vertices=len(vertices), tetrahedra=len(tets),
                   gamma_panels=int(gamma.sum()), face_label_counts=actual, ridge_edges=len(ridges), edge_label_counts=actual_edges,
                   original_tet_order_and_materials=True, exact_double_roundtrip=True,
-                  geometry_modified=False, native_fluid_triangle_vertex_order_preserved=True, solid_cut_winding='MMG5_idir outward face of original sole owning tetrahedron', boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
+                  geometry_modified=False, native_fluid_fixed_triangle_vertex_order_preserved=True, gamma_restored_by_original_tetrahedron_discovery=True, solid_cut_winding='MMG5_idir outward face of original sole owning tetrahedron', boundary_label_method='matching original native fluid faces plus original solid-cut vertex references; original label counts required',
                   native_fluid=str(native), native_fluid_sha256=native_hash, solid_cut_fallback='whole-triangle hemisphere only when no original vertex cut reference exists; full direction regression required', fluid_snapshot=str(fluid_snapshot),
                   fluid_snapshot_sha256=digest(fluid_snapshot),
                   plane_classification_tolerance=plane_tolerance)

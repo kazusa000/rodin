@@ -832,6 +832,33 @@ namespace KelvinBall
             mesh.setVertexCoordinates(vertex->getIndex(), coordinate);
           }
           prepare(mesh);
+          // XDMF omitted the lower-dimensional topology, but retained every
+          // face attribute index. Seed only the original fixed boundary prefix;
+          // discover interior faces in the original tetrahedron order, then trace
+          // Gamma. This restores the original Gamma indices and ray-query order.
+          const Map<Pair<Attribute, Attribute>, Attribute> interfaces{
+            {{Obstacle, Fluid}, Gamma}};
+          mesh.trace(interfaces);
+          const auto originalFaces = IO::HDF5::readVectorDataset<IO::HDF5::U64>(
+            file.get(), "/Mesh/Attributes/2");
+          if (originalFaces.size() != mesh.getConnectivity().getCount(2))
+            throw std::runtime_error("Recovered face topology count differs.");
+          size_t boundaryPrefix = 0;
+          for (const auto label : originalFaces)
+          {
+            if (label != Outer && label != SigmaPlus && label != SigmaMinus &&
+                label != SigmaXYPlus && label != SigmaXYMinus)
+              break;
+            ++boundaryPrefix;
+          }
+          for (size_t i = boundaryPrefix; i < originalFaces.size(); ++i)
+          {
+            const auto attribute = mesh.getAttribute(2, i);
+            const auto value = attribute ? static_cast<IO::HDF5::U64>(*attribute)
+                                         : IO::HDF5::NullAttributeMarker;
+            if (value != originalFaces[i])
+              throw std::runtime_error("Original Gamma face indices were not recovered.");
+          }
           Optional<MMG::Mesh> background;
           // The interrupted XDMF run omitted the independent SWIFT background.
           // Explicit recovery policy: copy the saved fitted chamber, never refit it.

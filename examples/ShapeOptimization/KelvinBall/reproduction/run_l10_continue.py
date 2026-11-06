@@ -40,6 +40,7 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--compiled-campaign', type=Path)
+    parser.add_argument('--framework-campaign', type=Path)
     args = parser.parse_args()
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if platform.node() != '28h':
@@ -139,7 +140,13 @@ def main():
                      '-B', args.build, '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_PREFIX_PATH={args.prefix}',
                      f'-DMUMPS_ROOT={args.prefix}', f'-DMPI_C_COMPILER_INCLUDE_DIRS={mpi}/include;{mpi}/include/openmpi',
                      f'-DMPI_C_HEADER_DIR={mpi}/include', '-DMPI_C_LIB_NAMES=mpi', f'-DMPI_mpi_LIBRARY={mpi}/lib/libmpi.so']
-        if args.compiled_campaign:
+        if args.framework_campaign:
+            command = [sys.executable, '-B', args.source/'examples/ShapeOptimization/KelvinBall/reproduction/build_recovery_from_framework.py',
+                       '--source', args.source, '--build', args.build, '--campaign', args.framework_campaign]
+            if execute('compile', command, 4*3600):
+                raise RuntimeError('Recovery compilation against preserved framework failed')
+            record['reused_framework_provenance'] = json.loads((args.build/'reused-framework-provenance.json').read_text())
+        elif args.compiled_campaign:
             compiled = json.loads(args.compiled_campaign.read_text())
             pinned(Path(compiled['source']), compiled['commit'])
             changed = git(args.source, 'diff', '--name-only', compiled['commit'], args.commit, '--', 'src', 'examples')
