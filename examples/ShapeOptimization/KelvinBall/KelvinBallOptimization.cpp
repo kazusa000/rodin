@@ -79,7 +79,7 @@ namespace KelvinBall
 
           Configuration configuration;
           size_t maxIterations = 1;
-          std::string restartMesh, restartCoordinates;
+          std::string restartMesh, restartCoordinates, restartTheta;
           Optional<Real> originalTargetVolume;
           size_t globalOffset = 0;
           bool saveCheckpoint = false;
@@ -107,6 +107,8 @@ namespace KelvinBall
                 restartMesh = std::string(mode.substr(15));
               else if (mode.rfind("--restart-coordinates=", 0) == 0)
                 restartCoordinates = std::string(mode.substr(22));
+              else if (mode.rfind("--restart-theta=", 0) == 0)
+                restartTheta = std::string(mode.substr(16));
               else if (mode.rfind("--target-volume=", 0) == 0)
                 originalTargetVolume = std::stod(std::string(mode.substr(16)));
               else if (mode.rfind("--global-offset=", 0) == 0)
@@ -170,6 +172,8 @@ namespace KelvinBall
               throw std::runtime_error("The motion force must be finite and nonzero.");
             if (reconstructionMethod != "mmg" && reconstructionMethod != "swift")
               throw std::runtime_error("The reconstruction method must be mmg or swift.");
+            if (!restartTheta.empty() && restartMesh.empty())
+              throw std::runtime_error("A preserved direction requires the preserved mesh.");
             if (restartMesh.empty() != restartCoordinates.empty())
               throw std::runtime_error("Restart requires topology and original binary coordinates.");
             if (!restartMesh.empty() && (reconstructionMethod != "swift" ||
@@ -2260,6 +2264,15 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     GridFunction theta(shapeSpace);
     theta = xiRho;
     theta /= xiRhoInfinityNorm;
+    // BEGIN SAVED DIRECTION RESTORE: only the already evaluated restart state.
+    if (iteration == 0 && !m_options.restartTheta.empty())
+    {
+      Checkpoint::restoreVector(m_options.restartTheta, theta, mesh.getVertexCount());
+      Alert::Info() << "Restored the preserved direction for the already evaluated "
+                    << "restart state; later iterations recompute their directions."
+                    << Alert::Raise;
+    }
+    // END SAVED DIRECTION RESTORE.
     stageDiagnostics.thetaTangentFraction =
       interfaceComponents(mesh, theta).tangentialFraction;
     xiRhoNorm = Frobenius(theta);

@@ -30,7 +30,7 @@ def main():
         raise RuntimeError('Original compiled binary changed')
     changed = git(a.source, 'diff', '--name-only', old['commit'], 'HEAD', '--', 'src', 'examples').splitlines()
     optimization = 'examples/ShapeOptimization/KelvinBall/KelvinBallOptimization.cpp'
-    if any(name != optimization and not name.startswith('examples/ShapeOptimization/KelvinBall/reproduction/') for name in changed):
+    if any(name not in (optimization, 'examples/ShapeOptimization/KelvinBall/Checkpoint.h') and not name.startswith('examples/ShapeOptimization/KelvinBall/reproduction/') for name in changed):
         raise RuntimeError('Framework/support code or checkpoint header changed')
     a.build.mkdir(exist_ok=False)
     (a.build/'bin').mkdir()
@@ -58,11 +58,25 @@ def main():
     subprocess.run(link, cwd=cwd, check=True)
     if any(sha(Path(path)) != digest for path,digest in inputs.items()):
         raise RuntimeError('Immutable framework inputs changed during linking')
-    shutil.copy2(oldbuild/'bin/KelvinCheckpointTest', a.build/'bin/KelvinCheckpointTest')
+    # Recompile the synthetic I/O test when checkpoint field loading changes.
+    testflags = {}
+    for line in (oldbuild/'CMakeFiles/KelvinCheckpointTest.dir/flags.make').read_text().splitlines():
+        if line.startswith(('CXX_DEFINES =', 'CXX_INCLUDES =', 'CXX_FLAGS =')):
+            name, value = line.split('=',1)
+            testflags[name.strip()] = shlex.split(value.replace(str(oldsource),str(a.source)))
+    testobj = a.build/'CheckpointTest.cpp.o'
+    testcompile = ['/usr/bin/c++', *testflags['CXX_DEFINES'], *testflags['CXX_INCLUDES'], *testflags['CXX_FLAGS'],
+                   '-o', str(testobj), '-c', str(a.source/'examples/ShapeOptimization/KelvinBall/reproduction/CheckpointTest.cpp')]
+    subprocess.run(testcompile, check=True)
+    testlink = shlex.split((oldbuild/'CMakeFiles/KelvinCheckpointTest.dir/link.txt').read_text())
+    testlink = [str(testobj) if token.endswith('CheckpointTest.cpp.o') else token for token in testlink]
+    testlink[testlink.index('-o')+1] = str(a.build/'bin/KelvinCheckpointTest')
+    subprocess.run(testlink, cwd=oldbuild, check=True)
     write(a.build/'reused-framework-provenance.json', dict(
         source=str(a.source), commit=git(a.source,'rev-parse','HEAD'), framework_campaign=str(a.campaign),
         framework_source=str(oldsource), framework_commit=old['commit'], framework_build=str(oldbuild),
         compiler_command=compile_command, link_command=link, link_cwd=str(cwd),
+        checkpoint_test_compiler_command=testcompile, checkpoint_test_link_command=testlink,
         immutable_input_hashes=inputs, compiler_exit_code=0, linker_exit_code=0,
         binary_sha256=sha(a.build/'bin/KelvinBall'),
         checkpoint_test_sha256=sha(a.build/'bin/KelvinCheckpointTest')))

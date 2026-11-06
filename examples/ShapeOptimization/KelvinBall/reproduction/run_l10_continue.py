@@ -26,6 +26,12 @@ def audit(source):
     name = 'examples/ShapeOptimization/KelvinBall/KelvinBallOptimization.cpp'
     old = git(source, 'show', f'{BASE}:{name}')
     new = (source / name).read_text()
+    start = new.find('    // BEGIN SAVED DIRECTION RESTORE:')
+    end = new.find('    // END SAVED DIRECTION RESTORE.')
+    if start >= 0:
+        if end < start:
+            raise ValueError('Malformed saved-direction I/O block')
+        new = new[:start] + new[end+len('    // END SAVED DIRECTION RESTORE.\n'):]
     marker = '    const Real h = meanElementSize(mesh);\n    const auto meshDiagnostics'
     if old.split(marker, 1)[1].strip() != new.split(marker, 1)[1].strip():
         raise ValueError('Numerical update-loop body changed beyond recovery/checkpoint I/O')
@@ -75,6 +81,8 @@ def main():
                   requested_additional_updates=FINAL-OFFSET, continuation_states=FINAL-OFFSET+1,
                   recovery_policy='original fitted chamber and binary coordinates; independent SWIFT background reinitialized as a copy of the preserved chamber',
                   missing_original_swift_background=True, exact_old_swift_trajectory=False,
+                  initial_direction='original saved state24 Theta, restored only at local0',
+                  original_theta_sha256=sha(original/f'KelvinBall.Chamber.Theta.{OFFSET:06d}.h5'),
                   paired_native_checkpoints=True, recurring_monitor=False, independent_bem=False,
                   native_wall_time_limit_seconds=None, automatic_restart=False, stages=[],
                   source_audit=audit(args.source), fem_threads=THREADS, blas_threads=THREADS)
@@ -186,7 +194,7 @@ def main():
             raise RuntimeError('Out-of-range MMG tags were accepted')
         record['checkpoint_validation'] = dict(all_datasets_exact=True, datasets=count, invalid_tag_rejected=True)
         recovery = [f'--restart-mesh={prep}/recovered.mesh', f'--restart-coordinates={snapshot}',
-                    f'--target-volume={target:.17g}', f'--global-offset={OFFSET}', '--save-checkpoint']
+                    f'--target-volume={target:.17g}', f'--global-offset={OFFSET}', '--save-checkpoint', f'--restart-theta={original}/KelvinBall.Chamber.Theta.{OFFSET:06d}.h5']
         def parameters(states):
             return [f'--iterations={states}' if p.startswith('--iterations=') else p for p in PARAMETERS] + recovery
         if execute('validation/recovery', [binary, *parameters(1)], 2*3600):
@@ -196,11 +204,14 @@ def main():
         recovered = complete_history(validation/'kelvin-ball.csv', 1)
         if len(recovered) != 1 or float(recovered[0]['target_volume']) != target:
             raise RuntimeError('Recovered score or original target volume missing')
-        record['recovery_validation'] = dict(status='passed', fields=fields,
+        record['recovery_validation'] = dict(status='passed_saved_state_restoration', fields=fields,
+                         theta_source='original saved state24 direction; restored only at local0',
+                         theta_recomputed_equivalence=False, flow_recomputed=True, distance_recomputed=True,
                          fem={key:float(recovered[0][key]) for key in ('k','c','q','rho','volume','target_volume')},
                          global_step=OFFSET, original_full_fields_checked=True)
         checkpoint()
-        if sha(snapshot) != record['saved_snapshot_sha256'] or sha(original/'kelvin-ball.csv') != record['parent_csv_sha256']:
+        if (sha(snapshot) != record['saved_snapshot_sha256'] or sha(original/'kelvin-ball.csv') != record['parent_csv_sha256'] or
+                sha(original/f'KelvinBall.Chamber.Theta.{OFFSET:06d}.h5') != record['original_theta_sha256']):
             raise RuntimeError('Original parent files changed')
         native = execute('optimization', [binary, *parameters(FINAL-OFFSET+1)])
         history = complete_history(args.output/'optimization/kelvin-ball.csv', FINAL-OFFSET+1)

@@ -6,6 +6,7 @@
 #define KELVIN_BALL_CHECKPOINT_H
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <vector>
 #include <stdexcept>
@@ -71,6 +72,34 @@ namespace KelvinBall
           }
         }
         return mesh;
+      }
+
+      /** Restore an already computed nodal vector field at the original vertex indices. */
+      template <class Field>
+      static void restoreVector(const std::string& path, Field& field, size_t vertices)
+      {
+        using namespace Rodin;
+        const auto file = IO::HDF5::File(H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+        if (!file)
+          throw std::runtime_error("Cannot open the preserved restart direction.");
+        const auto shape = IO::HDF5::readMatrixShape(file.get(), "/GridFunction/Values/Data");
+        if (shape.first != vertices || shape.second != 3)
+          throw std::runtime_error("Preserved direction dimensions do not match the mesh.");
+        const auto values = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+          file.get(), "/GridFunction/Values/Data");
+        for (Index vertex = 0; vertex < vertices; ++vertex)
+        {
+          const auto& dofs = field.getFiniteElementSpace().getDOFs(0, vertex);
+          if (dofs.size() != 3)
+            throw std::runtime_error("Preserved direction requires three nodal components.");
+          for (size_t component = 0; component < 3; ++component)
+          {
+            const Real value = values[3 * vertex + component];
+            if (!std::isfinite(value))
+              throw std::runtime_error("Preserved direction contains nonfinite values.");
+            field.getData()(dofs[component]) = value;
+          }
+        }
       }
 
       /** Persist both independently evolving SWIFT meshes and binary scalar state. */
