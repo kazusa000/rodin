@@ -80,6 +80,7 @@ namespace KelvinBall
           Configuration configuration;
           size_t maxIterations = 1;
           std::string restartMesh, restartCoordinates, restartTheta;
+          std::string restartChamber, restartBackground;
           std::string replayBackground, replayAdvected;
           Optional<Real> originalTargetVolume;
           size_t globalOffset = 0;
@@ -110,6 +111,10 @@ namespace KelvinBall
                 restartCoordinates = std::string(mode.substr(22));
               else if (mode.rfind("--restart-theta=", 0) == 0)
                 restartTheta = std::string(mode.substr(16));
+              else if (mode.rfind("--restart-chamber=", 0) == 0)
+                restartChamber = std::string(mode.substr(18));
+              else if (mode.rfind("--restart-background=", 0) == 0)
+                restartBackground = std::string(mode.substr(21));
               else if (mode.rfind("--replay-background=", 0) == 0)
                 replayBackground = std::string(mode.substr(20));
               else if (mode.rfind("--replay-advected=", 0) == 0)
@@ -162,6 +167,9 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
+            if (restartChamber.empty() != restartBackground.empty() ||
+              (!restartChamber.empty() && (!restartMesh.empty() || !replayBackground.empty())))
+              throw std::runtime_error("Native restart requires both chamber and background, without legacy restart or replay.");
             if (replayBackground.empty() != replayAdvected.empty() ||
               (!replayBackground.empty() &&
                 (reconstructionMethod != "swift" || !restartMesh.empty())))
@@ -185,7 +193,7 @@ namespace KelvinBall
               throw std::runtime_error("A preserved direction requires the preserved mesh.");
             if (restartMesh.empty() != restartCoordinates.empty())
               throw std::runtime_error("Restart requires topology and original binary coordinates.");
-            if (!restartMesh.empty() && (reconstructionMethod != "swift" ||
+            if ((!restartMesh.empty() || !restartChamber.empty()) && (reconstructionMethod != "swift" ||
                 !originalTargetVolume || !std::isfinite(*originalTargetVolume) ||
                 !(*originalTargetVolume > 0)))
               throw std::runtime_error("SWIFT recovery requires the original positive target volume.");
@@ -819,6 +827,24 @@ namespace KelvinBall
 
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
+        if (!m_options.restartChamber.empty())
+        {
+          auto mesh = Checkpoint::loadMesh(m_options.restartChamber);
+          Optional<MMG::Mesh> background;
+          background.emplace(Checkpoint::loadMesh(m_options.restartBackground));
+          prepare(mesh);
+          prepare(*background);
+          const Real backgroundH = meanElementSize(*background);
+          const Real h = m_options.configuration.getGridSpacing();
+          ReconstructionDiagnostics diagnostics{m_options.configuration.hmin,
+            m_options.configuration.hmax, Real(0.1) * h * h,
+            background->getRequiredTriangles().size(),
+            background->getCellCount(), mesh.getCellCount()};
+          Alert::Info() << "Native restart: preserved chamber and independent SWIFT "
+                        << "background loaded directly; no initial fitting or shape reset."
+                        << Alert::Raise;
+          return {std::move(mesh), std::move(background), backgroundH, diagnostics};
+        }
         if (!m_options.restartMesh.empty())
         {
           MMG::Mesh mesh;

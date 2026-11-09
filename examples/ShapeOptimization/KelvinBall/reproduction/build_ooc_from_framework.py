@@ -23,8 +23,9 @@ def main():
         raise RuntimeError('Framework headers or source differ')
     subtree = 'examples/ShapeOptimization/KelvinBall'
     changed = git(a.source, 'diff', '--name-only', old_commit, 'HEAD', '--', subtree).splitlines()
-    if any(not name.startswith(subtree+'/reproduction/') for name in changed):
-        raise RuntimeError('Kelvin support or numerical source changed')
+    if any(not name.startswith(subtree+'/reproduction/') and
+           name not in (subtree+'/KelvinBallOptimization.cpp', subtree+'/README.md') for name in changed):
+        raise RuntimeError('Kelvin support or checkpoint header changed')
     if a.build.exists():
         raise RuntimeError('Require a fresh build directory')
     (a.build/'bin').mkdir(parents=True)

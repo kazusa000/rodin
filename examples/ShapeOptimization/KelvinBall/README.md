@@ -722,6 +722,16 @@ scalar, performs the existing adaptation/classification/fitting operations and
 saves `replayed-chamber.h5` and `replayed-background.h5`. It does not enter the
 FEM or optimization loop. The saved inputs are read-only.
 
+To continue optimization from a complete native mesh pair, use
+`--restart-chamber=/path/to/chamber.h5 --restart-background=/path/to/background.h5`
+together with the original `--target-volume` and the appropriate `--global-offset`.
+The native coordinates, topology, attributes and MMG markers of each mesh are
+loaded directly. No initial sphere fit or MEDIT reconstruction is performed.
+The first state evaluates this preserved shape, and subsequent iterations use
+the ordinary optimization loop. Scalar change predictions start unavailable at
+the new process boundary; the original target volume and scientific flags are
+retained. `--iterations` counts evaluated states including the loaded first state.
+
 `--swift-linear-solver=cg` selects CG at relative tolerance $10^{-6}$,
 with at most 1000 iterations per solve. The active-residual convergence criteria are replaced
 by the full-interface supremum criterion; the absolute and accepted-step stopping
