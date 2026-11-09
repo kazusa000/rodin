@@ -40,7 +40,7 @@ def main():
     marker = '    const Real h = meanElementSize(mesh);\n    const auto meshDiagnostics'
     old = git(args.source, 'show', BASE+':'+entry)
     current = (args.source/entry).read_text()
-    if old.split(marker,1)[1] != current.split(marker,1)[1]:
+    if old.split(marker,1)[1].strip() != current.split(marker,1)[1].strip():
         raise ValueError('Numerical optimization loop changed')
     probe = json.loads((args.probe/'campaign.json').read_text())
     if probe['status'] != 'completed_single_reconstruction':
