@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <string>
 
 #include <dmumps_c.h>
 #include <mpi.h>
@@ -264,7 +265,11 @@ namespace Rodin::Solver
           m_maxThreads(other.m_maxThreads),
           m_symmetry(other.m_symmetry),
           m_ordering(other.m_ordering),
-          m_workspacePercentage(other.m_workspacePercentage)
+          m_workspacePercentage(other.m_workspacePercentage),
+          m_outOfCore(other.m_outOfCore),
+          m_memoryMegabytes(other.m_memoryMegabytes),
+          m_outOfCoreDirectory(other.m_outOfCoreDirectory),
+          m_outOfCorePrefix(other.m_outOfCorePrefix)
       {}
 
       MUMPS(MUMPS&& other) noexcept
@@ -272,7 +277,11 @@ namespace Rodin::Solver
           m_maxThreads(other.m_maxThreads),
           m_symmetry(other.m_symmetry),
           m_ordering(other.m_ordering),
-          m_workspacePercentage(other.m_workspacePercentage)
+          m_workspacePercentage(other.m_workspacePercentage),
+          m_outOfCore(other.m_outOfCore),
+          m_memoryMegabytes(other.m_memoryMegabytes),
+          m_outOfCoreDirectory(std::move(other.m_outOfCoreDirectory)),
+          m_outOfCorePrefix(std::move(other.m_outOfCorePrefix))
       {}
 
       ~MUMPS() override = default;
@@ -371,6 +380,112 @@ namespace Rodin::Solver
       Integer getWorkspacePercentage() const noexcept
       {
         return m_workspacePercentage;
+      }
+
+      /**
+       * @brief Stores numeric factors on disk when enabled (MUMPS ICNTL(22)).
+       * @param enabled Whether to use out-of-core factorization and solves.
+       * @returns This solver. Changing the policy releases retained factors.
+       */
+      MUMPS& setOutOfCore(bool enabled) noexcept
+      {
+        if (m_outOfCore != enabled)
+        {
+          clear(Factorization::Symbolic);
+          m_outOfCore = enabled;
+        }
+        return *this;
+      }
+
+      /// @brief Returns whether numeric factors are stored on disk.
+      bool getOutOfCore() const noexcept
+      {
+        return m_outOfCore;
+      }
+
+      /**
+       * @brief Caps MUMPS internal workspace per process (ICNTL(23)).
+       * @param megabytes Limit in MUMPS megabytes; zero uses its estimate.
+       * This excludes the caller's meshes, matrix and other application data.
+       * @returns This solver. Changing the limit releases retained factors.
+       */
+      MUMPS& setMemoryMegabytes(Integer megabytes)
+      {
+        if (megabytes < 0 || megabytes > std::numeric_limits<MUMPS_INT>::max())
+        {
+          Alert::MemberFunctionException(*this, __func__)
+            << "The memory limit must fit a nonnegative MUMPS integer." << Alert::Raise;
+        }
+        if (m_memoryMegabytes != megabytes)
+        {
+          clear(Factorization::Symbolic);
+          m_memoryMegabytes = megabytes;
+        }
+        return *this;
+      }
+
+      /// @brief Returns the internal workspace limit in MUMPS megabytes.
+      Integer getMemoryMegabytes() const noexcept
+      {
+        return m_memoryMegabytes;
+      }
+
+      /**
+       * @brief Selects an existing directory for numeric factor files.
+       * @param directory Path shorter than MUMPS's OOC_TMPDIR buffer;
+       * empty leaves directory selection to MUMPS and its environment.
+       * @returns This solver. Changing the directory releases retained factors.
+       */
+      MUMPS& setOutOfCoreDirectory(const std::string& directory)
+      {
+        if (directory.size() >= sizeof(m_resources.instance.ooc_tmpdir) ||
+          directory.find('\0') != std::string::npos)
+        {
+          Alert::MemberFunctionException(*this, __func__)
+            << "The out-of-core directory exceeds the MUMPS path buffer or contains NUL."
+            << Alert::Raise;
+        }
+        if (m_outOfCoreDirectory != directory)
+        {
+          clear(Factorization::Symbolic);
+          m_outOfCoreDirectory = directory;
+        }
+        return *this;
+      }
+
+      /// @brief Returns the explicit factor-file directory, or an empty string.
+      const std::string& getOutOfCoreDirectory() const noexcept
+      {
+        return m_outOfCoreDirectory;
+      }
+
+      /**
+       * @brief Selects a factor-file prefix; MUMPS supplies unique file suffixes.
+       * @param prefix Filename prefix shorter than MUMPS's OOC_PREFIX buffer;
+       * empty leaves prefix selection to MUMPS and its environment.
+       * @returns This solver. Changing the prefix releases retained factors.
+       */
+      MUMPS& setOutOfCorePrefix(const std::string& prefix)
+      {
+        if (prefix.size() >= sizeof(m_resources.instance.ooc_prefix) ||
+          prefix.find('\0') != std::string::npos || prefix.find('/') != std::string::npos)
+        {
+          Alert::MemberFunctionException(*this, __func__)
+            << "The out-of-core prefix must fit the MUMPS filename buffer."
+            << Alert::Raise;
+        }
+        if (m_outOfCorePrefix != prefix)
+        {
+          clear(Factorization::Symbolic);
+          m_outOfCorePrefix = prefix;
+        }
+        return *this;
+      }
+
+      /// @brief Returns the explicit factor-file prefix, or an empty string.
+      const std::string& getOutOfCorePrefix() const noexcept
+      {
+        return m_outOfCorePrefix;
       }
 
       /**
@@ -675,6 +790,19 @@ namespace Rodin::Solver
         instance.icntl[3] = 0;
         instance.icntl[6] = static_cast<MUMPS_INT>(m_ordering);
         instance.icntl[15] = static_cast<MUMPS_INT>(m_maxThreads);
+        instance.icntl[21] = m_outOfCore ? 1 : 0;
+        instance.icntl[22] = static_cast<MUMPS_INT>(m_memoryMegabytes);
+        if (!m_outOfCoreDirectory.empty())
+        {
+          std::copy(m_outOfCoreDirectory.begin(), m_outOfCoreDirectory.end(),
+            instance.ooc_tmpdir);
+          instance.ooc_tmpdir[m_outOfCoreDirectory.size()] = '\0';
+        }
+        if (!m_outOfCorePrefix.empty())
+        {
+          std::copy(m_outOfCorePrefix.begin(), m_outOfCorePrefix.end(), instance.ooc_prefix);
+          instance.ooc_prefix[m_outOfCorePrefix.size()] = '\0';
+        }
         instance.icntl[13] = m_workspacePercentage > 0
           ? static_cast<MUMPS_INT>(m_workspacePercentage)
           : m_resources.defaultWorkspacePercentage;
@@ -727,6 +855,10 @@ namespace Rodin::Solver
       Symmetry m_symmetry = Symmetry::Unsymmetric;
       Ordering m_ordering = Ordering::Automatic;
       Integer m_workspacePercentage = 0;
+      bool m_outOfCore = false;
+      Integer m_memoryMegabytes = 0;
+      std::string m_outOfCoreDirectory;
+      std::string m_outOfCorePrefix;
       Array<MUMPS_INT> m_rowIndices;
       Array<MUMPS_INT> m_columnIndices;
       Math::Vector<ScalarType> m_values;

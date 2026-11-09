@@ -80,6 +80,7 @@ namespace KelvinBall
           Configuration configuration;
           size_t maxIterations = 1;
           std::string restartMesh, restartCoordinates, restartTheta;
+          std::string replayBackground, replayAdvected;
           Optional<Real> originalTargetVolume;
           size_t globalOffset = 0;
           bool saveCheckpoint = false;
@@ -109,6 +110,10 @@ namespace KelvinBall
                 restartCoordinates = std::string(mode.substr(22));
               else if (mode.rfind("--restart-theta=", 0) == 0)
                 restartTheta = std::string(mode.substr(16));
+              else if (mode.rfind("--replay-background=", 0) == 0)
+                replayBackground = std::string(mode.substr(20));
+              else if (mode.rfind("--replay-advected=", 0) == 0)
+                replayAdvected = std::string(mode.substr(18));
               else if (mode.rfind("--target-volume=", 0) == 0)
                 originalTargetVolume = std::stod(std::string(mode.substr(16)));
               else if (mode.rfind("--global-offset=", 0) == 0)
@@ -157,6 +162,10 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
+            if (replayBackground.empty() != replayAdvected.empty() ||
+              (!replayBackground.empty() &&
+                (reconstructionMethod != "swift" || !restartMesh.empty())))
+              throw std::runtime_error("Reconstruction replay requires a native background and its advected field.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
             if (!(regularizationFactor > 0))
@@ -1558,6 +1567,48 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         "SWIFT."
       : "Stage 1: Discretizing the initial sphere with MMG.");
   Sphere sphere(m_options.configuration);
+  if (!m_options.replayBackground.empty())
+  {
+    announce("Replaying one saved SWIFT reconstruction; no FEM or optimization loop.");
+    auto background = Checkpoint::loadMesh(m_options.replayBackground);
+    prepare(background);
+    P1 sourceSpace(background);
+    GridFunction advected(sourceSpace);
+    const auto file = IO::HDF5::File(H5Fopen(
+      m_options.replayAdvected.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+    if (!file)
+      throw std::runtime_error("Cannot open saved advected field.");
+    const auto values = IO::HDF5::readVectorDataset<IO::HDF5::F64>(
+      file.get(), "/GridFunction/Values/Data");
+    if (values.size() != background.getVertexCount())
+      throw std::runtime_error("Saved advected field differs from background vertex count.");
+    for (Index vertex = 0; vertex < background.getVertexCount(); ++vertex)
+    {
+      if (!std::isfinite(values[vertex]))
+        throw std::runtime_error("Saved advected field contains nonfinite values.");
+      advected.getData()(sourceSpace.getDOFs(0, vertex)(0)) = values[vertex];
+    }
+    auto adapted = m_options.configuration.adapt
+      ? adaptSWIFTBackground(background, advected, sphere, requestedWelschScale)
+      : MMG::Mesh(background);
+    Location::AABB<MMG::Mesh> locator(background);
+    P1 targetSpace(adapted);
+    GridFunction target(targetSpace);
+    target = RealFunction([&](const Geometry::Point& point) {
+      const auto source = locator.locate(3, point.getPhysicalCoordinates());
+      if (!source)
+        throw std::runtime_error("An adapted vertex lies outside the saved background.");
+      return advected.getValue(*source);
+    });
+    const Real adaptedH = meanElementSize(adapted);
+    auto classified = classifyLevelSetForSWIFT(adapted, target);
+    auto fitted = fitLevelSetSWIFT(classified, target, adaptedH, outerRadius);
+    Checkpoint::saveMesh("replayed-chamber.h5", fitted.mesh);
+    Checkpoint::saveMesh("replayed-background.h5", adapted);
+    std::ofstream("RECONSTRUCTION_COMPLETE") << "Saved reconstruction replay completed.\n";
+    reportStageTiming(9, elapsedSeconds(stage1Start));
+    return 0;
+  }
   auto initial = initialize(sphere, requestedWelschScale);
   MMG::Mesh mesh = std::move(initial.mesh);
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);

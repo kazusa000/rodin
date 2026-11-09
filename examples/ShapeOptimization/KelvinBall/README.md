@@ -703,6 +703,25 @@ energy alone cannot certify this target. The default budget is 30 outer iteratio
 `--swift-convergence-iterations-inner` override these budgets.
 The inner relative stationarity-residual tolerance is $10^{-3}$.
 Linear steps default to MUMPS when available, otherwise SparseLU.
+MUMPS can optionally store its numeric factors on disk without changing the
+mesh or model. The defaults remain in-memory with an automatic workspace size.
+For a memory-constrained run, select an existing local-disk directory and use
+`--swift-linear-out-of-core=1 --swift-linear-memory-mb=16000
+--swift-linear-ooc-directory=/path/to/factors --swift-linear-ooc-prefix=run-name`.
+The MB limit applies to MUMPS internal workspace in this process; mesh data and
+application-owned matrices require additional RAM. MUMPS still needs its
+out-of-core working set in RAM. A normal solver shutdown removes factor files;
+after a forced termination, retain the run-specific directory for inspection.
+These controls change storage, not tolerances, quadrature or fitting weights.
+
+A saved reconstruction can be replayed once with
+`--replay-background=/path/to/checkpoint/background.h5
+--replay-advected=/path/to/Advected.h5`, using the same scientific and SWIFT flags
+as the saved run. This loads the original native background and transported P1
+scalar, performs the existing adaptation/classification/fitting operations and
+saves `replayed-chamber.h5` and `replayed-background.h5`. It does not enter the
+FEM or optimization loop. The saved inputs are read-only.
+
 `--swift-linear-solver=cg` selects CG at relative tolerance $10^{-6}$,
 with at most 1000 iterations per solve. The active-residual convergence criteria are replaced
 by the full-interface supremum criterion; the absolute and accepted-step stopping

@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <string>
+#include <filesystem>
 
 #include "Rodin/Assembly.h"
 #include "Rodin/Geometry/Mesh.h"
@@ -118,6 +119,57 @@ namespace Rodin::Tests::Unit::Solver
     EXPECT_EQ(solver.getResources().symbolic, symbolic);
     EXPECT_EQ(solver.getResources().numeric, numeric);
     EXPECT_EQ(solver.getInfo().factorization, factorization);
+  }
+
+  /// @brief Disk factors solve the same system, survive refactorization and are cleaned up.
+  TEST(Rodin_Solver_MUMPS, OutOfCoreLifecycleAndConfiguration)
+  {
+    const auto directory = std::filesystem::current_path() / "mumps-ooc-unit";
+    ASSERT_TRUE(std::filesystem::create_directory(directory));
+    auto mesh = makeMesh(Polytope::Type::Segment);
+    P1 fes(mesh);
+    TrialFunction u(fes);
+    TestFunction v(fes);
+    Problem problem(u, v);
+    auto system = makeSymmetricSystem();
+    Math::Vector<Real> expected(3);
+    expected << 1, 2, 3;
+    {
+      MUMPSSolver solver(problem);
+      solver.setSymmetric(MUMPSSolver::Symmetry::General)
+        .setOutOfCore(true).setMemoryMegabytes(128)
+        .setOutOfCoreDirectory(directory.string()).setOutOfCorePrefix("unit")
+        .solve(system);
+      ASSERT_TRUE(solver.success());
+      expectSolution(system, expected);
+      EXPECT_EQ(solver.getResources().instance.icntl[21], 1);
+      EXPECT_EQ(solver.getResources().instance.icntl[22], 128);
+      EXPECT_FALSE(std::filesystem::is_empty(directory));
+      MUMPSSolver copied(solver);
+      EXPECT_TRUE(copied.getOutOfCore());
+      EXPECT_EQ(copied.getMemoryMegabytes(), 128);
+      EXPECT_EQ(copied.getOutOfCoreDirectory(), directory.string());
+      EXPECT_EQ(copied.getOutOfCorePrefix(), "unit");
+      EXPECT_ANY_THROW(solver.setMemoryMegabytes(-1));
+      EXPECT_ANY_THROW(solver.setOutOfCoreDirectory(std::string(256, 'x')));
+      EXPECT_ANY_THROW(solver.setOutOfCorePrefix(std::string(64, 'x')));
+      EXPECT_TRUE(solver.getResources().numeric);
+      solver.clear(Factorization::Numeric);
+      expected << -2, 1, 4;
+      system.getVector() = system.getOperator() * expected;
+      solver.solve(system);
+      ASSERT_TRUE(solver.success());
+      expectSolution(system, expected);
+      solver.setOutOfCore(false);
+      EXPECT_FALSE(solver.getResources().initialized);
+      EXPECT_TRUE(std::filesystem::is_empty(directory));
+      solver.solve(system);
+      ASSERT_TRUE(solver.success());
+      expectSolution(system, expected);
+      EXPECT_EQ(solver.getResources().instance.icntl[21], 0);
+    }
+    EXPECT_TRUE(std::filesystem::is_empty(directory));
+    EXPECT_TRUE(std::filesystem::remove(directory));
   }
 
   TEST(Rodin_Solver_MUMPS, DestroysInstancesWithRetainedStages)

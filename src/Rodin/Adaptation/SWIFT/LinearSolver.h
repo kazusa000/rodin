@@ -405,6 +405,11 @@ namespace Rodin::Adaptation::SWIFT
                           << "  status=" << direct.getInfo().status;
                 if constexpr (requires { direct.getResources().instance.infog[1]; })
                   std::cout << "  detail=" << direct.getResources().instance.infog[1];
+                if constexpr (requires { direct.getOutOfCore(); })
+                {
+                  std::cout << "  out_of_core=" << direct.getOutOfCore()
+                            << "  memory_mb=" << direct.getMemoryMegabytes();
+                }
                 std::cout << '\n';
               }
               return ok;
@@ -418,7 +423,11 @@ namespace Rodin::Adaptation::SWIFT
                   std::make_unique<Solver::MUMPS<LinearSystemType>>(this->getProblem());
               }
               m_mumps->setSymmetric(Solver::MUMPS<LinearSystemType>::Symmetry::General)
-                .setMaxThreads(m_parameters.linear.threads);
+                .setMaxThreads(m_parameters.linear.threads)
+                .setOutOfCore(m_parameters.linear.outOfCore)
+                .setMemoryMegabytes(m_parameters.linear.memoryMegabytes)
+                .setOutOfCoreDirectory(m_parameters.linear.outOfCoreDirectory)
+                .setOutOfCorePrefix(m_parameters.linear.outOfCorePrefix);
               return solveDirect(*m_mumps, "MUMPS");
             }
 #endif

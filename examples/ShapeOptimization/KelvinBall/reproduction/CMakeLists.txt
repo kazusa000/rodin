@@ -25,3 +25,14 @@ set_target_properties(KelvinBall PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BI
 add_executable(KelvinCheckpointTest CheckpointTest.cpp)
 target_link_libraries(KelvinCheckpointTest PRIVATE KelvinBallSupport)
 set_target_properties(KelvinCheckpointTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+option(KELVIN_BUILD_MEMORY_TESTS "Build targeted MUMPS/SWIFT memory tests" OFF)
+if(KELVIN_BUILD_MEMORY_TESTS)
+  add_subdirectory("${RODIN_ROOT}/third-party/googletest" googletest)
+  add_executable(KelvinMemoryTest
+    "${RODIN_ROOT}/tests/unit/Rodin/Solver/MUMPSTest.cpp"
+    "${RODIN_ROOT}/tests/unit/Rodin/Adaptation/SWIFTLinearSolverTest.cpp"
+    "${RODIN_ROOT}/tests/unit/Rodin/Adaptation/SWIFTExampleParametersTest.cpp")
+  target_link_libraries(KelvinMemoryTest PRIVATE KelvinBallSupport GTest::gtest_main)
+  set_target_properties(KelvinMemoryTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endif()

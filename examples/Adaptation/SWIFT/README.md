@@ -330,6 +330,10 @@ named flags. The complete model/control mapping is:
 | `--globalization-armijo` | `globalization.armijo` |
 | `--linear-solver` | `linear.solver`: `cg`, `sparse-lu`, or compiled-in `mumps` |
 | `--linear-threads` | `linear.threads` |
+| `--linear-out-of-core` | `linear.outOfCore`: opt-in MUMPS disk factors |
+| `--linear-memory-mb` | `linear.memoryMegabytes`: MUMPS internal workspace cap; zero is automatic |
+| `--linear-ooc-directory` | `linear.outOfCoreDirectory`: existing factor-file directory |
+| `--linear-ooc-prefix` | `linear.outOfCorePrefix`: factor-file prefix |
 | `--trace` | `trace` |
 | `--trace-quality-witness` | `traceQualityWitness` |
 

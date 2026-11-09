@@ -123,6 +123,24 @@ namespace Rodin::Tests::Unit
     }
   }
 
+#ifdef RODIN_USE_MUMPS
+  /// @brief Disk factors preserve the centered operator and repeated solves.
+  TEST_F(SWIFTLinearSolverTest, MumpsDiskBackendPreservesCenteredOperator)
+  {
+    parameters.linear.solver = SWIFT::Parameters::LinearSolver::MUMPS;
+    parameters.linear.outOfCore = true;
+    parameters.linear.memoryMegabytes = 128;
+    parameters.linear.outOfCoreDirectory = ".";
+    parameters.linear.outOfCorePrefix = "swift-unit";
+    SWIFT::LinearSolver<System> solver(problem);
+    solver.setParameters(parameters).setCentering(centering).solve();
+    expectCenteredSolution(solver);
+    problem.getLinearSystem().getSolution().setZero();
+    solver.solve();
+    expectCenteredSolution(solver);
+  }
+#endif
+
   /// @brief Zero forcing overwrites a stale guess with the exact zero solution.
   TEST_F(SWIFTLinearSolverTest, ZeroLoadClearsGuessWithNoIterations)
   {

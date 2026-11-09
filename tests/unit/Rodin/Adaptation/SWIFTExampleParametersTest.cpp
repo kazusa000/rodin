@@ -115,6 +115,7 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionRejectsMalformedOpti
          "--n=184467440737095516160", "--dimension=4", "--classification-fidelity=-1",
          "--classification-smoothing=-1", "--classification-fidelity=nan",
          "--classification-smoothing=inf", "--model-fit=nan", "--model-fit=inf",
+         "--linear-memory-mb=-1", "--linear-out-of-core=2",
          "--model-fit=1bad", "--trace=2", "--linear-solver=unknown", "--wngir-fit=1",
          "--unknown=1", "--lobes=2.5", "--amp=-0.1", "--R0=0.01", "16",
          "--swift-equal-hinge-weights", "--swift-stratified-hinge-weights",
@@ -128,6 +129,31 @@ TEST(Rodin_Adaptation_SWIFTExampleParameters, ReconstructionRejectsMalformedOpti
     EXPECT_THROW(Examples::ReconstructionOptions(2, argv), Alert::Exception);
   }
 }
+
+#ifdef RODIN_USE_MUMPS
+/// @brief Memory options are parsed without changing model or convergence parameters.
+TEST(Rodin_Adaptation_SWIFTExampleParameters, MumpsMemoryOptions)
+{
+  std::vector<std::string> arguments{"SWIFT", "--linear-solver=mumps",
+    "--linear-out-of-core=1", "--linear-memory-mb=16000",
+    "--linear-ooc-directory=/tmp/factors", "--linear-ooc-prefix=probe"};
+  std::vector<char*> argv;
+  for (auto& argument : arguments)
+    argv.push_back(argument.data());
+  const Examples::ReconstructionOptions options(argv.size(), argv.data());
+  EXPECT_TRUE(options.parameters.linear.outOfCore);
+  EXPECT_EQ(options.parameters.linear.memoryMegabytes, 16000);
+  EXPECT_EQ(options.parameters.linear.outOfCoreDirectory, "/tmp/factors");
+  EXPECT_EQ(options.parameters.linear.outOfCorePrefix, "probe");
+  EXPECT_EQ(options.parameters.model.fit, Real(1));
+  EXPECT_EQ(options.parameters.convergence.iterations.outer, 30u);
+  arguments[1] = "--linear-solver=cg";
+  argv.clear();
+  for (auto& argument : arguments)
+    argv.push_back(argument.data());
+  EXPECT_THROW(Examples::ReconstructionOptions(argv.size(), argv.data()), Alert::Exception);
+}
+#endif
 
 TEST(Rodin_Adaptation_SWIFTExampleParameters, FlatParameterFlagsAreRejected)
 {

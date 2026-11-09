@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
 
 #include "Rodin/Configure.h"
 #include "Rodin/Geometry/Types.h"
@@ -106,6 +107,10 @@ namespace Rodin::Adaptation::SWIFT
       LinearSolver solver = LinearSolver::CG; ///< Fallback without MUMPS.
 #endif
       Index threads = 0; ///< Zero leaves the backend thread policy unchanged.
+      bool outOfCore = false; ///< MUMPS stores numeric factors on disk when true.
+      Integer memoryMegabytes = 0; ///< MUMPS internal workspace cap; zero is automatic.
+      std::string outOfCoreDirectory; ///< Existing factor-file directory; empty uses MUMPS policy.
+      std::string outOfCorePrefix; ///< Factor-file prefix; empty uses MUMPS policy.
     };
 
     /// @brief Integration and independent geometry-validation orders.

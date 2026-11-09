@@ -756,6 +756,16 @@ namespace Rodin::Adaptation::SWIFT
        */
       Problem& setParameters(const Parameters& parameters)
       {
+        if (parameters.linear.memoryMegabytes < 0 ||
+          (parameters.linear.solver != Parameters::LinearSolver::MUMPS &&
+            (parameters.linear.outOfCore || parameters.linear.memoryMegabytes != 0 ||
+              !parameters.linear.outOfCoreDirectory.empty() ||
+              !parameters.linear.outOfCorePrefix.empty())))
+        {
+          Alert::MemberFunctionException(*this, __func__)
+            << "SWIFT memory controls require MUMPS and a nonnegative memory limit."
+            << Alert::Raise;
+        }
 #ifndef RODIN_USE_MUMPS
         if (parameters.linear.solver == Parameters::LinearSolver::MUMPS)
         {

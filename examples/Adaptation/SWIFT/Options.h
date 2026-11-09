@@ -97,6 +97,14 @@ namespace Rodin::Examples
         {"linear-solver", {&solver, "Linear backend: cg, sparse-lu or mumps"}},
         {"linear-threads",
           {&p.linear.threads, "Backend threads; zero keeps its policy"}},
+        {"linear-out-of-core",
+          {&p.linear.outOfCore, "MUMPS numeric factors on disk (0 or 1)"}},
+        {"linear-memory-mb",
+          {&p.linear.memoryMegabytes, "MUMPS internal workspace limit in MB; zero is automatic"}},
+        {"linear-ooc-directory",
+          {&p.linear.outOfCoreDirectory, "Existing directory for MUMPS factor files"}},
+        {"linear-ooc-prefix",
+          {&p.linear.outOfCorePrefix, "MUMPS factor-file prefix"}},
         {"convergence-tolerance-geometric",
           {&p.convergence.tolerance.geometric,
             "Geometric target; zero selects h^(p+1)"}},
@@ -242,6 +250,14 @@ namespace Rodin::Examples
       }
       else
         Alert::Exception() << "Unknown SWIFT linear solver: " << solver << Alert::Raise;
+      if (p.linear.memoryMegabytes < 0 ||
+        (p.linear.solver != Adaptation::SWIFT::Parameters::LinearSolver::MUMPS &&
+          (p.linear.outOfCore || p.linear.memoryMegabytes != 0 ||
+            !p.linear.outOfCoreDirectory.empty() || !p.linear.outOfCorePrefix.empty())))
+      {
+        Alert::Exception() << "Memory controls require MUMPS and a nonnegative MB limit."
+                           << Alert::Raise;
+      }
       p.model.h = Real(1) / Real(n - 1);
     }
   };
