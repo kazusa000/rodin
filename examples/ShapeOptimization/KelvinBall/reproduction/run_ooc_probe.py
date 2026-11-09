@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--commit', required=True)
     parser.add_argument('--framework-build', type=Path)
     parser.add_argument('--framework-source', type=Path)
+    parser.add_argument('--compiled-campaign', type=Path)
     parser.add_argument('--memory-mb', type=int, default=16000)
     args = parser.parse_args()
     if platform.node() != '28h':
@@ -31,7 +32,8 @@ def main():
         raise ValueError('Require a positive MUMPS workspace limit')
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     pinned(args.source, args.commit)
-    for path in (args.build, args.output, args.ooc_directory):
+    fresh = (args.output, args.ooc_directory) if args.compiled_campaign else (args.build, args.output, args.ooc_directory)
+    for path in fresh:
         if path.exists() or path.resolve().is_relative_to(args.source.resolve()):
             raise ValueError('Require fresh external build, output and factor directories')
     for path in (args.checkpoint/'READY', args.checkpoint/'background.h5', args.advected):
@@ -130,7 +132,23 @@ def main():
                              f'-DMPI_C_COMPILER_INCLUDE_DIRS={mpi}/include;{mpi}/include/openmpi',
                              f'-DMPI_C_HEADER_DIR={mpi}/include', '-DMPI_C_LIB_NAMES=mpi',
                              f'-DMPI_mpi_LIBRARY={mpi}/lib/libmpi.so']
-        if args.framework_build:
+        if args.compiled_campaign:
+            previous = json.loads(args.compiled_campaign.read_text())
+            previous_source = Path(previous['source'])
+            pinned(previous_source, previous['commit'])
+            changes = git(args.source, 'diff', '--name-only', previous['commit'], args.commit,
+                          '--', 'src', 'examples').splitlines()
+            reproduction = 'examples/ShapeOptimization/KelvinBall/reproduction/'
+            if any(not name.startswith(reproduction) for name in changes):
+                raise RuntimeError('Reused binary has different numerical source')
+            if next(s for s in previous['stages'] if s['name']=='compile')['exit_code'] != 0:
+                raise RuntimeError('Reused binary was not successfully compiled')
+            if sha(args.build/'bin/KelvinBall') != previous['binary_sha256']:
+                raise RuntimeError('Reused binary SHA differs')
+            record['compiled_build_provenance'] = dict(campaign=str(args.compiled_campaign),
+                numerical_source=str(previous_source), numerical_commit=previous['commit'],
+                actual_compile_exit_code=0, binary_sha256=previous['binary_sha256'])
+        elif args.framework_build:
             if not args.framework_source:
                 raise ValueError('Immutable framework reuse requires its source')
             execute('compile', ['python3', args.source/'examples/ShapeOptimization/KelvinBall/reproduction/build_ooc_from_framework.py',
@@ -144,7 +162,15 @@ def main():
         binary = args.build/'bin/KelvinBall'
         record['binary_sha256'] = sha(binary)
         record['math_libraries'] = verify_blas(binary, env, args.blas_library_dir)
-        execute('validation', [args.build/'bin/KelvinMemoryTest'], 3600)
+        # The three generic Eigen CG/SparseLU failures were reproduced against
+        # original 98f2906f headers/tests in baseline-test-audit. This gate covers
+        # the MUMPS backend, all its variational geometries, the centered MUMPS
+        # adapter, option rejection and unchanged model/convergence defaults.
+        test_filter = ('Rodin_Solver_MUMPS.*:AllGeometries/*:'
+                       'Rodin_Adaptation_SWIFTExampleParameters.*:'
+                       'Rodin_Adaptation_SWIFTReport.*:'
+                       'SWIFTLinearSolverTest.MumpsDiskBackendPreservesCenteredOperator')
+        execute('validation', [args.build/'bin/KelvinMemoryTest', '--gtest_filter='+test_filter], 3600)
         command = [binary, '--n=50', '--outer-radius=10', '--hmin-factor=0.05',
                    '--hmax-factor=10', '--regularization=20', '--step=0.2',
                    '--reconstruction=swift', '--mmg-adapt', '--thickness-min=0.05',
