@@ -21,6 +21,8 @@ def main():
                  'checkpoint', 'advected', 'ooc-directory'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--framework-build', type=Path)
+    parser.add_argument('--framework-source', type=Path)
     parser.add_argument('--memory-mb', type=int, default=16000)
     args = parser.parse_args()
     if platform.node() != '28h':
@@ -121,15 +123,24 @@ def main():
     code = 1
     try:
         mpi = lib/'openmpi'
-        execute('configure', ['cmake', '-S', args.source/'examples/ShapeOptimization/KelvinBall/reproduction',
+        configure_command = ['cmake', '-S', args.source/'examples/ShapeOptimization/KelvinBall/reproduction',
                              '-B', args.build, '-DCMAKE_BUILD_TYPE=Release',
                              '-DKELVIN_BUILD_MEMORY_TESTS=ON',
                              f'-DCMAKE_PREFIX_PATH={args.prefix}', f'-DMUMPS_ROOT={args.prefix}',
                              f'-DMPI_C_COMPILER_INCLUDE_DIRS={mpi}/include;{mpi}/include/openmpi',
                              f'-DMPI_C_HEADER_DIR={mpi}/include', '-DMPI_C_LIB_NAMES=mpi',
-                             f'-DMPI_mpi_LIBRARY={mpi}/lib/libmpi.so'])
-        execute('compile', ['cmake', '--build', args.build, '--target',
-                            'KelvinBall', 'KelvinMemoryTest', '-j', '2'])
+                             f'-DMPI_mpi_LIBRARY={mpi}/lib/libmpi.so']
+        if args.framework_build:
+            if not args.framework_source:
+                raise ValueError('Immutable framework reuse requires its source')
+            execute('compile', ['python3', args.source/'examples/ShapeOptimization/KelvinBall/reproduction/build_ooc_from_framework.py',
+                                '--source', args.source, '--build', args.build,
+                                '--framework-build', args.framework_build,
+                                '--framework-source', args.framework_source])
+        else:
+            execute('configure', configure_command)
+            execute('compile', ['cmake', '--build', args.build, '--target',
+                                'KelvinBall', 'KelvinMemoryTest', '-j', '2'])
         binary = args.build/'bin/KelvinBall'
         record['binary_sha256'] = sha(binary)
         record['math_libraries'] = verify_blas(binary, env, args.blas_library_dir)

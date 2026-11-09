@@ -46,7 +46,7 @@ namespace Rodin::Examples
      */
     ReconstructionOptions(int argc, char** argv)
     {
-      using Value = std::variant<Real*, size_t*, bool*, std::string*>;
+      using Value = std::variant<Real*, size_t*, Integer*, bool*, std::string*>;
       struct Option
       {
         Value value;
