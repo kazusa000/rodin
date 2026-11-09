@@ -146,6 +146,13 @@ def main():
                    f'--replay-background={args.checkpoint/"background.h5"}',
                    f'--replay-advected={args.advected}']
         execute('reconstruction', command)
+        log = (args.output/'reconstruction/run.log').read_text()
+        if 'out_of_core=1  memory_mb=' + str(args.memory_mb) not in log:
+            raise RuntimeError('No successful MUMPS disk solve was reported')
+        if 'metric MUMPS: ok=0' in log:
+            raise RuntimeError('A MUMPS factorization or solve failed')
+        if record['stages'][-1].get('peak_factor_file_bytes', 0) == 0:
+            raise RuntimeError('No numeric factor data was observed on disk')
         if not (args.output/'reconstruction/RECONSTRUCTION_COMPLETE').is_file():
             raise RuntimeError('No completed reconstruction marker')
         if any(sha(Path(path)) != digest for path, digest in inputs.items()):

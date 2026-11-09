@@ -78,7 +78,9 @@ namespace Rodin::Tests::Unit
         Math::Vector<Real> residual = system.getOperator() * system.getSolution() -
           centering * (centering.transpose() * system.getSolution()) - system.getVector();
         EXPECT_LE(residual.norm(), tolerance * system.getVector().norm());
-        EXPECT_LE(solver.getError(), tolerance);
+        // Direct backends report NaN; their independently computed residual is checked above.
+        if (parameters.linear.solver == SWIFT::Parameters::LinearSolver::CG)
+          EXPECT_LE(solver.getError(), tolerance);
       }
 
       /// Roundoff allowance for exact two-dimensional algebraic solutions.
