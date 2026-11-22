@@ -81,7 +81,7 @@ namespace KelvinBall
         label = SigmaPlus;
       else if (std::abs(p(0) - p(2)) < tol)
         label = SigmaMinus;
-      else if (std::abs(p.cwiseAbs().maxCoeff() - config.outerRadius) < tol)
+      else if (std::abs(p.getData().head<3>().cwiseAbs().maxCoeff() - config.outerRadius) < tol)
         label = Outer;
       else
         throw std::runtime_error("Unclassified C3 chamber boundary.");
@@ -261,7 +261,7 @@ namespace KelvinBall
         // Identify each cube face separately, including both planes at an edge.
         const auto center = centroid(mesh, *face);
         Eigen::Index axis;
-        center.cwiseAbs().maxCoeff(&axis);
+        center.getData().head<3>().cwiseAbs().maxCoeff(&axis);
         constraint = 1u << (4 + 2 * axis + (center(axis) > 0));
       }
       for (const Index vertex : face->getVertices())

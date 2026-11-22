@@ -374,7 +374,7 @@ namespace KelvinBall
         }
         const auto& options = *m_reconstructionOptions;
         MinSTCut classifier(static_cast<const KelvinBall::Mesh&>(classified));
-        decltype(classifier)::Parameters parameters;
+        typename decltype(classifier)::Parameters parameters;
         parameters.fidelity = options.classification.fidelity;
         parameters.smoothing = [&](const Polytope& face) {
           const auto& cells =
@@ -975,7 +975,7 @@ namespace KelvinBall
         switch (attribute)
         {
           case Outer:
-            return std::abs((AxialC3 ? x.cwiseAbs().maxCoeff() : x(0)) - outerRadius);
+            return std::abs((AxialC3 ? x.getData().head<3>().cwiseAbs().maxCoeff() : x(0)) - outerRadius);
           case SigmaPlus:
             return AxialC3 ? std::abs(x(0) - x(1)) : std::abs(x(1) - x(2));
           case SigmaMinus:
@@ -1003,7 +1003,7 @@ namespace KelvinBall
           if (cell->getAttribute() == Obstacle)
           {
             for (Index i : cell->getVertices())
-              solidExtent = std::max(solidExtent, mesh.getVertexCoordinates(i).cwiseAbs().maxCoeff());
+              solidExtent = std::max(solidExtent, mesh.getVertexCoordinates(i).getData().head<3>().cwiseAbs().maxCoeff());
           }
         }
         if (!(solidExtent < outerRadius && scale * solidExtent < outerRadius))
@@ -1012,7 +1012,7 @@ namespace KelvinBall
         for (Index i = 0; i < coordinates.size(); ++i)
         {
           const auto& x = mesh.getVertexCoordinates(i);
-          const Real weight = std::clamp((outerRadius - x.cwiseAbs().maxCoeff()) /
+          const Real weight = std::clamp((outerRadius - x.getData().head<3>().cwiseAbs().maxCoeff()) /
             (outerRadius - solidExtent), Real(0), Real(1));
           coordinates[i] = (1 + weight * (scale - 1)) * x;
         }
@@ -1022,8 +1022,13 @@ namespace KelvinBall
           Math::SpatialMatrix<Real> before(3,3), after(3,3);
           for (size_t col = 0; col < 3; ++col)
           {
-            before.col(col) = mesh.getVertexCoordinates(nodes[col+1]) - mesh.getVertexCoordinates(nodes[0]);
-            after.col(col) = coordinates[nodes[col+1]] - coordinates[nodes[0]];
+            const auto edge = mesh.getVertexCoordinates(nodes[col+1]) - mesh.getVertexCoordinates(nodes[0]);
+            const auto moved = coordinates[nodes[col+1]] - coordinates[nodes[0]];
+            for (size_t row = 0; row < 3; ++row)
+            {
+              before(row,col) = edge(row);
+              after(row,col) = moved(row);
+            }
           }
           if (!(before.determinant() * after.determinant() > 0))
             throw std::runtime_error("Volume restoration would invert a tetrahedron.");

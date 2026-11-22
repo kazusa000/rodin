@@ -44,7 +44,7 @@ namespace KelvinBall
   inline constexpr Real DefaultNitschePenalty = 320;
   inline constexpr Real DefaultStabilizationFactor = 0.05;
   inline constexpr Real LinearResidualTolerance = 1e-8;
-  #ifdef KELVIN_AXIAL_C3
+#ifdef KELVIN_AXIAL_C3
   inline constexpr bool AxialC3 = true;
 #else
   inline constexpr bool AxialC3 = false;
@@ -54,7 +54,8 @@ namespace KelvinBall
 
   inline Math::SpatialVector<Real> axialDirection()
   {
-    return Math::SpatialVector<Real>::Constant(3, Real(1) / std::sqrt(Real(3)));
+    const Real a = Real(1) / std::sqrt(Real(3));
+    return Math::SpatialVector<Real>{a, a, a};
   }
 
 #ifdef RODIN_USE_MUMPS

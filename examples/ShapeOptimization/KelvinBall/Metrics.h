@@ -95,9 +95,9 @@ namespace KelvinBall
 
       /// Solve translation along and rotation about the oriented body diagonal.
       Values evaluateAxial(const VelocitySpace& Vh, const PressureSpace& Qh,
-        const RotatedNitscheIntegrator* coupling, GridFunction<VelocitySpace>& translation,
-        GridFunction<VelocitySpace>& rotation, GridFunction<PressureSpace>& pT,
-        GridFunction<PressureSpace>& pR) const;
+        const RotatedNitscheIntegrator* coupling, GridFunction<VelocitySpace, Math::Vector<Real>>& translation,
+        GridFunction<VelocitySpace, Math::Vector<Real>>& rotation, GridFunction<PressureSpace, Math::Vector<Real>>& pT,
+        GridFunction<PressureSpace, Math::Vector<Real>>& pR) const;
 
     private:
       void checkPairs(const Mesh& mesh, const RotatedNitscheIntegrator& coupling) const
