@@ -303,7 +303,7 @@ namespace KelvinBall
     P1 levelSetSpace(mesh);
     GridFunction sphere(levelSetSpace);
     sphere = RealFunction([](const Geometry::Point& point) {
-      return point.getPhysicalCoordinates().norm() - Real(1);
+      return initialLevelSet(point.getPhysicalCoordinates());
     });
     MMG::LevelSetDiscretizer discretizer;
     discretizer.split(Fluid, {Obstacle, Fluid})
@@ -362,7 +362,7 @@ namespace KelvinBall
       for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
       {
         const Real distance =
-          std::abs(mesh.getVertexCoordinates(vertex).norm() - Real(1));
+          std::abs(initialLevelSet(mesh.getVertexCoordinates(vertex)));
         size[vertex] = farSize - (farSize - interfaceSize) * welsch.getWeight(distance);
       }
       protectFixedGeometry(mesh, false);

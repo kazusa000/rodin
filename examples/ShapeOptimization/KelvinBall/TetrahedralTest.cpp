@@ -42,6 +42,29 @@ int main()
     require(corner(0) * corner(1) * corner(2) == 1, "Rotation does not preserve tetrahedron");
   }
   require(orbit.size() == 12, "Duplicate rotations");
+  const Math::SpatialPoint diagonal{1, 1, 1};
+  const Real amplitude = Real(0.02) / std::sqrt(Real(2));
+  require(std::abs(initialRadius(diagonal) - 1 - amplitude) < 1e-13, "Wrong cubic harmonic");
+  // At (1,2,0) the cubic harmonic vanishes, leaving only the degree-six term.
+  const Math::SpatialPoint planar{1, 2, 0};
+  const Real planarH6 = 72 * std::sqrt(Real(3)) / 125;
+  require(std::abs(initialRadius(planar) - 1 - amplitude * planarH6) < 1e-13,
+    "Wrong degree-six harmonic");
+  for (const auto& rotation : rotations)
+  {
+    for (const Math::SpatialPoint u : {diagonal, planar, Math::SpatialPoint{1, 2, 3}})
+    {
+      const Math::SpatialPoint v = rotation * u;
+      require(std::abs(initialRadius(v) - initialRadius(u)) < 1e-13,
+        "Tetrahedral rotation changed the initial radius");
+    }
+    const Math::SpatialPoint v = rotation * diagonal;
+    const Math::SpatialPoint quarterTurn{-v(1), v(0), v(2)};
+    require(std::abs(initialRadius(diagonal) - initialRadius(quarterTurn) - 2 * amplitude) < 1e-13,
+      "An extra cubic rotation preserved the initial radius");
+  }
+  std::cout << "PASS: archived 0.02 seed, all 12 tetrahedral rotations preserved, "
+               "all 12 extra cubic rotations broken.\n";
   Configuration config;
   config.points = 7;
   config.outerRadius = 10;

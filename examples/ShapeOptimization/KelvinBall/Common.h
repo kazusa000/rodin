@@ -76,6 +76,13 @@ namespace KelvinBall
   extern const std::array<RotationPair, 2> RotationPairs;
   extern const FlatSet<Attribute> MasterCuts;
 
+  Real initialRadius(const Math::SpatialPoint& x);
+
+  inline Real initialLevelSet(const Math::SpatialPoint& x)
+  {
+    return x.norm() - initialRadius(x);
+  }
+
   Math::SpatialPoint centroid(const Mesh& mesh, const Polytope& face);
 
   enum class ChamberPlane { OuterX, XY, YMinusZ, YPlusZ, OuterY, XMinusZ, XPlusZ, None };

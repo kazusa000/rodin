@@ -831,7 +831,7 @@ namespace KelvinBall
           P1 sphereSpace(*swiftBackground);
           GridFunction sphereLevelSet(sphereSpace);
           sphereLevelSet = RealFunction([](const Geometry::Point& point) {
-            return point.getPhysicalCoordinates().norm() - Real(1);
+            return initialLevelSet(point.getPhysicalCoordinates());
           });
           MMG::Mesh classified =
             classifyLevelSetForSWIFT(*swiftBackground, sphereLevelSet);
@@ -1086,16 +1086,37 @@ namespace KelvinBall
         }
         Real squared = 0;
         Real supremum = 0;
+        Real positiveSupport = 0;
+        Real negativeSupport = 0;
         for (const Index vertex : vertices)
         {
-          const Real error = std::abs(mesh.getVertexCoordinates(vertex).norm() - 1.0);
+          const auto& x = mesh.getVertexCoordinates(vertex);
+          const Real error = std::abs(initialLevelSet(x));
+          if constexpr (Tetrahedral)
+          {
+            // Project the full rotated interface onto two opposite body diagonals.
+            for (const auto& rotation : SewedOutput::getRotations())
+            {
+              const Math::SpatialPoint y = rotation * x;
+              const Real projection = (y(0) + y(1) + y(2)) / std::sqrt(Real(3));
+              positiveSupport = std::max(positiveSupport, projection);
+              negativeSupport = std::max(negativeSupport, -projection);
+            }
+          }
           squared += error * error;
           supremum = std::max(supremum, error);
         }
         const Real rms = vertices.empty()
           ? std::numeric_limits<Real>::quiet_NaN()
           : std::sqrt(squared / static_cast<Real>(vertices.size()));
-        Alert::Info() << substageHeading("Sphere geometry") << Alert::NewLine
+        if constexpr (Tetrahedral)
+        {
+          Alert::Info() << "Initial tetrahedral interface supports (+111, -111): "
+                        << positiveSupport << ", " << negativeSupport << Alert::Raise;
+          if (!(positiveSupport - negativeSupport > 1e-8))
+            throw std::runtime_error("The fitted initial interface lost the tetrahedral seed.");
+        }
+        Alert::Info() << substageHeading("Initial shape geometry") << Alert::NewLine
                       << diagnosticLabel("Chamber volume:")
                       << Alert::Notation::Number(mesh.getVolume(Obstacle))
                       << Alert::NewLine << diagnosticLabel("Vertex RMS error:")
