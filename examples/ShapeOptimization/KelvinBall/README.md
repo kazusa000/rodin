@@ -34,7 +34,7 @@ Build `KelvinBallC3` for optimisation and `KelvinBallC3Sphere` for validation.
 The rotation axis is the oriented cube diagonal $e=(1,1,1)/\sqrt{3}$. The chamber
 $x\ge y,\;x\ge z$ occupies one third of the cube. The coordinate permutation
 $(x,y,z)\mapsto(z,x,y)$ rotates the chamber through 120 degrees. The same three
-rotations define the flow transmission, transport, thickness queries and sewn output.
+rotations define the flow transmission, mesh displacement, thickness queries and sewn output.
 This discrete symmetry permits twisted shapes with either handedness.
 
 The objective is the **signed axial coupling** $C_\parallel=e^T C e$.
@@ -43,10 +43,14 @@ rotation about $e$. Their cross dissipation, integrated over three copies of the
 chamber, gives `c_parallel`. Larger signed values are preferred.
 `k_parallel`, `q_parallel`, and `rho_parallel` are diagnostics.
 The starting body is the fitted unit sphere. The constrained direction has zero
-first volume derivative. After each reconstruction a dilation restores the
+first volume derivative. Corresponding nodes move together on the two cuts.
+Each candidate uses the same tetrahedral connectivity. A dilation restores the
 initial discrete solid volume, tapered to zero displacement at the box wall.
 The program checks tetrahedron orientation and the final relative volume error
-(tolerance $10^{-10}$). CSV volumes refer to the chamber; multiply by three
+(tolerance $10^{-10}$), then solves both axial Stokes problems on the displaced mesh.
+If the signed coupling fails to increase, the search halves the displacement.
+After twelve unsuccessful trials it stops and records the last evaluated state.
+CSV volumes refer to the chamber; multiply by three
 for the complete body.
 
 Run the two commands in separate output directories. For example, on a diagnostic
@@ -55,8 +59,7 @@ L10 grid:
 ```sh
 KelvinBallC3Sphere --outer-radius=10 --n=9 --check-handedness
 KelvinBallC3 --outer-radius=10 --n=11 --iterations=2 --regularization=20 --step=0.2 \
-  --reconstruction=swift --mmg-adapt --thickness-min=0.05 --swift-model-fit=10 \
-  --swift-linear-solver=mumps --swift-linear-threads=2
+  --reconstruction=paired --thickness-min=0.05
 ```
 
 The first command compares a reduced sphere solve against an independent full

@@ -55,7 +55,9 @@ namespace KelvinBall
     }
     for (auto cell = source.getCell(); cell; ++cell)
     {
-      IndexArray vertices = cell->getVertices();
+      const auto& nodes = cell->getVertices();
+      IndexArray vertices(nodes.size());
+      std::copy(nodes.begin(), nodes.end(), vertices.data());
       if (mirror)
         std::swap(vertices(0), vertices(1));
       Index index;
@@ -64,7 +66,9 @@ namespace KelvinBall
     }
     for (auto face = source.getBoundary(); face; ++face)
     {
-      IndexArray vertices = face->getVertices();
+      const auto& nodes = face->getVertices();
+      IndexArray vertices(nodes.size());
+      std::copy(nodes.begin(), nodes.end(), vertices.data());
       if (mirror)
         std::swap(vertices(0), vertices(1));
       Index index;
