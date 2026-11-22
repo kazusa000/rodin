@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -81,6 +82,9 @@ namespace KelvinBall
 
           Configuration configuration;
           size_t maxIterations = 1;
+          std::string resumeHistory;
+          Optional<size_t> resumeAfter;
+          Optional<Real> resumeTargetVolume;
           bool saveMeshDiagnostic = false;
           bool geometryOnly = false;
           bool stateOnly = false;
@@ -101,6 +105,12 @@ namespace KelvinBall
                 continue;
               if (mode.rfind("--iterations=", 0) == 0)
                 maxIterations = std::stoul(std::string(mode.substr(13)));
+              else if (mode.starts_with("--resume-history="))
+                resumeHistory = mode.substr(17);
+              else if (mode.starts_with("--resume-after="))
+                resumeAfter = std::stoul(std::string(mode.substr(15)));
+              else if (mode.starts_with("--resume-target-volume="))
+                resumeTargetVolume = std::stod(std::string(mode.substr(23)));
               else if (mode.rfind("--regularization=", 0) == 0)
                 regularizationFactor = std::stod(std::string(mode.substr(17)));
               else if (mode.rfind("--normal-regularization=", 0) == 0)
@@ -145,6 +155,16 @@ namespace KelvinBall
             configuration.finalize();
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
+            if (resumeAfter || !resumeHistory.empty() || resumeTargetVolume)
+            {
+              if (!AxialC3 || reconstructionMethod != "swift" || !configuration.adapt ||
+                  !resumeAfter || resumeHistory.empty() || !resumeTargetVolume ||
+                  !std::isfinite(*resumeTargetVolume) || *resumeTargetVolume <= 0 ||
+                  *resumeAfter >= maxIterations - 1)
+                throw std::runtime_error("C3 history continuation requires adaptive SWIFT, "
+                  "a history directory, a completed advection step below the final state, "
+                  "and the original target volume.");
+            }
             if (!(regularizationFactor > 0))
               throw std::runtime_error("The regularization factor must be positive.");
             if (!(normalRegularizationFactor > 0))
@@ -702,6 +722,44 @@ namespace KelvinBall
         return adapted;
       }
 
+      template <class LevelSet>
+      SphereDiscretization fitAdaptedBackground(MMG::Mesh& adapted, const LevelSet& advectedDistance,
+        const Location::AABB<MMG::Mesh>& backgroundLocator, size_t sourceCells,
+        Real requestedWelschScale)
+      {
+        const Real outerRadius = m_options.configuration.outerRadius;
+        const Real initialGridSpacing = m_options.configuration.getGridSpacing();
+        // The old target and its space stay on the unchanged source mesh.
+        // Re-evaluate it spatially; nodal copying across MMG is invalid.
+        P1<Real, Mesh> targetSpace(adapted);
+        GridFunction target(targetSpace);
+        target = RealFunction([&](const Geometry::Point& point) {
+          const auto source =
+            backgroundLocator.locate(3, point.getPhysicalCoordinates());
+          if (!source)
+            throw std::runtime_error(
+              "An adapted background vertex is outside the source chamber.");
+          return advectedDistance.getValue(*source);
+        });
+        const Real adaptedH = meanElementSize(adapted);
+        MMG::Mesh classified = classifyLevelSetForSWIFT(adapted, target);
+        auto fitted =
+          fitLevelSetSWIFT(std::move(classified), target, adaptedH, outerRadius);
+        fitted.diagnostics.cellsBefore = sourceCells;
+        fitted.diagnostics.cellsAfter = fitted.mesh.getCellCount();
+        fitted.diagnostics.minimumSize = m_options.configuration.hmin;
+        fitted.diagnostics.maximumSize = m_options.configuration.hmax;
+        fitted.diagnostics.hausdorffTolerance =
+          Real(0.1) * initialGridSpacing * initialGridSpacing;
+        fitted.diagnostics.backgroundMeanElementSize = adaptedH;
+        fitted.diagnostics.welschScale = requestedWelschScale > 0
+          ? requestedWelschScale
+          : Real(3) * initialGridSpacing;
+        fitted.diagnostics.requiredBoundaryTriangles =
+          adapted.getRequiredTriangles().size();
+        return fitted;
+      }
+
       void reportConfiguration(Real requestedWelschScale)
       {
         const size_t points = m_options.configuration.points;
@@ -793,6 +851,62 @@ namespace KelvinBall
           ReconstructionDiagnostics diagnostics;
       };
 
+      InitialDesign resume(const Sphere& sphere, Real requestedWelschScale)
+      {
+        auto background = sphere.prepareSWIFTBackground(requestedWelschScale).mesh;
+        for (size_t step = 0; ; ++step)
+        {
+          std::ostringstream suffix;
+          suffix << '.' << std::setw(6) << std::setfill('0') << step << ".h5";
+          const auto prefix = m_options.resumeHistory + "/KelvinBall.Chamber.";
+          const auto read = [&](const char* field, const char* dataset, auto type) {
+            const auto name = prefix + field + suffix.str();
+            const auto file = IO::HDF5::File(H5Fopen(name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+            if (!file)
+              throw std::runtime_error("Could not open " + name);
+            return IO::HDF5::readVectorDataset<decltype(type)>(file.get(), dataset);
+          };
+
+          // SWIFT moves the chamber vertices without changing their numbering.
+          // The archived Advected field stores background nodal values in that order.
+          const auto cells = read("mesh", IO::HDF5::Path::MeshXDMFTopology, IO::HDF5::U64{});
+          const auto values = read("Advected", IO::HDF5::Path::GridFunctionValuesData, Real{});
+          if (cells.size() != 5 * background.getCellCount() ||
+              values.size() != background.getVertexCount())
+            throw std::runtime_error("Incompatible chamber dimensions at step " + std::to_string(step));
+          for (auto cell = background.getCell(); cell; ++cell)
+          {
+            const size_t offset = 5 * cell->getIndex();
+            const auto& vertices = cell->getVertices();
+            if (cells[offset] != 6 || vertices.size() != 4 ||
+                !std::equal(vertices.begin(), vertices.end(), cells.begin() + offset + 1))
+              throw std::runtime_error("Incompatible chamber numbering at step " + std::to_string(step));
+          }
+
+          MMG::Mesh adapted;
+          {
+            P1<Real, Mesh> space(background);
+            GridFunction advected(space);
+            for (Index vertex = 0; vertex < background.getVertexCount(); ++vertex)
+              advected.getData()(space.getDOFs(0, vertex)[0]) = values[vertex];
+            Alert::Info() << "Restored advection for state " << step << Alert::Raise;
+            adapted = adaptSWIFTBackground(background, advected, sphere, requestedWelschScale);
+            if (step == *m_options.resumeAfter)
+            {
+              const Location::AABB<MMG::Mesh> locator(background);
+              auto fitted = fitAdaptedBackground(adapted, advected, locator,
+                background.getCellCount(), requestedWelschScale);
+              smoothReconstruction(fitted.mesh);
+              restoreAxialVolume(fitted.mesh, *m_options.resumeTargetVolume,
+                m_options.configuration.outerRadius);
+              return {std::move(fitted.mesh), std::move(adapted),
+                fitted.diagnostics.backgroundMeanElementSize, fitted.diagnostics};
+            }
+          }
+          background = std::move(adapted);
+        }
+      }
+
       InitialDesign initialize(const Sphere& sphere, Real requestedWelschScale)
       {
         const Real outerRadius = m_options.configuration.outerRadius;
@@ -865,6 +979,9 @@ namespace KelvinBall
           << "       Maximum MMG size / reference spacing h0 (default: 10)."
           << Alert::NewLine << Alert::Notation("--outer-radius=<value>")
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
+          << Alert::Notation("--resume-history=<dir> --resume-after=<state> --resume-target-volume=<value>")
+          << "  Resume adaptive C3 SWIFT after a saved advection in the original run."
+          << Alert::NewLine
           << Alert::Notation("--iterations=<count>")
           << "       Number of evaluated designs (default: 1)." << Alert::NewLine
           << Alert::Notation("--penalty=<value>")
@@ -1520,12 +1637,14 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportConfiguration(requestedWelschScale);
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
-  announce(m_options.reconstructionMethod == "swift"
+  announce(m_options.resumeAfter ? "Restoring the SWIFT background from saved advection."
+    : m_options.reconstructionMethod == "swift"
       ? "Stage 1: Preparing the background mesh and fitting the initial sphere with "
         "SWIFT."
       : "Stage 1: Discretizing the initial sphere with MMG.");
   Sphere sphere(m_options.configuration);
-  auto initial = initialize(sphere, requestedWelschScale);
+  auto initial = m_options.resumeAfter ? resume(sphere, requestedWelschScale)
+                                      : initialize(sphere, requestedWelschScale);
   MMG::Mesh mesh = std::move(initial.mesh);
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);
   Real backgroundH = initial.backgroundH;
@@ -1543,12 +1662,13 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   checkMaterials(mesh);
   if (m_options.saveMeshDiagnostic)
     mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
-  reportSphereGeometry(mesh);
+  if (!m_options.resumeAfter)
+    reportSphereGeometry(mesh);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)
     return 0;
-  const Real targetVolume = mesh.getVolume(Obstacle);
+  const Real targetVolume = m_options.resumeTargetVolume.value_or(mesh.getVolume(Obstacle));
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);
@@ -1621,11 +1741,12 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<Location::AABB<MMG::Mesh>> backgroundLocator;
   Optional<KelvinBall::RotatedNitscheIntegrator> backgroundCoupling;
 
-  for (size_t iteration = 0; iteration < m_options.maxIterations; ++iteration)
+  const size_t firstState = m_options.resumeAfter ? *m_options.resumeAfter + 1 : 0;
+  for (size_t iteration = firstState; iteration < m_options.maxIterations; ++iteration)
   {
     std::array<Real, 9> stageSeconds;
     stageSeconds.fill(nan);
-    if (iteration == 0)
+    if (iteration == firstState)
       stageSeconds[0] = stage1Seconds;
     if (nextMesh)
     {
@@ -2691,34 +2812,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         {
           auto adapted = adaptSWIFTBackground(
             *swiftBackground, advectedDistance, sphere, requestedWelschScale);
-          // The old target and its space stay on the unchanged source mesh.
-          // Re-evaluate it spatially; nodal copying across MMG is invalid.
-          P1<Real, Mesh> targetSpace(adapted);
-          GridFunction target(targetSpace);
-          target = RealFunction([&](const Geometry::Point& point) {
-            const auto source =
-              backgroundLocator->locate(3, point.getPhysicalCoordinates());
-            if (!source)
-              throw std::runtime_error(
-                "An adapted background vertex is outside the source chamber.");
-            return advectedDistance.getValue(*source);
-          });
-          const Real adaptedH = meanElementSize(adapted);
-          MMG::Mesh classified = classifyLevelSetForSWIFT(adapted, target);
-          auto fitted =
-            fitLevelSetSWIFT(std::move(classified), target, adaptedH, outerRadius);
-          fitted.diagnostics.cellsBefore = swiftBackground->getCellCount();
-          fitted.diagnostics.cellsAfter = fitted.mesh.getCellCount();
-          fitted.diagnostics.minimumSize = m_options.configuration.hmin;
-          fitted.diagnostics.maximumSize = m_options.configuration.hmax;
-          fitted.diagnostics.hausdorffTolerance =
-            Real(0.1) * initialGridSpacing * initialGridSpacing;
-          fitted.diagnostics.backgroundMeanElementSize = adaptedH;
-          fitted.diagnostics.welschScale = requestedWelschScale > 0
-            ? requestedWelschScale
-            : Real(3) * initialGridSpacing;
-          fitted.diagnostics.requiredBoundaryTriangles =
-            adapted.getRequiredTriangles().size();
+          auto fitted = fitAdaptedBackground(adapted, advectedDistance, *backgroundLocator,
+            swiftBackground->getCellCount(), requestedWelschScale);
           // Commit the next background only after fitting succeeds. Its old
           // spaces expire before replacement at the next iteration boundary.
           nextBackground.emplace(std::move(adapted));
