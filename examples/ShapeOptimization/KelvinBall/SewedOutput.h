@@ -25,12 +25,12 @@ namespace KelvinBall
   /**
    * @brief Reconstructs the complete design from its fundamental chamber.
    *
-   * The chamber is copied by the 24 proper rotations of the cube. Coincident
+   * The chamber is copied by the proper rotations of the selected symmetry group. Coincident
    * vertices are identified, and chamber fields are transported according to
    * their scalar, vector, or load-index transformation law.
    *
    * Architecture:
-   * 1. construct the proper octahedral rotations;
+   * 1. enumerate the rotations of the chamber;
    * 2. identify rotated copies of each chamber vertex;
    * 3. assemble the full-domain visualization mesh;
    * 4. sample fields lazily, averaging all chamber representatives.

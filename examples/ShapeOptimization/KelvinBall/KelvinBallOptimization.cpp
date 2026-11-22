@@ -1563,7 +1563,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "remesh_hmin,remesh_hmax,remesh_hausdorff,"
              "required_boundary_triangles,remesh_cells_before,remesh_cells_after,"
           << (AxialC3 ? "k_parallel,c_parallel,q_parallel,rho_parallel," : "k,c,q,rho,")
-          << "coupling_symmetry,nitsche_jump,volume,target_volume,"
+          << (AxialC3 ? "axial_reciprocity_residual," : "coupling_symmetry,")
+          << "nitsche_jump,volume,target_volume,"
              "volume_error,chamber_bbox_x,chamber_bbox_y,chamber_bbox_z,"
              "sewn_bbox_x,sewn_bbox_y,sewn_bbox_z,"
           << (AxialC3 ? "actual_delta_c,predicted_delta_c," : "actual_delta_rho,predicted_delta_rho,")
@@ -1893,7 +1894,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << vectorText(sewnBoundingBox) << Alert::NewLine
                     << diagnosticLabel("Nitsche jump:")
                     << Alert::Notation::Number(nitscheJump) << Alert::NewLine
-                    << diagnosticLabel("Coupling symmetry residual:")
+                    << diagnosticLabel(AxialC3 ? "Axial reciprocity residual:" : "Coupling symmetry residual:")
                     << Alert::Notation::Number(couplingSymmetry) << Alert::Raise;
       {
         Alert::Info()
@@ -2403,7 +2404,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           {
             sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
             const auto addVector = [&](const char* name, const auto& field) {
-              sewedFluidOutput.add(name, 3, [&](Index vertex, std::span<Real> out) {
+              sewedFluidOutput.add(name, 3, [&sewedFluid, &field](Index vertex, std::span<Real> out) {
                 const auto sample = sewedFluid.getVector(field, vertex);
                 for (size_t i = 0; i < 3; ++i)
                   out[i] = sample(i);

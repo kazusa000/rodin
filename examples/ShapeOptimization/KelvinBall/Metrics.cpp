@@ -54,14 +54,16 @@ namespace KelvinBall
     BilinearForm energy(u,v);
     energy = Integral(2 * Mu * Du,Dv);
     energy.assemble();
-    const Real copies = coupling ? 3 : 1;
+    const Real copies = coupling ? ChamberMultiplicity : 1;
     Values values;
     values.k = copies * energy(translation,translation);
     values.c = copies * energy(translation,rotation);
     values.q = copies * energy(rotation,rotation);
     if (!(values.k > 0 && values.q > 0 && std::isfinite(values.c)))
       throw std::runtime_error("Invalid axial resistance.");
-    values.rho = std::abs(values.c) / std::sqrt(values.k * values.q);
+    const Real scale = std::sqrt(values.k * values.q);
+    values.rho = std::abs(values.c) / scale;
+    values.couplingSymmetry = std::abs(values.c - copies * energy(rotation, translation)) / scale;
     if (coupling)
       values.nitscheJump = std::max(coupling->vectorJump(translation),coupling->vectorJump(rotation));
     return values;

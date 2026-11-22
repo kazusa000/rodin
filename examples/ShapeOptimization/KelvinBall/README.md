@@ -8,7 +8,7 @@ rotational resistances allow. This example searches for such bodies by level-set
 shape optimisation, following the notation of *Shape optimisation of the Kelvin
 ball via a level-set method*.
 
-It builds two executables:
+The original cubic example has two executables:
 
 - `KelvinBall` — the optimisation loop.
 - `KelvinBallSphere` — a validation tool that evaluates the objective on the
@@ -27,6 +27,44 @@ provide a separate higher-order Stokes path. Scalar trace jumps remain
 available as diagnostics, but there is no scalar trace-penalty projection
 in redistancing or transport. Transport uses Rodin's characteristic flow and
 RK4 integrator, followed by nodal evaluation with a retain-on-failure policy.
+
+## Threefold axial optimisation
+
+Build `KelvinBallC3` for optimisation and `KelvinBallC3Sphere` for validation.
+The rotation axis is the oriented cube diagonal $e=(1,1,1)/\sqrt{3}$. The chamber
+$x\ge y,\;x\ge z$ occupies one third of the cube. The coordinate permutation
+$(x,y,z)\mapsto(z,x,y)$ rotates the chamber through 120 degrees. The same three
+rotations define the flow transmission, transport, thickness queries and sewn output.
+This discrete symmetry permits twisted shapes with either handedness.
+
+The objective is the **signed axial coupling** $C_\parallel=e^T C e$.
+Two Stokes solutions supply the velocity fields for translation along $e$ and
+rotation about $e$. Their cross dissipation, integrated over three copies of the
+chamber, gives `c_parallel`. Larger signed values are preferred.
+`k_parallel`, `q_parallel`, and `rho_parallel` are diagnostics.
+The starting body is the fitted unit sphere. The constrained direction has zero
+first volume derivative. After each reconstruction a dilation restores the
+initial discrete solid volume, tapered to zero displacement at the box wall.
+The program checks tetrahedron orientation and the final relative volume error
+(tolerance $10^{-10}$). CSV volumes refer to the chamber; multiply by three
+for the complete body.
+
+Run the two commands in separate output directories. For example, on a diagnostic
+L10 grid:
+
+```sh
+KelvinBallC3Sphere --outer-radius=10 --n=9 --check-handedness
+KelvinBallC3 --outer-radius=10 --n=11 --iterations=2 --regularization=20 --step=0.2 \
+  --reconstruction=swift --mmg-adapt --thickness-min=0.05 --swift-model-fit=10 \
+  --swift-linear-solver=mumps --swift-linear-threads=2
+```
+
+The first command compares a reduced sphere solve against an independent full
+cube solve and checks that a twisted test body and its mirror have opposite
+axial coupling. Only the validation tool constructs this test body. The second
+command evaluates the sphere and one updated shape. Each scored state is one
+row of `kelvin-ball.csv`. Use `actual_delta_c`, `predicted_delta_c`, and
+`volume_error` to inspect each update.
 
 ## User-reported working configuration
 
