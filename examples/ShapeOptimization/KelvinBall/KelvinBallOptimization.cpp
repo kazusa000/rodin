@@ -1025,7 +1025,7 @@ namespace KelvinBall
         return true;
       }
 
-      void restoreAxialVolume(LocalMesh& mesh, Real target, Real outerRadius)
+      bool restoreAxialVolume(LocalMesh& mesh, Real target, Real outerRadius)
       {
         const Real volume = mesh.getVolume(Obstacle);
         if (!(volume > 0 && target > 0))
@@ -1041,7 +1041,7 @@ namespace KelvinBall
           }
         }
         if (!(solidExtent < outerRadius && scale * solidExtent < outerRadius))
-          throw std::runtime_error("The volume-corrected solid would touch the outer wall.");
+          return false;
         std::vector<Math::SpatialPoint> coordinates(mesh.getVertexCount());
         for (Index i = 0; i < coordinates.size(); ++i)
         {
@@ -1065,12 +1065,13 @@ namespace KelvinBall
             }
           }
           if (!(before.determinant() * after.determinant() > 0))
-            throw std::runtime_error("Volume restoration would invert a tetrahedron.");
+            return false;
         }
         for (Index i = 0; i < coordinates.size(); ++i)
           mesh.setVertexCoordinates(i,coordinates[i]);
         if (std::abs(mesh.getVolume(Obstacle) / target - 1) > 1e-10)
           throw std::runtime_error("The reconstructed C3 solid missed its target volume.");
+        return true;
       }
 
       void checkFixedGeometry(const LocalMesh& mesh, Real outerRadius)
@@ -2607,7 +2608,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             }
             if (!preservesOrientation(mesh, trial))
               continue;
-            restoreAxialVolume(trial, targetVolume, outerRadius);
+            if (!restoreAxialVolume(trial, targetVolume, outerRadius))
+              continue;
             AxialCut validated(trial);
             auto trialFluid = trial.trim(Obstacle);
             Metrics trialMetrics({meanElementSize(trial), nitschePenalty, stabilizationFactor});
@@ -2862,8 +2864,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
     }();
     smoothReconstruction(result.mesh);
-    if constexpr (AxialC3)
-      restoreAxialVolume(result.mesh, targetVolume, outerRadius);
     reconstruction = result.diagnostics;
     if (reconstructionXdmf)
     {

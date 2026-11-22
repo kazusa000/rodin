@@ -136,6 +136,8 @@ namespace KelvinBall
           }
           if (missed != 0)
           {
+            if constexpr (AxialC3)
+              throw std::runtime_error("A C3 Stokes cut has unmatched quadrature points.");
             mesh.save("kelvin-cut-coverage-failure.mesh", IO::FileFormat::MEDIT);
             Alert::Warning() << "The rotated chamber faces do not cover each other for "
                                 "slave attribute " +

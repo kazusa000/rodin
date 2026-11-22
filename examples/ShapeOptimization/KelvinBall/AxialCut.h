@@ -18,7 +18,7 @@ namespace KelvinBall
   class AxialCut
   {
     public:
-      explicit AxialCut(const Mesh& mesh)
+      explicit AxialCut(Mesh& mesh)
       {
         using Key = std::array<long long, 3>;
         using Triangle = std::array<Index, 3>;
@@ -27,8 +27,9 @@ namespace KelvinBall
                   std::llround(x(2) * 1e10)};
         };
         std::map<Key, Index> master;
-        std::set<Triangle> triangles;
-        std::vector<Triangle> slaveFaces;
+        std::map<Triangle, Attribute> triangles;
+        std::vector<std::pair<Triangle, Attribute>> slaveFaces;
+        mesh.getConnectivity().compute(2, 3);
         for (auto face = mesh.getBoundary(); face; ++face)
         {
           const auto& nodes = face->getVertices();
@@ -38,19 +39,21 @@ namespace KelvinBall
           if (label != SigmaPlus && label != SigmaMinus)
             continue;
           Triangle triangle{nodes(0), nodes(1), nodes(2)};
+          const auto& incident = mesh.getConnectivity().getIncidence({2, 3}, face->getIndex());
+          const Attribute material = mesh.getCellAttribute(incident[0]).value();
           if (label == SigmaPlus)
           {
             for (Index i : triangle)
               master.emplace(key(mesh.getVertexCoordinates(i)), i);
             std::sort(triangle.begin(), triangle.end());
-            triangles.insert(triangle);
+            triangles.emplace(triangle, material);
           }
           else
-            slaveFaces.push_back(triangle);
+            slaveFaces.emplace_back(triangle, material);
         }
         if (triangles.empty() || triangles.size() != slaveFaces.size())
           throw std::runtime_error("The C3 cuts have different triangulations.");
-        for (auto triangle : slaveFaces)
+        for (auto [triangle, material] : slaveFaces)
         {
           for (Index& i : triangle)
           {
@@ -61,8 +64,10 @@ namespace KelvinBall
             i = position->second;
           }
           std::sort(triangle.begin(), triangle.end());
-          if (triangles.erase(triangle) != 1)
-            throw std::runtime_error("A C3 cut triangle has no rotated partner.");
+          auto partner = triangles.find(triangle);
+          if (partner == triangles.end() || partner->second != material)
+            throw std::runtime_error("C3 cut triangles differ in topology or material.");
+          triangles.erase(partner);
         }
       }
 
