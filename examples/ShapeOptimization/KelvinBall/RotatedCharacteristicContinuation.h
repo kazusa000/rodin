@@ -26,7 +26,7 @@ namespace KelvinBall
   {
     public:
       RotatedCharacteristicContinuation(Real dt, const Mesh& mesh, const Locator& locator,
-        const std::array<RotationPair, 2>& pairs)
+        const std::array<RotationPair, CutPairCount>& pairs)
         : m_mesh(mesh),
           m_locator(locator),
           m_pairs(pairs),
@@ -93,7 +93,7 @@ namespace KelvinBall
     private:
       std::reference_wrapper<const Mesh> m_mesh;
       std::reference_wrapper<const Locator> m_locator;
-      std::reference_wrapper<const std::array<RotationPair, 2>> m_pairs;
+      std::reference_wrapper<const std::array<RotationPair, CutPairCount>> m_pairs;
       Advection::StopInsideBoundaryPolicy m_stop;
   };
 }

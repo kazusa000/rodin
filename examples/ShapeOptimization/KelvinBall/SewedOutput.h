@@ -82,7 +82,7 @@ namespace KelvinBall
 
       Mesh& getMesh();
 
-      static const std::vector<Math::SpatialMatrix<Real>>& getCubeRotations();
+      static const std::vector<Math::SpatialMatrix<Real>>& getRotations();
 
       /**
        * @brief Averages a chamber scalar at a sewn vertex.

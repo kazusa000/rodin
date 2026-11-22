@@ -44,7 +44,18 @@ namespace KelvinBall
   inline constexpr Real DefaultNitschePenalty = 320;
   inline constexpr Real DefaultStabilizationFactor = 0.05;
   inline constexpr Real LinearResidualTolerance = 1e-8;
-  inline constexpr size_t ChamberMultiplicity = 24;
+  #ifdef KELVIN_AXIAL_C3
+  inline constexpr bool AxialC3 = true;
+#else
+  inline constexpr bool AxialC3 = false;
+#endif
+  inline constexpr size_t ChamberMultiplicity = AxialC3 ? 3 : 24;
+  inline constexpr size_t CutPairCount = AxialC3 ? 1 : 2;
+
+  inline Math::SpatialVector<Real> axialDirection()
+  {
+    return Math::SpatialVector<Real>::Constant(3, Real(1) / std::sqrt(Real(3)));
+  }
 
 #ifdef RODIN_USE_MUMPS
   inline constexpr const char* DirectSolverName = "MUMPS";
@@ -68,8 +79,10 @@ namespace KelvinBall
       Math::SpatialMatrix<Real> rotation;
   };
 
-  extern const std::array<RotationPair, 2> RotationPairs;
+  extern const std::array<RotationPair, CutPairCount> RotationPairs;
   extern const FlatSet<Attribute> MasterCuts;
+  extern const FlatSet<Attribute> AllCuts;
+  extern const FlatSet<Attribute> FixedFaces;
 
   Math::SpatialPoint centroid(const Mesh& mesh, const Polytope& face);
 

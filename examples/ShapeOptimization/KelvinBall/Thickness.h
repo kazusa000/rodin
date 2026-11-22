@@ -182,7 +182,7 @@ namespace KelvinBall
           {{Real(2) / 3, Real(1) / 6, Real(1) / 6},
             {Real(1) / 6, Real(2) / 3, Real(1) / 6},
             {Real(1) / 6, Real(1) / 6, Real(2) / 3}}};
-        const auto& rotations = SewedOutput::getCubeRotations();
+        const auto& rotations = SewedOutput::getRotations();
         const Real multiplicity = static_cast<Real>(rotations.size());
         const size_t D = mesh.getDimension();
         auto fluidNormal = FaceNormal(mesh);
@@ -514,7 +514,7 @@ namespace KelvinBall
           return exit;
         const Real originTolerance = std::max(Real(1e-12), Real(1e-10) * m_minimum);
         std::vector<Index> pending;
-        const auto& rotations = SewedOutput::getCubeRotations();
+        const auto& rotations = SewedOutput::getRotations();
         for (size_t r = 0; r < rotations.size(); ++r)
         {
           const Math::SpatialVector<Real> localOrigin = rotations[r].transpose() * origin;

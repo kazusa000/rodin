@@ -65,6 +65,12 @@ namespace KelvinBall
       }
       else
         continue;
+      if constexpr (AxialC3)
+      {
+        normal.setZero();
+        normal(0) = 1;
+        normal(attribute == SigmaPlus ? 1 : 2) = -1;
+      }
       for (const Index vertex : face->getVertices())
       {
         auto independent = normal;

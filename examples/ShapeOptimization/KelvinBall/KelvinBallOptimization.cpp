@@ -75,6 +75,8 @@ namespace KelvinBall
           {
             motionForce.setZero();
             motionForce(0) = 1;
+            if constexpr (AxialC3)
+              motionForce = axialDirection();
           }
 
           Configuration configuration;
@@ -159,6 +161,9 @@ namespace KelvinBall
             if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
               throw std::runtime_error(
                 "--mmg-snap applies only to --reconstruction=mmg.");
+            if (AxialC3 && motionForce.cross(axialDirection()).norm() >
+                  64 * std::numeric_limits<Real>::epsilon() * motionForce.norm())
+              throw std::runtime_error("C3 motion diagnostics require an axial force.");
             if (geometryOnly && stateOnly)
               throw std::runtime_error(
                 "Use either --geometry-only or --state-only, not both.");
@@ -970,11 +975,11 @@ namespace KelvinBall
         switch (attribute)
         {
           case Outer:
-            return std::abs(x(0) - outerRadius);
+            return std::abs((AxialC3 ? x.cwiseAbs().maxCoeff() : x(0)) - outerRadius);
           case SigmaPlus:
-            return std::abs(x(1) - x(2));
+            return AxialC3 ? std::abs(x(0) - x(1)) : std::abs(x(1) - x(2));
           case SigmaMinus:
-            return std::abs(x(1) + x(2));
+            return AxialC3 ? std::abs(x(0) - x(2)) : std::abs(x(1) + x(2));
           case SigmaXYPlus:
           case SigmaXYMinus:
             return std::abs(x(0) - x(1));
@@ -983,10 +988,55 @@ namespace KelvinBall
         }
       }
 
+      // Restore the discrete solid volume after transport and reconstruction.
+      // A dilation of the solid scales its volume by s^3 and commutes with C3.
+      // Extend it continuously into the fluid with zero motion on the cube.
+      void restoreAxialVolume(LocalMesh& mesh, Real target, Real outerRadius)
+      {
+        const Real volume = mesh.getVolume(Obstacle);
+        if (!(volume > 0 && target > 0))
+          throw std::runtime_error("Volume restoration requires positive solid volumes.");
+        const Real scale = std::cbrt(target / volume);
+        Real solidExtent = 0;
+        for (auto cell = mesh.getCell(); cell; ++cell)
+        {
+          if (cell->getAttribute() == Obstacle)
+          {
+            for (Index i : cell->getVertices())
+              solidExtent = std::max(solidExtent, mesh.getVertexCoordinates(i).cwiseAbs().maxCoeff());
+          }
+        }
+        if (!(solidExtent < outerRadius && scale * solidExtent < outerRadius))
+          throw std::runtime_error("The volume-corrected solid would touch the outer wall.");
+        std::vector<Math::SpatialPoint> coordinates(mesh.getVertexCount());
+        for (Index i = 0; i < coordinates.size(); ++i)
+        {
+          const auto& x = mesh.getVertexCoordinates(i);
+          const Real weight = std::clamp((outerRadius - x.cwiseAbs().maxCoeff()) /
+            (outerRadius - solidExtent), Real(0), Real(1));
+          coordinates[i] = (1 + weight * (scale - 1)) * x;
+        }
+        for (auto cell = mesh.getCell(); cell; ++cell)
+        {
+          const auto& nodes = cell->getVertices();
+          Math::SpatialMatrix<Real> before(3,3), after(3,3);
+          for (size_t col = 0; col < 3; ++col)
+          {
+            before.col(col) = mesh.getVertexCoordinates(nodes[col+1]) - mesh.getVertexCoordinates(nodes[0]);
+            after.col(col) = coordinates[nodes[col+1]] - coordinates[nodes[0]];
+          }
+          if (!(before.determinant() * after.determinant() > 0))
+            throw std::runtime_error("Volume restoration would invert a tetrahedron.");
+        }
+        for (Index i = 0; i < coordinates.size(); ++i)
+          mesh.setVertexCoordinates(i,coordinates[i]);
+        if (std::abs(mesh.getVolume(Obstacle) / target - 1) > 1e-10)
+          throw std::runtime_error("The reconstructed C3 solid missed its target volume.");
+      }
+
       void checkFixedGeometry(const LocalMesh& mesh, Real outerRadius)
       {
-        const FlatSet<Attribute> fixed{
-          Outer, SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus};
+        const auto& fixed = FixedFaces;
         std::map<Attribute, size_t> counts;
         Real residual = 0;
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
@@ -1143,7 +1193,7 @@ namespace KelvinBall
         Math::SpatialPoint maximum(3);
         minimum.setConstant(std::numeric_limits<Real>::infinity());
         maximum.setConstant(-std::numeric_limits<Real>::infinity());
-        const auto& rotations = KelvinBall::SewedOutput::getCubeRotations();
+        const auto& rotations = KelvinBall::SewedOutput::getRotations();
         for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
         {
           for (const auto& rotation : rotations)
@@ -1195,8 +1245,7 @@ namespace KelvinBall
         // pass (opnbdy) then preserves them, so every past interface would
         // accumulate in the mesh. The cut therefore starts, as the initial
         // one does, from a single material and only the fixed boundary.
-        const FlatSet<Attribute> fixed{
-          Outer, SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus};
+        const auto& fixed = FixedFaces;
         for (auto cell = mesh.getCell(); cell; ++cell)
           mesh.setAttribute({mesh.getDimension(), cell->getIndex()}, Fluid);
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
@@ -1216,7 +1265,7 @@ namespace KelvinBall
           .setHausdorff(hausdorff)
           .setGradation(remeshGradation)
           .setBaseReferences(
-            FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus})
+            AllCuts)
           .setBoundaryReference(Gamma)
           .setRMC(1e-5)
           .setAngleDetection(false);
@@ -1508,13 +1557,16 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "background_h,"
              "remesh_hmin,remesh_hmax,remesh_hausdorff,"
              "required_boundary_triangles,remesh_cells_before,remesh_cells_after,"
-             "k,c,q,rho,coupling_symmetry,nitsche_jump,volume,target_volume,"
+          << (AxialC3 ? "k_parallel,c_parallel,q_parallel,rho_parallel," : "k,c,q,rho,")
+          << "coupling_symmetry,nitsche_jump,volume,target_volume,"
              "volume_error,chamber_bbox_x,chamber_bbox_y,chamber_bbox_z,"
-             "sewn_bbox_x,sewn_bbox_y,sewn_bbox_z,actual_delta_rho,"
-             "predicted_delta_rho,actual_delta_volume,predicted_delta_volume,"
-             "null_space_multiplier,xi_rho_inf_norm,theta_inf_norm,d_rho_theta,"
-             "d_volume_theta,required_d_volume_theta,rho_gradient_residual,"
-             "rho_gradient_jump,volume_gradient_residual,"
+             "sewn_bbox_x,sewn_bbox_y,sewn_bbox_z,"
+          << (AxialC3 ? "actual_delta_c,predicted_delta_c," : "actual_delta_rho,predicted_delta_rho,")
+          << "actual_delta_volume,predicted_delta_volume,null_space_multiplier,"
+          << (AxialC3 ? "xi_c_inf_norm,theta_inf_norm,d_c_theta," : "xi_rho_inf_norm,theta_inf_norm,d_rho_theta,")
+          << "d_volume_theta,required_d_volume_theta,"
+          << (AxialC3 ? "c_gradient_residual,c_gradient_jump," : "rho_gradient_residual,rho_gradient_jump,")
+          << "volume_gradient_residual,"
              "volume_gradient_jump,stage_1_seconds,stage_2_seconds,"
              "stage_3_seconds,stage_4_seconds,stage_5_seconds,"
              "stage_6_seconds,stage_7_seconds,stage_8_seconds,"
@@ -1648,7 +1700,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       const KelvinBall::Parameters metricParameters{
         h, nitschePenalty, stabilizationFactor};
       const KelvinBall::Metrics resistanceMetrics(metricParameters);
-      const KelvinBall::Values metrics = resistanceMetrics.evaluateChamber(Vh, Qh,
+      const KelvinBall::Values metrics = AxialC3
+        ? resistanceMetrics.evaluateAxial(Vh, Qh, &fluidCoupling, uT0, uR0, pT0, pR0)
+        : resistanceMetrics.evaluateChamber(Vh, Qh,
         fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
       stageSeconds[2] = elapsedSeconds(stage3Start);
       reportStageTiming(3, stageSeconds[2]);
@@ -1666,7 +1720,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       const Real nitscheJump = metrics.nitscheJump;
       const auto chamberBoundingBox = boundingBoxSize(mesh);
       const auto sewnBoundingBox = sewnBoundingBoxSize(mesh);
-      const Real actualRhoChange = previousRho ? rho - *previousRho : nan;
+      const Real objective = AxialC3 ? c : rho;
+      const Real actualRhoChange = previousRho ? objective - *previousRho : nan;
       const Real incomingPredictedRhoChange =
         predictedRhoChange ? *predictedRhoChange : nan;
       const Real actualVolumeChange = previousVolume ? volume - *previousVolume : nan;
@@ -1807,9 +1862,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       if (previousRho)
       {
         Alert::Info() << substageHeading("Previous update") << Alert::NewLine
-                      << diagnosticLabel("Actual delta rho:")
+                      << diagnosticLabel(AxialC3 ? "Actual delta C:" : "Actual delta rho:")
                       << Alert::Notation::Number(actualRhoChange) << Alert::NewLine
-                      << diagnosticLabel("Predicted delta rho:")
+                      << diagnosticLabel(AxialC3 ? "Predicted delta C:" : "Predicted delta rho:")
                       << Alert::Notation::Number(incomingPredictedRhoChange)
                       << Alert::NewLine << diagnosticLabel("Actual delta volume:")
                       << Alert::Notation::Number(actualVolumeChange) << Alert::NewLine
@@ -1824,7 +1879,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << Alert::Notation::Number(c) << Alert::NewLine
                     << diagnosticLabel("Rotational resistance q:")
                     << Alert::Notation::Number(q) << Alert::NewLine
-                    << diagnosticLabel("Objective rho:") << Alert::Notation::Number(rho)
+                    << diagnosticLabel(AxialC3 ? "Objective signed axial C:" : "Objective rho:") << Alert::Notation::Number(objective)
                     << Alert::NewLine << diagnosticLabel("Volume:")
                     << Alert::Notation::Number(volume) << Alert::NewLine
                     << diagnosticLabel("Chamber bounding box:")
@@ -1889,13 +1944,17 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       const auto qDensity = chamberMultiplicity * 2.0 * mu / 3.0 *
         (Dot(strainUR0, strainUR0) + Dot(strainUR1, strainUR1) +
           Dot(strainUR2, strainUR2));
-      const auto rhoDensity =
-        signC / std::sqrt(k * q) * cDensity - 0.5 * rho * (kDensity / k + qDensity / q);
+      const auto objectiveDensity = [&] {
+        if constexpr (AxialC3)
+          return (2 * mu * chamberMultiplicity) * Dot(strainUT0, strainUR0);
+        else
+          return signC / std::sqrt(k * q) * cDensity - 0.5 * rho * (kDensity / k + qDensity / q);
+      }();
 
       P1 levelSetSpace(mesh);
       P1 shapeSpace(mesh, 3);
       KelvinBall::RotatedNitscheIntegrator shapeCoupling(mesh,
-        FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
+        AllCuts,
         rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
       GridFunction rhoGradient(shapeSpace), volumeGradient(shapeSpace);
       stageSeconds[4] = elapsedSeconds(stage5Start);
@@ -2085,7 +2144,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                         << Alert::Raise;
         }
         rhoGradientDiagnostics =
-          identifyGradient(identification, -rhoDensity, rhoGradient, "Rho");
+          identifyGradient(identification, -objectiveDensity, rhoGradient, AxialC3 ? "Axial C" : "Rho");
         volumeGradientDiagnostics =
           identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
       }
@@ -2093,7 +2152,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       auto interfaceNormal = FaceNormal(mesh);
       interfaceNormal.traceOf(Fluid);
       LinearForm dRho(testField), dVolume(testField);
-      dRho = FaceIntegral(-rhoDensity, Dot(interfaceNormal, testField)).over(Gamma);
+      dRho = FaceIntegral(-objectiveDensity, Dot(interfaceNormal, testField)).over(Gamma);
       dVolume =
         FaceIntegral(RealFunction{-1}, Dot(interfaceNormal, testField)).over(Gamma);
       dRho.assemble();
@@ -2195,11 +2254,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       Alert::Info() << substageHeading("Constrained direction") << Alert::NewLine
                     << diagnosticLabel("Null-space multiplier:")
                     << Alert::Notation::Number(nullSpaceMultiplier) << Alert::NewLine
-                    << diagnosticLabel("Xi rho infinity norm:")
+                    << diagnosticLabel(AxialC3 ? "Xi C infinity norm:" : "Xi rho infinity norm:")
                     << Alert::Notation::Number(xiRhoInfinityNorm) << Alert::NewLine
                     << diagnosticLabel("Theta infinity norm:")
                     << Alert::Notation::Number(thetaInfinityNorm) << Alert::NewLine
-                    << diagnosticLabel("D rho [theta]:")
+                    << diagnosticLabel(AxialC3 ? "D C [theta]:" : "D rho [theta]:")
                     << Alert::Notation::Number(dRhoTheta) << Alert::NewLine
                     << diagnosticLabel("D volume [theta]:")
                     << Alert::Notation::Number(dVolumeTheta) << Alert::NewLine
@@ -2211,7 +2270,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                       << diagnosticLabel("Surrogate D thickness [theta]:")
                       << Alert::Notation::Number(stageDiagnostics.dThicknessTheta)
                       << Alert::Raise;
-      previousRho = rho;
+      previousRho = objective;
       predictedRhoChange = dt * dRhoTheta;
       previousVolume = volume;
       predictedVolumeChange = dt * dVolumeTheta;
@@ -2296,23 +2355,35 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         }
         fluidState.clear();
         fluidState.setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
-        fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
-        fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
-        fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
-        fluidState.add("Rotation_0", uR0, IO::XDMF::Center::Node);
-        fluidState.add("Rotation_1", uR1, IO::XDMF::Center::Node);
-        fluidState.add("Rotation_2", uR2, IO::XDMF::Center::Node);
-        fluidState.add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
-        fluidState.add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
-        fluidState.add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
-        fluidState.add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
-        fluidState.add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
-        fluidState.add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
         GridFunction chamberMotion(Vh);
-        chamberMotion.getData() = motionTranslation(0) * uT0.getData() +
-          motionTranslation(1) * uT1.getData() + motionTranslation(2) * uT2.getData() +
-          motionAngular(0) * uR0.getData() + motionAngular(1) * uR1.getData() +
-          motionAngular(2) * uR2.getData();
+        if constexpr (AxialC3)
+        {
+          fluidState.add("AxialTranslation", uT0, IO::XDMF::Center::Node);
+          fluidState.add("AxialRotation", uR0, IO::XDMF::Center::Node);
+          fluidState.add("AxialTranslationPressure", pT0, IO::XDMF::Center::Node);
+          fluidState.add("AxialRotationPressure", pR0, IO::XDMF::Center::Node);
+          chamberMotion.getData() = motionTranslation.dot(axialDirection()) * uT0.getData() +
+            motionAngular.dot(axialDirection()) * uR0.getData();
+        }
+        else
+        {
+          fluidState.add("Translation_0", uT0, IO::XDMF::Center::Node);
+          fluidState.add("Translation_1", uT1, IO::XDMF::Center::Node);
+          fluidState.add("Translation_2", uT2, IO::XDMF::Center::Node);
+          fluidState.add("Rotation_0", uR0, IO::XDMF::Center::Node);
+          fluidState.add("Rotation_1", uR1, IO::XDMF::Center::Node);
+          fluidState.add("Rotation_2", uR2, IO::XDMF::Center::Node);
+          fluidState.add("Pressure_Translation_0", pT0, IO::XDMF::Center::Node);
+          fluidState.add("Pressure_Translation_1", pT1, IO::XDMF::Center::Node);
+          fluidState.add("Pressure_Translation_2", pT2, IO::XDMF::Center::Node);
+          fluidState.add("Pressure_Rotation_0", pR0, IO::XDMF::Center::Node);
+          fluidState.add("Pressure_Rotation_1", pR1, IO::XDMF::Center::Node);
+          fluidState.add("Pressure_Rotation_2", pR2, IO::XDMF::Center::Node);
+          chamberMotion.getData() = motionTranslation(0) * uT0.getData() +
+            motionTranslation(1) * uT1.getData() + motionTranslation(2) * uT2.getData() +
+            motionAngular(0) * uR0.getData() + motionAngular(1) * uR1.getData() +
+            motionAngular(2) * uR2.getData();
+        }
         fluidState.add("Motion", chamberMotion, IO::XDMF::Center::Node);
 
         // Export the fluid first and release it before assembling the design.
@@ -2323,6 +2394,21 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           const auto rotations = std::array{&uR0, &uR1, &uR2};
           const auto translationPressures = std::array{&pT0, &pT1, &pT2};
           const auto rotationPressures = std::array{&pR0, &pR1, &pR2};
+          if constexpr (AxialC3)
+          {
+            sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
+            const auto addVector = [&](const char* name, const auto& field) {
+              sewedFluidOutput.add(name, 3, [&](Index vertex, std::span<Real> out) {
+                const auto sample = sewedFluid.getVector(field, vertex);
+                for (size_t i = 0; i < 3; ++i)
+                  out[i] = sample(i);
+              });
+            };
+            addVector("AxialTranslation",uT0);
+            addVector("AxialRotation",uR0);
+            addVector("Motion",chamberMotion);
+          }
+          else
           sewedFluid.addStates(sewedFluidOutput, translations, rotations,
             translationPressures, rotationPressures, motionTranslation, motionAngular);
           sewedFluidOutput.write(static_cast<Real>(iteration)).clear();
@@ -2526,7 +2612,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         if (swiftBackground && !backgroundCoupling)
         {
           backgroundCoupling.emplace(advectionMesh,
-            FlatSet<Attribute>{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus},
+            AllCuts,
             rotatedTracePhysicalTolerance, rotatedTraceReferenceTolerance);
         }
         const auto& advectionCoupling =
@@ -2677,6 +2763,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
     }();
     smoothReconstruction(result.mesh);
+    if constexpr (AxialC3)
+      restoreAxialVolume(result.mesh, targetVolume, outerRadius);
     reconstruction = result.diagnostics;
     if (reconstructionXdmf)
     {

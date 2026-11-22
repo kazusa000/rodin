@@ -8,6 +8,69 @@
 
 namespace KelvinBall
 {
+  Values Metrics::evaluateAxial(const VelocitySpace& Vh, const PressureSpace& Qh,
+    const RotatedNitscheIntegrator* coupling, GridFunction<VelocitySpace>& translation,
+    GridFunction<VelocitySpace>& rotation, GridFunction<PressureSpace>& pT,
+    GridFunction<PressureSpace>& pR) const
+  {
+    if (coupling)
+      checkPairs(Vh.getMesh(), *coupling);
+    TrialFunction u(Vh);
+    TrialFunction p(Qh);
+    TestFunction v(Vh);
+    TestFunction q(Qh);
+    P0g gauge(Vh.getMesh());
+    TrialFunction lambda(gauge);
+    TestFunction eta(gauge);
+    const auto Du = Real(0.5) * (Jacobian(u) + Jacobian(u).T());
+    const auto Dv = Real(0.5) * (Jacobian(v) + Jacobian(v).T());
+    const auto tau = m_parameters.cellStabilization();
+    const auto axis = axialDirection();
+    const auto solve = [&](const auto& rigid, auto& state, auto& pressure) {
+      Problem stokes(u, p, lambda, v, q, eta);
+      const auto bulk = Integral(2 * Mu * Du, Dv) - Integral(p, Div(v)) -
+        Integral(Div(u), q) - Integral(tau * Grad(p), Grad(q)) +
+        Integral(lambda, q) + Integral(p, eta) + DirichletBC(u, rigid).on(Gamma) +
+        DirichletBC(u, VectorFunction{0, 0, 0}).on(Outer);
+      if (coupling)
+      {
+        const auto trace = coupling->stokesTrace(Tuple(std::cref(u),std::cref(p)),
+          Tuple(std::cref(v),std::cref(q)), Mu, m_parameters.nitschePenalty,
+          -m_parameters.pressureStabilization());
+        stokes = bulk + trace.getBFs();
+      }
+      else
+        stokes = bulk;
+      stokes.assemble();
+      solveDirect(stokes);
+      const auto& system = stokes.getLinearSystem();
+      const Real residual =
+        (system.getOperator() * system.getSolution() - system.getVector()).norm() /
+        std::max(Real(1), system.getVector().norm());
+      if (!std::isfinite(residual) || residual > LinearResidualTolerance)
+        throw std::runtime_error("Axial Stokes residual exceeds tolerance.");
+      state = u.getSolution();
+      pressure = p.getSolution();
+    };
+    const Real a = axis(0);
+    solve(VectorFunction{a,a,a}, translation, pT);
+    solve(VectorFunction{a * (F::z-F::y), a * (F::x-F::z), a * (F::y-F::x)}, rotation, pR);
+    BilinearForm energy(u,v);
+    energy = Integral(2 * Mu * Du,Dv);
+    energy.assemble();
+    const Real copies = coupling ? 3 : 1;
+    Values values;
+    values.k = copies * energy(translation,translation);
+    values.c = copies * energy(translation,rotation);
+    values.q = copies * energy(rotation,rotation);
+    if (!(values.k > 0 && values.q > 0 && std::isfinite(values.c)))
+      throw std::runtime_error("Invalid axial resistance.");
+    values.rho = std::abs(values.c) / std::sqrt(values.k * values.q);
+    if (coupling)
+      values.nitscheJump = std::max(coupling->vectorJump(translation),coupling->vectorJump(rotation));
+    return values;
+  }
+
   Values Metrics::evaluateChamber(Mesh& fluid) const
   {
     prepare(fluid);
@@ -18,6 +81,8 @@ namespace KelvinBall
       uR0(velocitySpace), uR1(velocitySpace), uR2(velocitySpace);
     GridFunction pT0(pressureSpace), pT1(pressureSpace), pT2(pressureSpace),
       pR0(pressureSpace), pR1(pressureSpace), pR2(pressureSpace);
+    if constexpr (AxialC3)
+      return evaluateAxial(velocitySpace, pressureSpace, &coupling, uT0, uR0, pT0, pR0);
     return evaluateChamber(velocitySpace, pressureSpace, coupling, uT0, uT1, uT2, uR0,
       uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
   }
@@ -31,6 +96,8 @@ namespace KelvinBall
       uR0(velocitySpace), uR1(velocitySpace), uR2(velocitySpace);
     GridFunction pT0(pressureSpace), pT1(pressureSpace), pT2(pressureSpace),
       pR0(pressureSpace), pR1(pressureSpace), pR2(pressureSpace);
+    if constexpr (AxialC3)
+      return evaluateAxial(velocitySpace, pressureSpace, nullptr, uT0, uR0, pT0, pR0);
     solveFullFamily(velocitySpace, pressureSpace, VectorFunction{1, 0, 0},
       VectorFunction{0, 1, 0}, VectorFunction{0, 0, 1}, uT0, uT1, uT2, pT0, pT1, pT2);
     solveFullFamily(velocitySpace, pressureSpace, VectorFunction{0, -F::z, F::y},

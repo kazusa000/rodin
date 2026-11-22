@@ -79,9 +79,15 @@ namespace KelvinBall
       });
   }
 
-  const std::vector<Math::SpatialMatrix<Real>>& SewedOutput::getCubeRotations()
+  const std::vector<Math::SpatialMatrix<Real>>& SewedOutput::getRotations()
   {
     static const std::vector<Math::SpatialMatrix<Real>> rotations = [] {
+      if constexpr (AxialC3)
+      {
+        const auto& r = RotationPairs.front().rotation;
+        return std::vector<Math::SpatialMatrix<Real>>{
+          Math::SpatialMatrix<Real>::Identity(3, 3), r, r.transpose()};
+      }
       std::vector<Math::SpatialMatrix<Real>> result;
       std::array<size_t, 3> permutation{0, 1, 2};
       do
@@ -110,7 +116,7 @@ namespace KelvinBall
 
   SewedOutput::SewedOutput(
     const Mesh& chamber, const FlatSet<Attribute>& boundaryAttributes, Real tolerance)
-    : m_rotations(getCubeRotations())
+    : m_rotations(getRotations())
   {
     Mesh::Builder builder;
     {

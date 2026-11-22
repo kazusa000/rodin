@@ -5,6 +5,7 @@
  *          https://www.boost.org/LICENSE_1_0.txt)
  */
 #include "Sphere.h"
+#include <bit>
 
 #include <algorithm>
 #include <cmath>
@@ -23,8 +24,76 @@ namespace KelvinBall
     : m_configuration(configuration)
   {}
 
+  // Kuhn tetrahedra on the integer lattice conform to x=y and x=z.
+  // Keeping the six ordered paths inside x>=max(y,z) gives exactly one sector.
+  static Mesh axialChamber(const Configuration& config)
+  {
+    const int n = static_cast<int>(config.points) - 1;
+    const Real h = config.getGridSpacing();
+    using Node = std::array<int, 3>;
+    Mesh::Builder builder;
+    builder.initialize(3);
+    std::map<Node, Index> nodes;
+    for (int x = -n; x <= n; ++x)
+      for (int y = -n; y <= x; ++y)
+        for (int z = -n; z <= x; ++z)
+          nodes.emplace(Node{x,y,z}, nodes.size());
+    builder.nodes(nodes.size());
+    for (const auto& [node, index] : nodes)
+      builder.vertex({h * node[0], h * node[1], h * node[2]});
+
+    for (const auto& [node, index] : nodes)
+    {
+      if (node[0] == n)
+        continue;
+      Node order{0,1,2};
+      do
+      {
+        auto point = node;
+        IndexArray vertices(4);
+        vertices(0) = index;
+        int i = 0;
+        for (int axis : order)
+        {
+          ++point[axis];
+          const auto it = nodes.find(point);
+          if (it == nodes.end())
+            break;
+          vertices(++i) = it->second;
+        }
+        if (i != 3)
+          continue;
+        if ((order[1] + 3 - order[0]) % 3 != 1)
+          std::swap(vertices(1),vertices(2));
+        Index cell;
+        builder.polytope(Polytope::Type::Tetrahedron, std::move(vertices), cell);
+        builder.attribute({3,cell}, Fluid);
+      } while (std::next_permutation(order.begin(),order.end()));
+    }
+    Mesh mesh = builder.finalize();
+    mesh.getConnectivity().compute(2,3);
+    for (auto face = mesh.getBoundary(); face; ++face)
+    {
+      const auto p = centroid(mesh,*face);
+      const Real tol = 64 * std::numeric_limits<Real>::epsilon() * config.outerRadius;
+      Attribute label;
+      if (std::abs(p(0) - p(1)) < tol)
+        label = SigmaPlus;
+      else if (std::abs(p(0) - p(2)) < tol)
+        label = SigmaMinus;
+      else if (std::abs(p.cwiseAbs().maxCoeff() - config.outerRadius) < tol)
+        label = Outer;
+      else
+        throw std::runtime_error("Unclassified C3 chamber boundary.");
+      mesh.setAttribute({2,face->getIndex()}, label);
+    }
+    return mesh;
+  }
+
   Mesh Sphere::makeUniformChamber() const
   {
+    if constexpr (AxialC3)
+      return axialChamber(m_configuration);
     Mesh cube = Mesh::UniformGrid(Polytope::Type::Tetrahedron,
       {m_configuration.points, m_configuration.points, m_configuration.points});
     cube.scale(m_configuration.getGridSpacing());
@@ -182,11 +251,19 @@ namespace KelvinBall
       const auto attribute = face->getAttribute();
       if (!attribute)
         continue;
-      const unsigned constraint = *attribute == Outer               ? outer
+      unsigned constraint = *attribute == Outer               ? outer
         : (*attribute == SigmaXYPlus || *attribute == SigmaXYMinus) ? xy
         : *attribute == SigmaPlus                                   ? plus
         : *attribute == SigmaMinus                                  ? minus
                                                                     : 0;
+      if (AxialC3 && constraint == outer)
+      {
+        // Identify each cube face separately, including both planes at an edge.
+        const auto center = centroid(mesh, *face);
+        Eigen::Index axis;
+        center.cwiseAbs().maxCoeff(&axis);
+        constraint = 1u << (4 + 2 * axis + (center(axis) > 0));
+      }
       for (const Index vertex : face->getVertices())
         constraints[vertex] |= constraint;
     }
@@ -204,7 +281,7 @@ namespace KelvinBall
       size_t rank = 0;
       // Orthogonalize the affine equations together. Successive projections
       // onto the original planes would not preserve their intersections.
-      for (const unsigned constraint : {outer, xy, plus, minus})
+      for (unsigned constraint = 1; constraint <= constraints[vertex]; constraint <<= 1)
       {
         if (!(constraints[vertex] & constraint))
           continue;
@@ -213,6 +290,21 @@ namespace KelvinBall
         normal(1) = constraint == outer ? 0 : constraint == xy ? -1 : 1;
         normal(2) = constraint == plus ? -1 : constraint == minus ? 1 : 0;
         Real offset = constraint == outer ? m_configuration.outerRadius : 0;
+        if constexpr (AxialC3)
+        {
+          normal.setZero();
+          if (constraint == plus || constraint == minus)
+          {
+            normal(0) = 1;
+            normal(constraint == plus ? 1 : 2) = -1;
+          }
+          else
+          {
+            const unsigned plane = std::countr_zero(constraint) - 4;
+            normal(plane / 2) = 1;
+            offset = (plane % 2 ? 1 : -1) * m_configuration.outerRadius;
+          }
+        }
         for (size_t i = 0; i < rank; ++i)
         {
           const Real coefficient = normal.dot(basis[i]);

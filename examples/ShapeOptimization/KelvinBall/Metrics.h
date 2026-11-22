@@ -93,6 +93,12 @@ namespace KelvinBall
 
       Values evaluateSewed(Mesh& fluid) const;
 
+      /// Solve translation along and rotation about the oriented body diagonal.
+      Values evaluateAxial(const VelocitySpace& Vh, const PressureSpace& Qh,
+        const RotatedNitscheIntegrator* coupling, GridFunction<VelocitySpace>& translation,
+        GridFunction<VelocitySpace>& rotation, GridFunction<PressureSpace>& pT,
+        GridFunction<PressureSpace>& pR) const;
+
     private:
       void checkPairs(const Mesh& mesh, const RotatedNitscheIntegrator& coupling) const
       {
@@ -295,7 +301,7 @@ namespace KelvinBall
           throw std::runtime_error("The resistance scale is not positive.");
         Math::SpatialMatrix<Real> reconstructed(3, 3);
         reconstructed.setZero();
-        for (const auto& R : SewedOutput::getCubeRotations())
+        for (const auto& R : SewedOutput::getRotations())
           reconstructed += R * coupling * R.transpose();
         Math::SpatialMatrix<Real> isotropic(3, 3);
         isotropic.setIdentity();

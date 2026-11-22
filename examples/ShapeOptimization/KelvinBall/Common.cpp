@@ -10,11 +10,22 @@
 
 namespace KelvinBall
 {
-  const std::array<RotationPair, 2> RotationPairs{
+#ifdef KELVIN_AXIAL_C3
+  // On the (1,1,1) axis, (x,y,z) -> (z,x,y) maps x=z to x=y.
+  const std::array<RotationPair, CutPairCount> RotationPairs{
+    {{SigmaMinus, SigmaPlus, {0, 0, 1, 1, 0, 0, 0, 1, 0}}}};
+  const FlatSet<Attribute> MasterCuts{SigmaPlus};
+  const FlatSet<Attribute> AllCuts{SigmaPlus, SigmaMinus};
+  const FlatSet<Attribute> FixedFaces{Outer, SigmaPlus, SigmaMinus};
+#else
+  const std::array<RotationPair, CutPairCount> RotationPairs{
     {{SigmaXYMinus, SigmaXYPlus, {0, 1, 0, 1, 0, 0, 0, 0, -1}},
       {SigmaMinus, SigmaPlus, {1, 0, 0, 0, 0, -1, 0, 1, 0}}}};
 
   const FlatSet<Attribute> MasterCuts{SigmaPlus, SigmaXYPlus};
+  const FlatSet<Attribute> AllCuts{SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus};
+  const FlatSet<Attribute> FixedFaces{Outer, SigmaPlus, SigmaMinus, SigmaXYPlus, SigmaXYMinus};
+#endif
 
   RotationPair::RotationPair(
     Attribute slave, Attribute master, std::initializer_list<Real> coefficients)

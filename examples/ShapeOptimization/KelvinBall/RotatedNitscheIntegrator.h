@@ -144,8 +144,8 @@ namespace KelvinBall
       auto stokesTrace(Trials trials, Tests tests, Real viscosity, Real penalty,
         Real pressureDiffusion) const
       {
-        static_assert(Trials::Size == 6 && Tests::Size == 6);
-        std::array<size_t, 6> offsets{};
+        static_assert(Trials::Size == Tests::Size && (Trials::Size == 2 || Trials::Size == 6));
+        std::array<size_t, Trials::Size> offsets{};
         size_t size = 0;
         trials.iapply([&](size_t i, const auto& trial) {
           offsets[i] = size;
@@ -353,6 +353,7 @@ namespace KelvinBall
   {
     const auto& mesh = velocity.getMesh();
     const size_t faceDimension = mesh.getDimension() - 1;
+    constexpr size_t loadCount = std::tuple_size_v<Offsets> / 2;
     const std::array<size_t, 3> velocityBlocks{0, 2, 4};
     const std::array<size_t, 3> pressureBlocks{1, 3, 5};
     FaceNormal normal(mesh);
@@ -400,7 +401,7 @@ namespace KelvinBall
 
           std::vector<Internal::StateBasis> basis;
           basis.reserve(96);
-          for (size_t load = 0; load < 3; ++load)
+          for (size_t load = 0; load < loadCount; ++load)
           {
             for (size_t node = 0; node < masterVelocity.values.size(); ++node)
             {
@@ -440,7 +441,7 @@ namespace KelvinBall
               basis.emplace_back(std::move(value));
             }
           }
-          for (size_t source = 0; source < 3; ++source)
+          for (size_t source = 0; source < loadCount; ++source)
           {
             for (size_t node = 0; node < slaveVelocity.values.size(); ++node)
             {
@@ -462,9 +463,9 @@ namespace KelvinBall
                     slaveVelocity.dofs[3 * node + component]),
                   Internal::zeroMatrix(), Internal::zeroMatrix(), Internal::zeroVector(),
                   Internal::zeroVector()};
-                for (size_t load = 0; load < 3; ++load)
+                for (size_t load = 0; load < loadCount; ++load)
                 {
-                  const Real coefficient = pair.rotation(load, source);
+                  const Real coefficient = loadCount == 1 ? Real(1) : pair.rotation(load, source);
                   Internal::setColumn(value.jump, load, -coefficient * transformedValue);
                   Internal::setColumn(
                     value.traction, load, -0.5 * coefficient * transformedTraction);
@@ -481,9 +482,9 @@ namespace KelvinBall
                   offsets[pressureBlocks[source]] + slavePressure.dofs[node]),
                 Internal::zeroMatrix(), Internal::zeroMatrix(), Internal::zeroVector(),
                 Internal::zeroVector()};
-              for (size_t load = 0; load < 3; ++load)
+              for (size_t load = 0; load < loadCount; ++load)
               {
-                const Real coefficient = pair.rotation(load, source);
+                const Real coefficient = loadCount == 1 ? Real(1) : pair.rotation(load, source);
                 Internal::setColumn(
                   value.traction, load, -0.5 * coefficient * transformedTraction);
                 value.pressureJump(load) = -coefficient * slavePressure.values[node];

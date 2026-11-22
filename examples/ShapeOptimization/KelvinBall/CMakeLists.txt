@@ -1,4 +1,4 @@
-add_library(KelvinBallSupport STATIC EXCLUDE_FROM_ALL
+set(kelvin_support_sources
   Common.cpp
   Configuration.cpp
   LaplacianSmoothing.cpp
@@ -6,7 +6,7 @@ add_library(KelvinBallSupport STATIC EXCLUDE_FROM_ALL
   RotatedNitscheIntegrator.cpp
   SewedOutput.cpp
   Sphere.cpp)
-target_link_libraries(KelvinBallSupport PUBLIC
+set(kelvin_libraries
   Rodin::Adaptation
   Rodin::Assembly
   Rodin::Geometry
@@ -15,10 +15,15 @@ target_link_libraries(KelvinBallSupport PUBLIC
   Rodin::Solver
   Rodin::Variational)
 
-add_executable(KelvinBall EXCLUDE_FROM_ALL
-  KelvinBall.cpp
-  KelvinBallOptimization.cpp)
-target_link_libraries(KelvinBall PRIVATE KelvinBallSupport Rodin::Advection)
-
-add_executable(KelvinBallSphere EXCLUDE_FROM_ALL KelvinBallSphere.cpp)
-target_link_libraries(KelvinBallSphere PRIVATE KelvinBallSupport)
+# Specialize the chamber geometry and load family at compile time.
+foreach(example IN ITEMS KelvinBall KelvinBallC3)
+  add_library(${example}Support STATIC EXCLUDE_FROM_ALL ${kelvin_support_sources})
+  target_link_libraries(${example}Support PUBLIC ${kelvin_libraries})
+  if(example STREQUAL "KelvinBallC3")
+    target_compile_definitions(${example}Support PUBLIC KELVIN_AXIAL_C3)
+  endif()
+  add_executable(${example} EXCLUDE_FROM_ALL KelvinBall.cpp KelvinBallOptimization.cpp)
+  target_link_libraries(${example} PRIVATE ${example}Support Rodin::Advection)
+  add_executable(${example}Sphere EXCLUDE_FROM_ALL KelvinBallSphere.cpp)
+  target_link_libraries(${example}Sphere PRIVATE ${example}Support)
+endforeach()
