@@ -55,7 +55,7 @@ namespace KelvinBall
        * @brief Discretizes the initial sphere in the chamber.
        *
        * With @p conformingCuts the cut triangles stay required, so paired
-       * cuts keep rotated-identical triangulations and the 24 copies weld
+       * cuts keep rotated-identical triangulations and the rotated copies weld
        * into one conforming mesh, as the full-domain validation needs; the
        * adaptation is then not applied. Otherwise the cuts are free, as for
        * every later reconstruction.
@@ -141,8 +141,10 @@ namespace KelvinBall
        */
       void projectFixedGeometry(MMG::Mesh& mesh) const;
 
-    private:
+      /// Initial uniform volume mesh before level-set discretization.
       Mesh makeUniformChamber() const;
+
+    private:
 
       const Configuration& m_configuration;
   };

@@ -295,7 +295,7 @@ namespace KelvinBall
           throw std::runtime_error("The resistance scale is not positive.");
         Math::SpatialMatrix<Real> reconstructed(3, 3);
         reconstructed.setZero();
-        for (const auto& R : SewedOutput::getCubeRotations())
+        for (const auto& R : SewedOutput::getRotations())
           reconstructed += R * coupling * R.transpose();
         Math::SpatialMatrix<Real> isotropic(3, 3);
         isotropic.setIdentity();

@@ -56,16 +56,21 @@ namespace KelvinBall
         continue;
       for (const Real sign : {Real(1), Real(-1)})
       {
-        IndexArray vertices(cell->getVertices().size());
-        for (size_t local = 0; local < vertices.size(); ++local)
+        for (size_t exchange = 0; exchange < (Tetrahedral ? 2u : 1u); ++exchange)
         {
-          Math::SpatialPoint x = cube.getVertexCoordinates(cell->getVertices()(local));
-          x(2) *= sign;
-          vertices(local) = insertVertex(x);
+          IndexArray vertices(cell->getVertices().size());
+          for (size_t local = 0; local < vertices.size(); ++local)
+          {
+            Math::SpatialPoint x = cube.getVertexCoordinates(cell->getVertices()(local));
+            x(2) *= sign;
+            if (exchange)
+              std::swap(x(0), x(1));
+            vertices(local) = insertVertex(x);
+          }
+          if ((sign < 0) != (exchange != 0))
+            std::swap(vertices(0), vertices(1));
+          cells.emplace_back(std::move(vertices), Fluid);
         }
-        if (sign < 0)
-          std::swap(vertices(0), vertices(1));
-        cells.emplace_back(std::move(vertices), Fluid);
       }
     }
 
@@ -85,8 +90,20 @@ namespace KelvinBall
     {
       const auto c = centroid(chamber, *face);
       Attribute attribute = 0;
-      if (std::abs(c(0) - m_configuration.outerRadius) < tolerance)
+      if (std::abs(c(0) - m_configuration.outerRadius) < tolerance ||
+        (Tetrahedral && std::abs(c(1) - m_configuration.outerRadius) < tolerance))
         attribute = Outer;
+      else if (Tetrahedral)
+      {
+        if (std::abs(c(1) - c(2)) < tolerance)
+          attribute = SigmaPlus;
+        else if (std::abs(c(0) - c(2)) < tolerance)
+          attribute = SigmaMinus;
+        else if (std::abs(c(0) + c(2)) < tolerance)
+          attribute = SigmaXYPlus;
+        else if (std::abs(c(1) + c(2)) < tolerance)
+          attribute = SigmaXYMinus;
+      }
       else if (std::abs(c(0) - c(1)) < tolerance)
         attribute = c(2) < 0 ? SigmaXYMinus : SigmaXYPlus;
       else if (std::abs(c(1) - c(2)) < tolerance)
@@ -129,6 +146,8 @@ namespace KelvinBall
       if (edge->getAttribute())
         mesh.setAttribute({1, edge->getIndex()}, {});
     }
+    // Distinguish x=L and y=L locally while keeping their common boundary condition.
+    constexpr Attribute outerYFeature = 8;
     const auto& faceEdges = mesh.getConnectivity().getIncidence(faceDimension, 1);
     std::map<Index, FlatSet<Attribute>> edgeLabels;
     std::map<Index, FlatSet<Attribute>> vertexLabels;
@@ -137,20 +156,22 @@ namespace KelvinBall
       const auto attribute = face->getAttribute();
       if (!attribute)
         continue;
+      const auto feature = Tetrahedral && *attribute == Outer &&
+          fixedPlane(mesh, *face) == ChamberPlane::OuterY ? outerYFeature : *attribute;
       for (const Index edge : faceEdges.at(face->getIndex()))
-        edgeLabels[edge].insert(*attribute);
+        edgeLabels[edge].insert(feature);
       for (const Index vertex : face->getVertices())
-        vertexLabels[vertex].insert(*attribute);
+        vertexLabels[vertex].insert(feature);
     }
     const auto onFixedFace = [&](const FlatSet<Attribute>& labels) {
       return std::any_of(labels.begin(), labels.end(),
-        [&](Attribute label) { return fixed.contains(label); });
+        [&](Attribute label) { return fixed.contains(label) || (Tetrahedral && label == outerYFeature); });
     };
     // The two halves of the x = y cut lie in one plane. The line between them
     // is a reference edge, which MMG keeps as a line of edges; a ridge there
     // would join two identical normals and leave its tangent undefined.
     const auto plane = [](Attribute label) {
-      return label == SigmaXYMinus ? SigmaXYPlus : label;
+      return !Tetrahedral && label == SigmaXYMinus ? SigmaXYPlus : label;
     };
     for (const auto& [edge, labels] : edgeLabels)
     {
@@ -173,20 +194,15 @@ namespace KelvinBall
 
   void Sphere::projectFixedGeometry(MMG::Mesh& mesh) const
   {
-    constexpr unsigned outer = 1, xy = 2, plus = 4, minus = 8;
     // Relative roundoff floor, not an additional mesh-quality budget.
     constexpr Real roundoff = 64 * std::numeric_limits<Real>::epsilon();
     std::vector<unsigned> constraints(mesh.getVertexCount(), 0);
     for (auto face = mesh.getFace(); face; ++face)
     {
-      const auto attribute = face->getAttribute();
-      if (!attribute)
+      const auto plane = fixedPlane(mesh, *face);
+      if (plane == ChamberPlane::None)
         continue;
-      const unsigned constraint = *attribute == Outer               ? outer
-        : (*attribute == SigmaXYPlus || *attribute == SigmaXYMinus) ? xy
-        : *attribute == SigmaPlus                                   ? plus
-        : *attribute == SigmaMinus                                  ? minus
-                                                                    : 0;
+      const unsigned constraint = 1u << static_cast<unsigned>(plane);
       for (const Index vertex : face->getVertices())
         constraints[vertex] |= constraint;
     }
@@ -204,15 +220,13 @@ namespace KelvinBall
       size_t rank = 0;
       // Orthogonalize the affine equations together. Successive projections
       // onto the original planes would not preserve their intersections.
-      for (const unsigned constraint : {outer, xy, plus, minus})
+      for (unsigned i = 0; i < static_cast<unsigned>(ChamberPlane::None); ++i)
       {
-        if (!(constraints[vertex] & constraint))
+        if (!(constraints[vertex] & (1u << i)))
           continue;
-        Math::SpatialPoint normal(3);
-        normal(0) = (constraint == outer || constraint == xy) ? 1 : 0;
-        normal(1) = constraint == outer ? 0 : constraint == xy ? -1 : 1;
-        normal(2) = constraint == plus ? -1 : constraint == minus ? 1 : 0;
-        Real offset = constraint == outer ? m_configuration.outerRadius : 0;
+        const auto plane = static_cast<ChamberPlane>(i);
+        auto normal = planeNormal(plane);
+        Real offset = planeOffset(plane, m_configuration.outerRadius);
         for (size_t i = 0; i < rank; ++i)
         {
           const Real coefficient = normal.dot(basis[i]);

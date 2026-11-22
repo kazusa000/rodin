@@ -5,6 +5,7 @@
  *          https://www.boost.org/LICENSE_1_0.txt)
  */
 #include "SewedOutput.h"
+#include "Common.h"
 
 #include <algorithm>
 #include <array>
@@ -79,7 +80,7 @@ namespace KelvinBall
       });
   }
 
-  const std::vector<Math::SpatialMatrix<Real>>& SewedOutput::getCubeRotations()
+  const std::vector<Math::SpatialMatrix<Real>>& SewedOutput::getRotations()
   {
     static const std::vector<Math::SpatialMatrix<Real>> rotations = [] {
       std::vector<Math::SpatialMatrix<Real>> result;
@@ -97,7 +98,8 @@ namespace KelvinBall
               rotation(0, permutation[0]) = sx;
               rotation(1, permutation[1]) = sy;
               rotation(2, permutation[2]) = sz;
-              if (std::abs(rotation.determinant() - 1) < 1e-12)
+              if ((!Tetrahedral || sx * sy * sz == 1) &&
+                  std::abs(rotation.determinant() - 1) < 1e-12)
                 result.push_back(rotation);
             }
           }
@@ -110,7 +112,7 @@ namespace KelvinBall
 
   SewedOutput::SewedOutput(
     const Mesh& chamber, const FlatSet<Attribute>& boundaryAttributes, Real tolerance)
-    : m_rotations(getCubeRotations())
+    : m_rotations(getRotations())
   {
     Mesh::Builder builder;
     {

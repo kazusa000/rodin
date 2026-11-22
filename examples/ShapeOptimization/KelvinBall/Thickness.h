@@ -31,7 +31,7 @@ namespace KelvinBall
    * interface quadrature point. The ray finds its first outward crossing
    * of the complete surface, at distance @f$ t @f$. The measured penalty
    * integrates @f$ (D-t)_+^2 @f$. A single AABB tree of the chamber
-   * interface is queried with all 24 inverse-rotated ray segments.
+   * interface is queried with all inverse-rotated ray segments.
    *
    * The update uses a bounded paired-point differential weighted by
    * @f$ (m\cdot d)^2 @f$. This is a local surrogate, not the shape
@@ -182,7 +182,7 @@ namespace KelvinBall
           {{Real(2) / 3, Real(1) / 6, Real(1) / 6},
             {Real(1) / 6, Real(2) / 3, Real(1) / 6},
             {Real(1) / 6, Real(1) / 6, Real(2) / 3}}};
-        const auto& rotations = SewedOutput::getCubeRotations();
+        const auto& rotations = SewedOutput::getRotations();
         const Real multiplicity = static_cast<Real>(rotations.size());
         const size_t D = mesh.getDimension();
         auto fluidNormal = FaceNormal(mesh);
@@ -514,7 +514,7 @@ namespace KelvinBall
           return exit;
         const Real originTolerance = std::max(Real(1e-12), Real(1e-10) * m_minimum);
         std::vector<Index> pending;
-        const auto& rotations = SewedOutput::getCubeRotations();
+        const auto& rotations = SewedOutput::getRotations();
         for (size_t r = 0; r < rotations.size(); ++r)
         {
           const Math::SpatialVector<Real> localOrigin = rotations[r].transpose() * origin;

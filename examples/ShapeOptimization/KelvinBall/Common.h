@@ -44,7 +44,12 @@ namespace KelvinBall
   inline constexpr Real DefaultNitschePenalty = 320;
   inline constexpr Real DefaultStabilizationFactor = 0.05;
   inline constexpr Real LinearResidualTolerance = 1e-8;
-  inline constexpr size_t ChamberMultiplicity = 24;
+#ifdef KELVIN_TETRAHEDRAL
+  inline constexpr bool Tetrahedral = true;
+#else
+  inline constexpr bool Tetrahedral = false;
+#endif
+  inline constexpr size_t ChamberMultiplicity = Tetrahedral ? 12 : 24;
 
 #ifdef RODIN_USE_MUMPS
   inline constexpr const char* DirectSolverName = "MUMPS";
@@ -72,6 +77,11 @@ namespace KelvinBall
   extern const FlatSet<Attribute> MasterCuts;
 
   Math::SpatialPoint centroid(const Mesh& mesh, const Polytope& face);
+
+  enum class ChamberPlane { OuterX, XY, YMinusZ, YPlusZ, OuterY, XMinusZ, XPlusZ, None };
+  ChamberPlane fixedPlane(const Mesh& mesh, const Polytope& face);
+  Math::SpatialPoint planeNormal(ChamberPlane plane);
+  Real planeOffset(ChamberPlane plane, Real outerRadius);
 
   /**
    * @brief Local mesh size of a cell.

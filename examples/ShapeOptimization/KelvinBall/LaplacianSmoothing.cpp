@@ -46,25 +46,10 @@ namespace KelvinBall
         for (const Index vertex : face->getVertices())
           fixed[vertex] = true;
       }
-      Math::SpatialVector<Real> normal(3);
-      normal.setZero();
-      if (attribute == SigmaPlus)
-      {
-        normal(1) = 1;
-        normal(2) = -1;
-      }
-      else if (attribute == SigmaMinus)
-      {
-        normal(1) = 1;
-        normal(2) = 1;
-      }
-      else if (attribute == SigmaXYPlus || attribute == SigmaXYMinus)
-      {
-        normal(0) = 1;
-        normal(1) = -1;
-      }
-      else
+      const auto plane = fixedPlane(mesh, *face);
+      if (attribute == Outer || plane == ChamberPlane::None)
         continue;
+      const auto normal = planeNormal(plane);
       for (const Index vertex : face->getVertices())
       {
         auto independent = normal;

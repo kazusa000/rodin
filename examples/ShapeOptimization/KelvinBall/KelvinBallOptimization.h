@@ -19,7 +19,7 @@ namespace KelvinBall
    * evaluation, shape differentiation, Hilbert identification, Feppon
    * null-space projection, sewn output, level-set advection, and SWIFT
    * reconstruction (or optional MMG reconstruction). The initial sphere and
-   * every accepted iterate are sewn into a complete 24-copy design before
+   * every accepted iterate are sewn into a complete design before
    * the level set is advanced.
    *
    * Architecture:

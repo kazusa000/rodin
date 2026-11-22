@@ -369,7 +369,7 @@ namespace KelvinBall
         }
         const auto& options = *m_reconstructionOptions;
         MinSTCut classifier(static_cast<const KelvinBall::Mesh&>(classified));
-        decltype(classifier)::Parameters parameters;
+        typename decltype(classifier)::Parameters parameters;
         parameters.fidelity = options.classification.fidelity;
         parameters.smoothing = [&](const Polytope& face) {
           const auto& cells =
@@ -706,6 +706,7 @@ namespace KelvinBall
         const Real initialGridSpacing = m_options.configuration.getGridSpacing();
         Alert::Info configurationInfo;
         configurationInfo << substageHeading("Configuration") << Alert::NewLine
+                          << diagnosticLabel("Chamber rotations:") << ChamberMultiplicity << Alert::NewLine
                           << diagnosticLabel("Grid points:")
                           << Alert::Notation::Number(points) << Alert::NewLine
                           << diagnosticLabel("Outer radius:")
@@ -964,25 +965,6 @@ namespace KelvinBall
       using VelocitySpace = P1<Math::SpatialVector<Real>, LocalMesh>;
       using PressureSpace = P1<Real, LocalMesh>;
 
-      Real planeResidual(
-        Attribute attribute, const Math::SpatialPoint& x, Real outerRadius)
-      {
-        switch (attribute)
-        {
-          case Outer:
-            return std::abs(x(0) - outerRadius);
-          case SigmaPlus:
-            return std::abs(x(1) - x(2));
-          case SigmaMinus:
-            return std::abs(x(1) + x(2));
-          case SigmaXYPlus:
-          case SigmaXYMinus:
-            return std::abs(x(0) - x(1));
-          default:
-            return 0;
-        }
-      }
-
       void checkFixedGeometry(const LocalMesh& mesh, Real outerRadius)
       {
         const FlatSet<Attribute> fixed{
@@ -995,10 +977,13 @@ namespace KelvinBall
           if (!attribute || !fixed.contains(*attribute))
             continue;
           ++counts[*attribute];
+          const auto plane = fixedPlane(mesh, *face);
+          const auto normal = planeNormal(plane);
+          const Real offset = planeOffset(plane, outerRadius);
           for (const Index vertex : face->getVertices())
           {
             const auto& x = mesh.getVertexCoordinates(vertex);
-            residual = std::max(residual, planeResidual(*attribute, x, outerRadius));
+            residual = std::max(residual, std::abs(normal.dot(x) - offset));
           }
         }
         for (const Attribute attribute : fixed)
@@ -1143,7 +1128,7 @@ namespace KelvinBall
         Math::SpatialPoint maximum(3);
         minimum.setConstant(std::numeric_limits<Real>::infinity());
         maximum.setConstant(-std::numeric_limits<Real>::infinity());
-        const auto& rotations = KelvinBall::SewedOutput::getCubeRotations();
+        const auto& rotations = KelvinBall::SewedOutput::getRotations();
         for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
         {
           for (const auto& rotation : rotations)

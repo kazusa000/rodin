@@ -10,11 +10,19 @@
 
 namespace KelvinBall
 {
+#ifdef KELVIN_TETRAHEDRAL
+  // y=z -> x=z, and x=-z -> y=-z. No self-paired x=y cut.
+  const std::array<RotationPair, 2> RotationPairs{
+    {{SigmaPlus, SigmaMinus, {0, 0, 1, 1, 0, 0, 0, 1, 0}},
+      {SigmaXYPlus, SigmaXYMinus, {0, 1, 0, 0, 0, -1, -1, 0, 0}}}};
+  const FlatSet<Attribute> MasterCuts{SigmaMinus, SigmaXYMinus};
+#else
   const std::array<RotationPair, 2> RotationPairs{
     {{SigmaXYMinus, SigmaXYPlus, {0, 1, 0, 1, 0, 0, 0, 0, -1}},
       {SigmaMinus, SigmaPlus, {1, 0, 0, 0, 0, -1, 0, 1, 0}}}};
 
   const FlatSet<Attribute> MasterCuts{SigmaPlus, SigmaXYPlus};
+#endif
 
   RotationPair::RotationPair(
     Attribute slave, Attribute master, std::initializer_list<Real> coefficients)
@@ -34,6 +42,48 @@ namespace KelvinBall
   {
     const Geometry::Point point(face, Polytope::Traits(face.getGeometry()).getCentroid());
     return point.getPhysicalCoordinates();
+  }
+
+  ChamberPlane fixedPlane(const Mesh& mesh, const Polytope& face)
+  {
+    using enum ChamberPlane;
+    const auto label = face.getAttribute();
+    if (label == Outer)
+    {
+      if (Tetrahedral)
+      {
+        const auto c = centroid(mesh, face);
+        if (c(1) > c(0))
+          return OuterY;
+      }
+      return OuterX;
+    }
+    if (label == SigmaPlus) return YMinusZ;
+    if (label == SigmaMinus) return Tetrahedral ? XMinusZ : YPlusZ;
+    if (label == SigmaXYPlus) return Tetrahedral ? XPlusZ : XY;
+    if (label == SigmaXYMinus) return Tetrahedral ? YPlusZ : XY;
+    return None;
+  }
+
+  Math::SpatialPoint planeNormal(ChamberPlane plane)
+  {
+    using enum ChamberPlane;
+    switch (plane)
+    {
+      case OuterX: return {1, 0, 0};
+      case OuterY: return {0, 1, 0};
+      case XY: return {1, -1, 0};
+      case YMinusZ: return {0, 1, -1};
+      case YPlusZ: return {0, 1, 1};
+      case XMinusZ: return {1, 0, -1};
+      case XPlusZ: return {1, 0, 1};
+      default: throw std::logic_error("Face has no prescribed chamber plane.");
+    }
+  }
+
+  Real planeOffset(ChamberPlane plane, Real outerRadius)
+  {
+    return plane == ChamberPlane::OuterX || plane == ChamberPlane::OuterY ? outerRadius : 0;
   }
 
   Real cellSize(const Polytope& cell)
@@ -68,6 +118,8 @@ namespace KelvinBall
 
   void splitSelfPairedCut(Mesh& mesh)
   {
+    if (Tetrahedral)
+      return;
     const size_t faceDimension = mesh.getDimension() - 1;
     for (auto face = mesh.getPolytope(faceDimension); face; ++face)
     {
