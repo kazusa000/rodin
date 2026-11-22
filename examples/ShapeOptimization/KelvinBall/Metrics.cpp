@@ -28,19 +28,15 @@ namespace KelvinBall
     const auto axis = axialDirection();
     const auto solve = [&](const auto& rigid, auto& state, auto& pressure) {
       Problem stokes(u, p, lambda, v, q, eta);
-      const auto bulk = Integral(2 * Mu * Du, Dv) - Integral(p, Div(v)) -
+      const auto trace = coupling
+        ? coupling->stokesTrace(Tuple(std::cref(u), std::cref(p)),
+            Tuple(std::cref(v), std::cref(q)), Mu, m_parameters.nitschePenalty,
+            -m_parameters.pressureStabilization())
+        : ProblemBody<Math::SparseMatrix<Real>, Math::Vector<Real>, Real>{};
+      stokes = Integral(2 * Mu * Du, Dv) + trace.getBFs() - Integral(p, Div(v)) -
         Integral(Div(u), q) - Integral(tau * Grad(p), Grad(q)) +
         Integral(lambda, q) + Integral(p, eta) + DirichletBC(u, rigid).on(Gamma) +
         DirichletBC(u, VectorFunction{0, 0, 0}).on(Outer);
-      if (coupling)
-      {
-        const auto trace = coupling->stokesTrace(Tuple(std::cref(u),std::cref(p)),
-          Tuple(std::cref(v),std::cref(q)), Mu, m_parameters.nitschePenalty,
-          -m_parameters.pressureStabilization());
-        stokes = bulk + trace.getBFs();
-      }
-      else
-        stokes = bulk;
       stokes.assemble();
       solveDirect(stokes);
       const auto& system = stokes.getLinearSystem();
