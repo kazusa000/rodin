@@ -40,7 +40,6 @@
 #include <Rodin/MMG.h>
 #include <Rodin/Variational.h>
 
-#include "AxialCut.h"
 #include "Configuration.h"
 #include "Metrics.h"
 #include "RotatedCharacteristicContinuation.h"
@@ -91,7 +90,7 @@ namespace KelvinBall
           Real stepFactor = 0.1;
         Real minimumThickness = 0;
         Math::SpatialVector<Real> motionForce;
-          std::string reconstructionMethod = AxialC3 ? "paired" : "swift";
+          std::string reconstructionMethod = "swift";
 
           bool parse(int argc, char** argv)
           {
@@ -157,9 +156,7 @@ namespace KelvinBall
             throw std::runtime_error("--thickness-min must be nonnegative.");
           if (!std::isfinite(motionForce.norm()) || !(motionForce.norm() > 0))
               throw std::runtime_error("The motion force must be finite and nonzero.");
-            if (AxialC3 && reconstructionMethod != "paired")
-              throw std::runtime_error("C3 optimisation requires --reconstruction=paired to preserve the rotated seam.");
-            if (!AxialC3 && reconstructionMethod != "mmg" && reconstructionMethod != "swift")
+            if (reconstructionMethod != "mmg" && reconstructionMethod != "swift")
               throw std::runtime_error("The reconstruction method must be mmg or swift.");
             if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
               throw std::runtime_error(
@@ -801,7 +798,7 @@ namespace KelvinBall
         const Real outerRadius = m_options.configuration.outerRadius;
         SphereDiscretization initial = m_options.reconstructionMethod == "swift"
           ? sphere.prepareSWIFTBackground(requestedWelschScale)
-          : sphere.discretize(AxialC3, requestedWelschScale);
+          : sphere.discretize(false, requestedWelschScale);
         ReconstructionDiagnostics reconstruction = initial.diagnostics;
         Optional<MMG::Mesh> swiftBackground;
         Real backgroundH = std::numeric_limits<Real>::quiet_NaN();
@@ -850,17 +847,7 @@ namespace KelvinBall
         {
           mesh = std::move(initial.mesh);
         }
-        if constexpr (AxialC3)
-        {
-          if (m_options.configuration.adapt)
-          {
-            sphere.adapt(mesh, requestedWelschScale, true);
-            reconstruction.cellsAfter = mesh.getCellCount();
-          }
-          AxialCut validated(mesh);
-        }
-        else
-          smoothReconstruction(mesh);
+        smoothReconstruction(mesh);
         return {std::move(mesh), std::move(swiftBackground), backgroundH, reconstruction};
       }
 
@@ -898,7 +885,7 @@ namespace KelvinBall
           << "  Force for the Motion field at each iterate (default: 1,0,0)."
 
           << Alert::NewLine << Alert::Notation("--reconstruction=<method>")
-          << (AxialC3 ? "  Paired-node deformation (default: paired)." : "  Interface reconstruction: swift or mmg (default: swift).")
+          << "  Interface reconstruction: swift or mmg (default: swift)."
           << Alert::NewLine << Alert::Notation("--background-hausdorff=<value>")
           << " SWIFT background Hausdorff tolerance, in h0 (default: 0.05)."
           << Alert::NewLine << Alert::Notation("--background-gradation=<value>")
@@ -1004,28 +991,7 @@ namespace KelvinBall
       // Restore the discrete solid volume after transport and reconstruction.
       // A dilation of the solid scales its volume by s^3 and commutes with C3.
       // Extend it continuously into the fluid with zero motion on the cube.
-      static bool preservesOrientation(const LocalMesh& source, const LocalMesh& moved)
-      {
-        for (auto cell = source.getCell(); cell; ++cell)
-        {
-          const auto& nodes = cell->getVertices();
-          const auto determinant = [&](const LocalMesh& grid) {
-            Math::SpatialMatrix<Real> jacobian(3, 3);
-            for (size_t col = 0; col < 3; ++col)
-            {
-              const auto edge = grid.getVertexCoordinates(nodes[col + 1]) - grid.getVertexCoordinates(nodes[0]);
-              for (size_t row = 0; row < 3; ++row)
-                jacobian(row, col) = edge(row);
-            }
-            return jacobian.determinant();
-          };
-          if (!(determinant(source) * determinant(moved) > 0))
-            return false;
-        }
-        return true;
-      }
-
-      bool restoreAxialVolume(LocalMesh& mesh, Real target, Real outerRadius)
+      void restoreAxialVolume(LocalMesh& mesh, Real target, Real outerRadius)
       {
         const Real volume = mesh.getVolume(Obstacle);
         if (!(volume > 0 && target > 0))
@@ -1041,7 +1007,7 @@ namespace KelvinBall
           }
         }
         if (!(solidExtent < outerRadius && scale * solidExtent < outerRadius))
-          return false;
+          throw std::runtime_error("The volume-corrected solid would touch the outer wall.");
         std::vector<Math::SpatialPoint> coordinates(mesh.getVertexCount());
         for (Index i = 0; i < coordinates.size(); ++i)
         {
@@ -1065,13 +1031,12 @@ namespace KelvinBall
             }
           }
           if (!(before.determinant() * after.determinant() > 0))
-            return false;
+            throw std::runtime_error("Volume restoration would invert a tetrahedron.");
         }
         for (Index i = 0; i < coordinates.size(); ++i)
           mesh.setVertexCoordinates(i,coordinates[i]);
         if (std::abs(mesh.getVolume(Obstacle) / target - 1) > 1e-10)
           throw std::runtime_error("The reconstructed C3 solid missed its target volume.");
-        return true;
       }
 
       void checkFixedGeometry(const LocalMesh& mesh, Real outerRadius)
@@ -2189,14 +2154,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         volumeGradientDiagnostics =
           identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
       }
-      if constexpr (AxialC3)
-      {
-        const AxialCut cut(mesh);
-        cut.project(rhoGradient);
-        cut.project(volumeGradient);
-        if (m_options.minimumThickness > 0)
-          cut.project(thicknessDescent);
-      }
       TestFunction testField(shapeSpace);
       auto interfaceNormal = FaceNormal(mesh);
       interfaceNormal.traceOf(Fluid);
@@ -2582,58 +2539,6 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           continue;
         }
 
-        if constexpr (AxialC3)
-        {
-          xdmf.write(static_cast<Real>(iteration)).flush();
-          writeSewedDesign(nullptr);
-          sewedXdmf.flush();
-          chamber.clear();
-          fluidState.clear();
-          interfaceOutput.clear();
-          sewedDesignOutput.clear();
-          sewedFluidOutput.clear();
-          stageSeconds[6] = elapsedSeconds(stage7Start);
-          const auto updateStart = Clock::now();
-          for (size_t reduction = 0; reduction < 12; ++reduction)
-          {
-            const Real step = std::ldexp(dt, -static_cast<int>(reduction));
-            MMG::Mesh trial(mesh);
-            for (Index i = 0; i < mesh.getVertexCount(); ++i)
-            {
-              auto x = mesh.getVertexCoordinates(i);
-              const auto dofs = shapeSpace.getDOFs(0, i);
-              for (size_t j = 0; j < 3; ++j)
-                x(j) += step * theta.getData()(dofs(j));
-              trial.setVertexCoordinates(i, x);
-            }
-            if (!preservesOrientation(mesh, trial))
-              continue;
-            if (!restoreAxialVolume(trial, targetVolume, outerRadius))
-              continue;
-            AxialCut validated(trial);
-            auto trialFluid = trial.trim(Obstacle);
-            Metrics trialMetrics({meanElementSize(trial), nitschePenalty, stabilizationFactor});
-            const Real newC = trialMetrics.evaluateChamber(trialFluid).c;
-            std::cout << "C3 trial step=" << step << " delta_C=" << newC - c << '\n';
-            if (newC > c + 64 * std::numeric_limits<Real>::epsilon() * std::sqrt(k * q))
-            {
-              predictedRhoChange = step * dRhoTheta;
-              predictedVolumeChange = step * dVolumeTheta;
-              if (m_options.minimumThickness > 0)
-                predictedThicknessChange = step * stageDiagnostics.dThicknessTheta;
-              nextMesh.emplace(std::move(trial));
-              break;
-            }
-          }
-          stageSeconds[7] = elapsedSeconds(updateStart);
-          writeHistory(nullSpaceMultiplier, xiRhoInfinityNorm, thetaInfinityNorm,
-            dRhoTheta, dVolumeTheta, requiredDVolumeTheta, rhoGradientDiagnostics,
-            volumeGradientDiagnostics, stageDiagnostics);
-          if (!nextMesh)
-            throw std::runtime_error("No volume-preserving trial increased signed axial C.");
-          continue;
-        }
-
         stageSeconds[6] = elapsedSeconds(stage7Start);
         reportStageTiming(7, stageSeconds[6]);
         const auto stage8Start = Clock::now();
@@ -2864,6 +2769,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
     }();
     smoothReconstruction(result.mesh);
+    if constexpr (AxialC3)
+      restoreAxialVolume(result.mesh, targetVolume, outerRadius);
     reconstruction = result.diagnostics;
     if (reconstructionXdmf)
     {

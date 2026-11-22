@@ -42,30 +42,28 @@ Two Stokes solutions supply the velocity fields for translation along $e$ and
 rotation about $e$. Their cross dissipation, integrated over three copies of the
 chamber, gives `c_parallel`. Larger signed values are preferred.
 `k_parallel`, `q_parallel`, and `rho_parallel` are diagnostics.
-The starting body is the fitted unit sphere. The constrained direction has zero
-first volume derivative. Corresponding nodes move together on the two cuts.
-Each candidate uses the same tetrahedral connectivity. A dilation restores the
-initial discrete solid volume, tapered to zero displacement at the box wall.
-The program checks tetrahedron orientation and the final relative volume error
-(tolerance $10^{-10}$), then solves both axial Stokes problems on the displaced mesh.
-If the signed coupling fails to increase, the search halves the displacement.
-After twelve unsuccessful trials it stops and records the last evaluated state.
-CSV volumes refer to the chamber; multiply by three
-for the complete body.
+The starting body is the SWIFT-fitted unit sphere. Each update transports the
+level set, adapts the background with MMG and fits the new interface with SWIFT.
+After fitting, a dilation restores the initial discrete solid volume, tapering
+to zero displacement at the box wall. The program checks tetrahedron orientation
+and the relative volume error (tolerance $10^{-10}$). CSV volumes refer to one
+chamber. Multiply by three for the complete body.
 
-Run the two commands in separate output directories. For example, on a diagnostic
-L10 grid:
+Run the sphere check and the L10 optimisation in separate output directories:
 
 ```sh
 KelvinBallC3Sphere --outer-radius=10 --n=9 --check-handedness
-KelvinBallC3 --outer-radius=10 --n=11 --iterations=2 --regularization=20 --step=0.2 \
-  --reconstruction=paired --thickness-min=0.05
+OMP_NUM_THREADS=7 KelvinBallC3 --outer-radius=10 --n=50 --iterations=21 \
+  --hmin-factor=0.05 --hmax-factor=50 --regularization=20 --step=0.2 \
+  --reconstruction=swift --mmg-adapt --thickness-min=0.05 \
+  --swift-linear-solver=mumps --swift-linear-threads=7 --swift-model-fit=10 \
+  --swift-convergence-iterations-outer=30 --swift-convergence-iterations-inner=15
 ```
 
 The first command compares a reduced sphere solve against an independent full
 cube solve and checks that a twisted test body and its mirror have opposite
 axial coupling. Only the validation tool constructs this test body. The second
-command evaluates the sphere and one updated shape. Each scored state is one
+command evaluates the sphere and twenty updated shapes. Each scored state is one
 row of `kelvin-ball.csv`. Use `actual_delta_c`, `predicted_delta_c`, and
 `volume_error` to inspect each update.
 
