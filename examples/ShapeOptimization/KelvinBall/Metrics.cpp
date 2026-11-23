@@ -38,7 +38,7 @@ namespace KelvinBall
         Integral(lambda, q) + Integral(p, eta) + DirichletBC(u, rigid).on(Gamma) +
         DirichletBC(u, VectorFunction{0, 0, 0}).on(Outer);
       stokes.assemble();
-      solveDirect(stokes);
+      solveDirect</*UseAMDOrdering=*/true>(stokes);
       const auto& system = stokes.getLinearSystem();
       const Real residual =
         (system.getOperator() * system.getSolution() - system.getVector()).norm() /

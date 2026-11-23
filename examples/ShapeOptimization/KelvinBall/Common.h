@@ -110,12 +110,14 @@ namespace KelvinBall
    * factorization stores about half of the corresponding @f$ LU @f$, which is
    * what keeps the three-family chamber system within memory.
    */
-  template <class Problem>
+  template <bool UseAMDOrdering = false, class Problem>
   void solveDirect(Problem& problem)
   {
 #ifdef RODIN_USE_MUMPS
     Solver::MUMPS solver(problem);
     solver.setSymmetric(decltype(solver)::Symmetry::General);
+    if constexpr (UseAMDOrdering)
+      solver.setOrdering(decltype(solver)::Ordering::AMD);
 #elif defined(RODIN_USE_UMFPACK)
     Solver::UMFPack solver(problem);
 #else
