@@ -81,7 +81,7 @@ namespace KelvinBall
           }
 
           Configuration configuration;
-          size_t maxIterations = 1;
+          Optional<size_t> maxIterations = 1;
           std::string resumeHistory;
           Optional<size_t> resumeAfter;
           Optional<Real> resumeTargetVolume;
@@ -103,7 +103,9 @@ namespace KelvinBall
               const StringView mode(argv[argument]);
               if (configuration.parse(mode))
                 continue;
-              if (mode.rfind("--iterations=", 0) == 0)
+              if (mode == "--iterations=unlimited")
+                maxIterations.reset();
+              else if (mode.rfind("--iterations=", 0) == 0)
                 maxIterations = std::stoul(std::string(mode.substr(13)));
               else if (mode.starts_with("--resume-history="))
                 resumeHistory = mode.substr(17);
@@ -160,7 +162,7 @@ namespace KelvinBall
               if (!AxialC3 || reconstructionMethod != "swift" || !configuration.adapt ||
                   !resumeAfter || resumeHistory.empty() || !resumeTargetVolume ||
                   !std::isfinite(*resumeTargetVolume) || *resumeTargetVolume <= 0 ||
-                  *resumeAfter >= maxIterations - 1)
+                  (maxIterations && *resumeAfter >= *maxIterations - 1))
                 throw std::runtime_error("C3 history continuation requires adaptive SWIFT, "
                   "a history directory, a completed advection step below the final state, "
                   "and the original target volume.");
@@ -780,7 +782,8 @@ namespace KelvinBall
                           << Alert::NewLine << diagnosticLabel("Requested maximum size:")
                           << Alert::Notation::Number(m_options.configuration.hmax)
                           << Alert::NewLine << diagnosticLabel("Evaluated designs:")
-                          << Alert::Notation::Number(m_options.maxIterations)
+                          << (m_options.maxIterations
+                                ? std::to_string(*m_options.maxIterations) : "unlimited")
                           << Alert::NewLine << diagnosticLabel("Nitsche penalty:")
                           << Alert::Notation::Number(nitschePenalty) << Alert::NewLine
                           << diagnosticLabel("Stabilization factor:")
@@ -982,8 +985,8 @@ namespace KelvinBall
           << Alert::Notation("--resume-history=<dir> --resume-after=<state> --resume-target-volume=<value>")
           << "  Resume adaptive C3 SWIFT after a saved advection in the original run."
           << Alert::NewLine
-          << Alert::Notation("--iterations=<count>")
-          << "       Number of evaluated designs (default: 1)." << Alert::NewLine
+          << Alert::Notation("--iterations=<count|unlimited>")
+          << " Number of evaluated designs (default: 1), or continue until stopped." << Alert::NewLine
           << Alert::Notation("--penalty=<value>")
           << "          Rotational Nitsche penalty (default: 320)." << Alert::NewLine
           << Alert::Notation("--stabilization=<value>")
@@ -1742,7 +1745,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<KelvinBall::RotatedNitscheIntegrator> backgroundCoupling;
 
   const size_t firstState = m_options.resumeAfter ? *m_options.resumeAfter + 1 : 0;
-  for (size_t iteration = firstState; iteration < m_options.maxIterations; ++iteration)
+  for (size_t iteration = firstState;
+       !m_options.maxIterations || iteration < *m_options.maxIterations; ++iteration)
   {
     std::array<Real, 9> stageSeconds;
     stageSeconds.fill(nan);
@@ -1770,8 +1774,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
     const Real dt = m_options.stepFactor * initialGridSpacing;
     Alert::Info() << " ------------------------------------------------------------"
                   << Alert::NewLine << " Iteration "
-                  << Alert::Notation::Number(iteration + 1) << " of "
-                  << Alert::Notation::Number(m_options.maxIterations) << Alert::NewLine
+                  << Alert::Notation::Number(iteration + 1)
+                  << (m_options.maxIterations
+                        ? " of " + std::to_string(*m_options.maxIterations) : " (unlimited)")
+                  << Alert::NewLine
                   << " ------------------------------------------------------------"
                   << Alert::Raise;
     Alert::Info() << substageHeading("Current mesh scale") << Alert::NewLine
@@ -2642,7 +2648,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
             sewedDesignOutput.write(static_cast<Real>(iteration)).clear();
           };
 
-        if (iteration + 1 == m_options.maxIterations)
+        if (m_options.maxIterations && iteration + 1 == *m_options.maxIterations)
         {
           xdmf.write(static_cast<Real>(iteration)).flush();
           writeSewedDesign(nullptr);
