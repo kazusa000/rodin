@@ -85,6 +85,7 @@ namespace KelvinBall
           std::string resumeHistory;
           Optional<size_t> resumeAfter;
           Optional<Real> resumeTargetVolume;
+          Optional<Real> initialTargetVolume;
           bool saveMeshDiagnostic = false;
           bool geometryOnly = false;
           bool stateOnly = false;
@@ -107,6 +108,8 @@ namespace KelvinBall
                 maxIterations.reset();
               else if (mode.rfind("--iterations=", 0) == 0)
                 maxIterations = std::stoul(std::string(mode.substr(13)));
+              else if (AxialC3 && mode.starts_with("--initial-target-volume="))
+                initialTargetVolume = std::stod(std::string(mode.substr(24)));
               else if (mode.starts_with("--resume-history="))
                 resumeHistory = mode.substr(17);
               else if (mode.starts_with("--resume-after="))
@@ -155,6 +158,9 @@ namespace KelvinBall
                   "Unknown KelvinBall option: " + std::string(mode));
             }
             configuration.finalize();
+            if (initialTargetVolume && (resumeAfter || !std::isfinite(*initialTargetVolume) ||
+                *initialTargetVolume <= 0))
+              throw std::runtime_error("A fresh axial run requires a positive finite initial target volume.");
             if (maxIterations == 0)
               throw std::runtime_error("The iteration count must be positive.");
             if (resumeAfter || !resumeHistory.empty() || resumeTargetVolume)
@@ -982,6 +988,8 @@ namespace KelvinBall
           << "       Maximum MMG size / reference spacing h0 (default: 10)."
           << Alert::NewLine << Alert::Notation("--outer-radius=<value>")
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
+          << Alert::Notation("--alternate-sphere-mesh --initial-target-volume=<value>")
+          << "  Optional axial mesh redistribution and initial chamber volume." << Alert::NewLine
           << Alert::Notation("--resume-history=<dir> --resume-after=<state> --resume-target-volume=<value>")
           << "  Resume adaptive C3 SWIFT after a saved advection in the original run."
           << Alert::NewLine
@@ -1649,6 +1657,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   auto initial = m_options.resumeAfter ? resume(sphere, requestedWelschScale)
                                       : initialize(sphere, requestedWelschScale);
   MMG::Mesh mesh = std::move(initial.mesh);
+  if (m_options.initialTargetVolume)
+    restoreAxialVolume(mesh, *m_options.initialTargetVolume, outerRadius);
   Optional<MMG::Mesh> swiftBackground = std::move(initial.background);
   Real backgroundH = initial.backgroundH;
   ReconstructionDiagnostics reconstruction = initial.diagnostics;
@@ -1671,7 +1681,8 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)
     return 0;
-  const Real targetVolume = m_options.resumeTargetVolume.value_or(mesh.getVolume(Obstacle));
+  const Real targetVolume = m_options.resumeTargetVolume.value_or(
+    m_options.initialTargetVolume.value_or(mesh.getVolume(Obstacle)));
 
   std::ofstream history("kelvin-ball.csv");
   history.precision(17);

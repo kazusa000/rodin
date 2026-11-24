@@ -40,7 +40,27 @@ namespace KelvinBall
           nodes.emplace(Node{x,y,z}, nodes.size());
     builder.nodes(nodes.size());
     for (const auto& [node, index] : nodes)
-      builder.vertex({h * node[0], h * node[1], h * node[2]});
+    {
+      std::array<Real, 3> x{h * node[0], h * node[1], h * node[2]};
+      if (config.alternateSphereMesh)
+      {
+        // Redistribute directions near the unit sphere. The same axial displacement
+        // in all three coordinates preserves the cyclic cuts; rescaling preserves radii.
+        const Real r = std::hypot(x[0], x[1], x[2]);
+        const Real support = std::min(Real(2), config.outerRadius);
+        if (r > 0 && r < support)
+        {
+          const Real t = r / support;
+          const Real shift = std::min(Real(.2) * h, Real(.15)) * t * (1-t*t) * (1-t*t);
+          for (auto& coord : x)
+            coord += shift;
+          const Real scale = r / std::hypot(x[0], x[1], x[2]);
+          for (auto& coord : x)
+            coord *= scale;
+        }
+      }
+      builder.vertex({x[0], x[1], x[2]});
+    }
 
     for (const auto& [node, index] : nodes)
     {

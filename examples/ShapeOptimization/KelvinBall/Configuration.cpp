@@ -38,6 +38,8 @@ namespace KelvinBall
       backgroundHausdorff = std::stod(std::string(option.substr(23)));
     else if (option.rfind("--background-gradation=", 0) == 0)
       backgroundGradation = std::stod(std::string(option.substr(23)));
+    else if (AxialC3 && option == "--alternate-sphere-mesh")
+      alternateSphereMesh = true;
     else if (option == "--mmg-adapt")
       adapt = true;
     else if (option.rfind("--mmg-adapt-gradation=", 0) == 0)
