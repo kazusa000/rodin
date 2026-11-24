@@ -34,9 +34,9 @@ namespace KelvinBall
     Mesh::Builder builder;
     builder.initialize(3);
     std::map<Node, Index> nodes;
-    for (int x = -n; x <= n; ++x)
-      for (int y = -n; y <= x; ++y)
-        for (int z = -n; z <= x; ++z)
+    for (int x = Fourfold ? 0 : -n; x <= n; ++x)
+      for (int y = Fourfold ? 0 : -n; y <= (Fourfold ? n : x); ++y)
+        for (int z = -n; z <= (Fourfold ? n : x); ++z)
           nodes.emplace(Node{x,y,z}, nodes.size());
     builder.nodes(nodes.size());
     for (const auto& [node, index] : nodes)
@@ -97,14 +97,14 @@ namespace KelvinBall
       const auto p = centroid(mesh,*face);
       const Real tol = 64 * std::numeric_limits<Real>::epsilon() * config.outerRadius;
       Attribute label;
-      if (std::abs(p(0) - p(1)) < tol)
+      if (std::abs(Fourfold ? p(0) : p(0) - p(1)) < tol)
         label = SigmaPlus;
-      else if (std::abs(p(0) - p(2)) < tol)
+      else if (std::abs(Fourfold ? p(1) : p(0) - p(2)) < tol)
         label = SigmaMinus;
       else if (std::abs(p.getData().head<3>().cwiseAbs().maxCoeff() - config.outerRadius) < tol)
         label = Outer;
       else
-        throw std::runtime_error("Unclassified C3 chamber boundary.");
+        throw std::runtime_error("Unclassified axial chamber boundary.");
       mesh.setAttribute({2,face->getIndex()}, label);
     }
     return mesh;
@@ -112,7 +112,7 @@ namespace KelvinBall
 
   Mesh Sphere::makeUniformChamber() const
   {
-    if constexpr (AxialC3)
+    if constexpr (AxialSymmetry)
       return axialChamber(m_configuration);
     Mesh cube = Mesh::UniformGrid(Polytope::Type::Tetrahedron,
       {m_configuration.points, m_configuration.points, m_configuration.points});
@@ -276,7 +276,7 @@ namespace KelvinBall
         : *attribute == SigmaPlus                                   ? plus
         : *attribute == SigmaMinus                                  ? minus
                                                                     : 0;
-      if (AxialC3 && constraint == outer)
+      if (AxialSymmetry && constraint == outer)
       {
         // Identify each cube face separately, including both planes at an edge.
         const auto center = centroid(mesh, *face);
@@ -310,13 +310,18 @@ namespace KelvinBall
         normal(1) = constraint == outer ? 0 : constraint == xy ? -1 : 1;
         normal(2) = constraint == plus ? -1 : constraint == minus ? 1 : 0;
         Real offset = constraint == outer ? m_configuration.outerRadius : 0;
-        if constexpr (AxialC3)
+        if constexpr (AxialSymmetry)
         {
           normal.setZero();
           if (constraint == plus || constraint == minus)
           {
-            normal(0) = 1;
-            normal(constraint == plus ? 1 : 2) = -1;
+            if constexpr (Fourfold)
+              normal(constraint == plus ? 0 : 1) = 1;
+            else
+            {
+              normal(0) = 1;
+              normal(constraint == plus ? 1 : 2) = -1;
+            }
           }
           else
           {

@@ -44,16 +44,23 @@ namespace KelvinBall
   inline constexpr Real DefaultNitschePenalty = 320;
   inline constexpr Real DefaultStabilizationFactor = 0.05;
   inline constexpr Real LinearResidualTolerance = 1e-8;
-#ifdef KELVIN_AXIAL_C3
-  inline constexpr bool AxialC3 = true;
+#ifdef KELVIN_AXIAL_C4
+  inline constexpr bool Fourfold = true;
 #else
-  inline constexpr bool AxialC3 = false;
+  inline constexpr bool Fourfold = false;
 #endif
-  inline constexpr size_t ChamberMultiplicity = AxialC3 ? 3 : 24;
-  inline constexpr size_t CutPairCount = AxialC3 ? 1 : 2;
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
+  inline constexpr bool AxialSymmetry = true;
+#else
+  inline constexpr bool AxialSymmetry = false;
+#endif
+  inline constexpr size_t ChamberMultiplicity = Fourfold ? 4 : AxialSymmetry ? 3 : 24;
+  inline constexpr size_t CutPairCount = AxialSymmetry ? 1 : 2;
 
   inline Math::SpatialVector<Real> axialDirection()
   {
+    if constexpr (Fourfold)
+      return Math::SpatialVector<Real>{0, 0, 1};
     const Real a = Real(1) / std::sqrt(Real(3));
     return Math::SpatialVector<Real>{a, a, a};
   }

@@ -65,11 +65,16 @@ namespace KelvinBall
       }
       else
         continue;
-      if constexpr (AxialC3)
+      if constexpr (AxialSymmetry)
       {
         normal.setZero();
-        normal(0) = 1;
-        normal(attribute == SigmaPlus ? 1 : 2) = -1;
+        if constexpr (Fourfold)
+          normal(attribute == SigmaPlus ? 0 : 1) = 1;
+        else
+        {
+          normal(0) = 1;
+          normal(attribute == SigmaPlus ? 1 : 2) = -1;
+        }
       }
       for (const Index vertex : face->getVertices())
       {

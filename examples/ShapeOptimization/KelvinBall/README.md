@@ -28,6 +28,14 @@ available as diagnostics, but there is no scalar trace-penalty projection
 in redistancing or transport. Transport uses Rodin's characteristic flow and
 RK4 integrator, followed by nodal evaluation with a retain-on-failure policy.
 
+## Fourfold axial optimisation
+
+Build `KelvinBallC4` for optimisation and `KelvinBallC4Sphere` for the sphere
+and mirror checks. The chamber covers the quarter of the cube with nonnegative
+x and y. Successive quarter turns around z generate the complete body. The
+objective is signed axial coupling about z. Chamber volumes are one quarter
+of the complete body volume.
+
 ## Threefold axial optimisation
 
 Build `KelvinBallC3` for optimisation and `KelvinBallC3Sphere` for validation.

@@ -10,10 +10,16 @@
 
 namespace KelvinBall
 {
-#ifdef KELVIN_AXIAL_C3
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
+#ifdef KELVIN_AXIAL_C4
+  // Quarter-turn about z maps the positive x half-plane to positive y.
+  const std::array<RotationPair, CutPairCount> RotationPairs{
+    {{SigmaMinus, SigmaPlus, {0, -1, 0, 1, 0, 0, 0, 0, 1}}}};
+#else
   // On the (1,1,1) axis, (x,y,z) -> (z,x,y) maps x=z to x=y.
   const std::array<RotationPair, CutPairCount> RotationPairs{
     {{SigmaMinus, SigmaPlus, {0, 0, 1, 1, 0, 0, 0, 1, 0}}}};
+#endif
   const FlatSet<Attribute> MasterCuts{SigmaPlus};
   const FlatSet<Attribute> AllCuts{SigmaPlus, SigmaMinus};
   const FlatSet<Attribute> FixedFaces{Outer, SigmaPlus, SigmaMinus};

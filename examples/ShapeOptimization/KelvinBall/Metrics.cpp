@@ -48,9 +48,14 @@ namespace KelvinBall
       state = u.getSolution();
       pressure = p.getSolution();
     };
-    const Real a = axis(0);
-    solve(VectorFunction{a,a,a}, translation, pT);
-    solve(VectorFunction{a * (F::z-F::y), a * (F::x-F::z), a * (F::y-F::x)}, rotation, pR);
+    solve(VectorFunction{axis(0),axis(1),axis(2)}, translation, pT);
+    if constexpr (Fourfold)
+      solve(VectorFunction{-F::y, F::x, 0}, rotation, pR);
+    else
+    {
+      const Real a = axis(0);
+      solve(VectorFunction{a * (F::z-F::y), a * (F::x-F::z), a * (F::y-F::x)}, rotation, pR);
+    }
     BilinearForm energy(u,v);
     energy = Integral(2 * Mu * Du,Dv);
     energy.assemble();
@@ -79,7 +84,7 @@ namespace KelvinBall
       uR0(velocitySpace), uR1(velocitySpace), uR2(velocitySpace);
     GridFunction pT0(pressureSpace), pT1(pressureSpace), pT2(pressureSpace),
       pR0(pressureSpace), pR1(pressureSpace), pR2(pressureSpace);
-    if constexpr (AxialC3)
+    if constexpr (AxialSymmetry)
       return evaluateAxial(velocitySpace, pressureSpace, &coupling, uT0, uR0, pT0, pR0);
     return evaluateChamber(velocitySpace, pressureSpace, coupling, uT0, uT1, uT2, uR0,
       uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
@@ -94,7 +99,7 @@ namespace KelvinBall
       uR0(velocitySpace), uR1(velocitySpace), uR2(velocitySpace);
     GridFunction pT0(pressureSpace), pT1(pressureSpace), pT2(pressureSpace),
       pR0(pressureSpace), pR1(pressureSpace), pR2(pressureSpace);
-    if constexpr (AxialC3)
+    if constexpr (AxialSymmetry)
       return evaluateAxial(velocitySpace, pressureSpace, nullptr, uT0, uR0, pT0, pR0);
     solveFullFamily(velocitySpace, pressureSpace, VectorFunction{1, 0, 0},
       VectorFunction{0, 1, 0}, VectorFunction{0, 0, 1}, uT0, uT1, uT2, pT0, pT1, pT2);

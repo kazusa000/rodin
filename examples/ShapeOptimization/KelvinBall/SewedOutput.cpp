@@ -83,9 +83,12 @@ namespace KelvinBall
   const std::vector<Math::SpatialMatrix<Real>>& SewedOutput::getRotations()
   {
     static const std::vector<Math::SpatialMatrix<Real>> rotations = [] {
-      if constexpr (AxialC3)
+      if constexpr (AxialSymmetry)
       {
         const auto& r = RotationPairs.front().rotation;
+        if constexpr (Fourfold)
+          return std::vector<Math::SpatialMatrix<Real>>{
+            Math::SpatialMatrix<Real>::Identity(3, 3), r, r*r, r.transpose()};
         return std::vector<Math::SpatialMatrix<Real>>{
           Math::SpatialMatrix<Real>::Identity(3, 3), r, r.transpose()};
       }

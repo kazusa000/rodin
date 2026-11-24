@@ -27,7 +27,7 @@ using namespace Rodin::Geometry;
 
 namespace KelvinBall
 {
-#ifdef KELVIN_AXIAL_C3
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
   // Twist a three-lobed radial displacement along the body diagonal. Build
   // both hands from identical nodes and cells so remeshing cannot mask a sign error.
   static Mesh handedTestMesh(const Mesh& source, Real outerRadius, bool mirror)
@@ -44,13 +44,15 @@ namespace KelvinBall
         const Real u = (x(0) - x(1)) / (r * std::sqrt(Real(2)));
         const Real v = (x(0) + x(1) - 2 * x(2)) / (r * std::sqrt(Real(6)));
         const Real phase = 1.8 * height;
-        const Real lobes = u * (u*u - 3*v*v) * std::cos(phase) +
+        const Real lobes = Fourfold
+          ? std::pow(std::hypot(x(0),x(1)) / r, 4) * std::cos(4 * std::atan2(x(1),x(0)) - phase)
+          : u * (u*u - 3*v*v) * std::cos(phase) +
           v * (3*u*u - v*v) * std::sin(phase);
         const Real cutoff = std::max(Real(0), Real(1) - std::pow(r / std::min(Real(3), outerRadius), 2));
         x *= 1 + 0.2 * lobes * cutoff * cutoff;
       }
       if (mirror)
-        std::swap(x(1), x(2));
+        std::swap(x(1), x(Fourfold ? 0 : 2));
       builder.vertex(x);
     }
     for (auto cell = source.getCell(); cell; ++cell)
@@ -130,7 +132,7 @@ int KelvinBall::SphereValidation::run()
   char** argv = m_argv;
   Configuration configuration;
   bool saveMesh = false;
-#ifdef KELVIN_AXIAL_C3
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
   bool checkHandedness = false;
 #endif
   for (int argument = 1; argument < argc; ++argument)
@@ -138,7 +140,7 @@ int KelvinBall::SphereValidation::run()
     const StringView option(argv[argument]);
     if (configuration.parse(option))
       continue;
-#ifdef KELVIN_AXIAL_C3
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
     if (option == "--check-handedness")
     {
       checkHandedness = true;
@@ -149,8 +151,8 @@ int KelvinBall::SphereValidation::run()
       saveMesh = true;
     else if (option == "--help")
     {
-#ifdef KELVIN_AXIAL_C3
-      std::cout << "  --check-handedness          Compare a twisted C3 body with its mirror.\n";
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
+      std::cout << "  --check-handedness          Compare a twisted axial body with its mirror.\n";
 #endif
       std::cout
         << "Usage: " << argv[0] << " [options]\n"
@@ -196,7 +198,7 @@ int KelvinBall::SphereValidation::run()
             << ", q=" << relativeDifference(chamberValues.q, fullValues.q)
             << ", rho=" << relativeDifference(chamberValues.rho, fullValues.rho) << '\n';
 
-#ifdef KELVIN_AXIAL_C3
+#if defined(KELVIN_AXIAL_C3) || defined(KELVIN_AXIAL_C4)
   const Real resistanceScale = std::sqrt(fullValues.k * fullValues.q);
   const Real couplingDifference = std::abs(chamberValues.c - fullValues.c) / resistanceScale;
   std::cout << "scaled chamber/full C difference: " << couplingDifference << '\n';

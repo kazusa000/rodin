@@ -76,7 +76,7 @@ namespace KelvinBall
           {
             motionForce.setZero();
             motionForce(0) = 1;
-            if constexpr (AxialC3)
+            if constexpr (AxialSymmetry)
               motionForce = axialDirection();
           }
 
@@ -108,7 +108,7 @@ namespace KelvinBall
                 maxIterations.reset();
               else if (mode.rfind("--iterations=", 0) == 0)
                 maxIterations = std::stoul(std::string(mode.substr(13)));
-              else if (AxialC3 && mode.starts_with("--initial-target-volume="))
+              else if (AxialSymmetry && mode.starts_with("--initial-target-volume="))
                 initialTargetVolume = std::stod(std::string(mode.substr(24)));
               else if (mode.starts_with("--resume-history="))
                 resumeHistory = mode.substr(17);
@@ -165,11 +165,11 @@ namespace KelvinBall
               throw std::runtime_error("The iteration count must be positive.");
             if (resumeAfter || !resumeHistory.empty() || resumeTargetVolume)
             {
-              if (!AxialC3 || reconstructionMethod != "swift" || !configuration.adapt ||
+              if (!AxialSymmetry || reconstructionMethod != "swift" || !configuration.adapt ||
                   !resumeAfter || resumeHistory.empty() || !resumeTargetVolume ||
                   !std::isfinite(*resumeTargetVolume) || *resumeTargetVolume <= 0 ||
                   (maxIterations && *resumeAfter >= *maxIterations - 1))
-                throw std::runtime_error("C3 history continuation requires adaptive SWIFT, "
+                throw std::runtime_error("Axial history continuation requires adaptive SWIFT, "
                   "a history directory, a completed advection step below the final state, "
                   "and the original target volume.");
             }
@@ -189,9 +189,9 @@ namespace KelvinBall
             if (configuration.mmgSnap > 0 && reconstructionMethod != "mmg")
               throw std::runtime_error(
                 "--mmg-snap applies only to --reconstruction=mmg.");
-            if (AxialC3 && motionForce.cross(axialDirection()).norm() >
+            if (AxialSymmetry && motionForce.cross(axialDirection()).norm() >
                   64 * std::numeric_limits<Real>::epsilon() * motionForce.norm())
-              throw std::runtime_error("C3 motion diagnostics require an axial force.");
+              throw std::runtime_error("Axial motion diagnostics require an axial force.");
             if (geometryOnly && stateOnly)
               throw std::runtime_error(
                 "Use either --geometry-only or --state-only, not both.");
@@ -991,7 +991,7 @@ namespace KelvinBall
           << Alert::Notation("--alternate-sphere-mesh --initial-target-volume=<value>")
           << "  Optional axial mesh redistribution and initial chamber volume." << Alert::NewLine
           << Alert::Notation("--resume-history=<dir> --resume-after=<state> --resume-target-volume=<value>")
-          << "  Resume adaptive C3 SWIFT after a saved advection in the original run."
+          << "  Resume adaptive axial SWIFT after a saved advection in the original run."
           << Alert::NewLine
           << Alert::Notation("--iterations=<count|unlimited>")
           << " Number of evaluated designs (default: 1), or continue until stopped." << Alert::NewLine
@@ -1103,11 +1103,13 @@ namespace KelvinBall
         switch (attribute)
         {
           case Outer:
-            return std::abs((AxialC3 ? x.getData().head<3>().cwiseAbs().maxCoeff() : x(0)) - outerRadius);
+            return std::abs((AxialSymmetry ? x.getData().head<3>().cwiseAbs().maxCoeff() : x(0)) - outerRadius);
           case SigmaPlus:
-            return AxialC3 ? std::abs(x(0) - x(1)) : std::abs(x(1) - x(2));
+            if constexpr (Fourfold) return std::abs(x(0));
+            return AxialSymmetry ? std::abs(x(0) - x(1)) : std::abs(x(1) - x(2));
           case SigmaMinus:
-            return AxialC3 ? std::abs(x(0) - x(2)) : std::abs(x(1) + x(2));
+            if constexpr (Fourfold) return std::abs(x(1));
+            return AxialSymmetry ? std::abs(x(0) - x(2)) : std::abs(x(1) + x(2));
           case SigmaXYPlus:
           case SigmaXYMinus:
             return std::abs(x(0) - x(1));
@@ -1164,7 +1166,7 @@ namespace KelvinBall
         for (Index i = 0; i < coordinates.size(); ++i)
           mesh.setVertexCoordinates(i,coordinates[i]);
         if (std::abs(mesh.getVolume(Obstacle) / target - 1) > 1e-10)
-          throw std::runtime_error("The reconstructed C3 solid missed its target volume.");
+          throw std::runtime_error("The reconstructed axial solid missed its target volume.");
       }
 
       void checkFixedGeometry(const LocalMesh& mesh, Real outerRadius)
@@ -1696,16 +1698,16 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
              "background_h,"
              "remesh_hmin,remesh_hmax,remesh_hausdorff,"
              "required_boundary_triangles,remesh_cells_before,remesh_cells_after,"
-          << (AxialC3 ? "k_parallel,c_parallel,q_parallel,rho_parallel," : "k,c,q,rho,")
-          << (AxialC3 ? "axial_reciprocity_residual," : "coupling_symmetry,")
+          << (AxialSymmetry ? "k_parallel,c_parallel,q_parallel,rho_parallel," : "k,c,q,rho,")
+          << (AxialSymmetry ? "axial_reciprocity_residual," : "coupling_symmetry,")
           << "nitsche_jump,volume,target_volume,"
              "volume_error,chamber_bbox_x,chamber_bbox_y,chamber_bbox_z,"
              "sewn_bbox_x,sewn_bbox_y,sewn_bbox_z,"
-          << (AxialC3 ? "actual_delta_c,predicted_delta_c," : "actual_delta_rho,predicted_delta_rho,")
+          << (AxialSymmetry ? "actual_delta_c,predicted_delta_c," : "actual_delta_rho,predicted_delta_rho,")
           << "actual_delta_volume,predicted_delta_volume,null_space_multiplier,"
-          << (AxialC3 ? "xi_c_inf_norm,theta_inf_norm,d_c_theta," : "xi_rho_inf_norm,theta_inf_norm,d_rho_theta,")
+          << (AxialSymmetry ? "xi_c_inf_norm,theta_inf_norm,d_c_theta," : "xi_rho_inf_norm,theta_inf_norm,d_rho_theta,")
           << "d_volume_theta,required_d_volume_theta,"
-          << (AxialC3 ? "c_gradient_residual,c_gradient_jump," : "rho_gradient_residual,rho_gradient_jump,")
+          << (AxialSymmetry ? "c_gradient_residual,c_gradient_jump," : "rho_gradient_residual,rho_gradient_jump,")
           << "volume_gradient_residual,"
              "volume_gradient_jump,stage_1_seconds,stage_2_seconds,"
              "stage_3_seconds,stage_4_seconds,stage_5_seconds,"
@@ -1844,7 +1846,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       const KelvinBall::Parameters metricParameters{
         h, nitschePenalty, stabilizationFactor};
       const KelvinBall::Metrics resistanceMetrics(metricParameters);
-      const KelvinBall::Values metrics = AxialC3
+      const KelvinBall::Values metrics = AxialSymmetry
         ? resistanceMetrics.evaluateAxial(Vh, Qh, &fluidCoupling, uT0, uR0, pT0, pR0)
         : resistanceMetrics.evaluateChamber(Vh, Qh,
         fluidCoupling, uT0, uT1, uT2, uR0, uR1, uR2, pT0, pT1, pT2, pR0, pR1, pR2);
@@ -1864,7 +1866,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       const Real nitscheJump = metrics.nitscheJump;
       const auto chamberBoundingBox = boundingBoxSize(mesh);
       const auto sewnBoundingBox = sewnBoundingBoxSize(mesh);
-      const Real objective = AxialC3 ? c : rho;
+      const Real objective = AxialSymmetry ? c : rho;
       const Real actualRhoChange = previousRho ? objective - *previousRho : nan;
       const Real incomingPredictedRhoChange =
         predictedRhoChange ? *predictedRhoChange : nan;
@@ -2006,9 +2008,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       if (previousRho)
       {
         Alert::Info() << substageHeading("Previous update") << Alert::NewLine
-                      << diagnosticLabel(AxialC3 ? "Actual delta C:" : "Actual delta rho:")
+                      << diagnosticLabel(AxialSymmetry ? "Actual delta C:" : "Actual delta rho:")
                       << Alert::Notation::Number(actualRhoChange) << Alert::NewLine
-                      << diagnosticLabel(AxialC3 ? "Predicted delta C:" : "Predicted delta rho:")
+                      << diagnosticLabel(AxialSymmetry ? "Predicted delta C:" : "Predicted delta rho:")
                       << Alert::Notation::Number(incomingPredictedRhoChange)
                       << Alert::NewLine << diagnosticLabel("Actual delta volume:")
                       << Alert::Notation::Number(actualVolumeChange) << Alert::NewLine
@@ -2023,7 +2025,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << Alert::Notation::Number(c) << Alert::NewLine
                     << diagnosticLabel("Rotational resistance q:")
                     << Alert::Notation::Number(q) << Alert::NewLine
-                    << diagnosticLabel(AxialC3 ? "Objective signed axial C:" : "Objective rho:") << Alert::Notation::Number(objective)
+                    << diagnosticLabel(AxialSymmetry ? "Objective signed axial C:" : "Objective rho:") << Alert::Notation::Number(objective)
                     << Alert::NewLine << diagnosticLabel("Volume:")
                     << Alert::Notation::Number(volume) << Alert::NewLine
                     << diagnosticLabel("Chamber bounding box:")
@@ -2032,7 +2034,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                     << vectorText(sewnBoundingBox) << Alert::NewLine
                     << diagnosticLabel("Nitsche jump:")
                     << Alert::Notation::Number(nitscheJump) << Alert::NewLine
-                    << diagnosticLabel(AxialC3 ? "Axial reciprocity residual:" : "Coupling symmetry residual:")
+                    << diagnosticLabel(AxialSymmetry ? "Axial reciprocity residual:" : "Coupling symmetry residual:")
                     << Alert::Notation::Number(couplingSymmetry) << Alert::Raise;
       {
         Alert::Info()
@@ -2089,7 +2091,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         (Dot(strainUR0, strainUR0) + Dot(strainUR1, strainUR1) +
           Dot(strainUR2, strainUR2));
       const auto objectiveDensity = [&] {
-        if constexpr (AxialC3)
+        if constexpr (AxialSymmetry)
           return (2 * mu * chamberMultiplicity) * Dot(strainUT0, strainUR0);
         else
           return signC / std::sqrt(k * q) * cDensity - 0.5 * rho * (kDensity / k + qDensity / q);
@@ -2288,7 +2290,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
                         << Alert::Raise;
         }
         rhoGradientDiagnostics =
-          identifyGradient(identification, -objectiveDensity, rhoGradient, AxialC3 ? "Axial C" : "Rho");
+          identifyGradient(identification, -objectiveDensity, rhoGradient, AxialSymmetry ? "Axial C" : "Rho");
         volumeGradientDiagnostics =
           identifyGradient(identification, RealFunction{-1}, volumeGradient, "Volume");
       }
@@ -2398,11 +2400,11 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       Alert::Info() << substageHeading("Constrained direction") << Alert::NewLine
                     << diagnosticLabel("Null-space multiplier:")
                     << Alert::Notation::Number(nullSpaceMultiplier) << Alert::NewLine
-                    << diagnosticLabel(AxialC3 ? "Xi C infinity norm:" : "Xi rho infinity norm:")
+                    << diagnosticLabel(AxialSymmetry ? "Xi C infinity norm:" : "Xi rho infinity norm:")
                     << Alert::Notation::Number(xiRhoInfinityNorm) << Alert::NewLine
                     << diagnosticLabel("Theta infinity norm:")
                     << Alert::Notation::Number(thetaInfinityNorm) << Alert::NewLine
-                    << diagnosticLabel(AxialC3 ? "D C [theta]:" : "D rho [theta]:")
+                    << diagnosticLabel(AxialSymmetry ? "D C [theta]:" : "D rho [theta]:")
                     << Alert::Notation::Number(dRhoTheta) << Alert::NewLine
                     << diagnosticLabel("D volume [theta]:")
                     << Alert::Notation::Number(dVolumeTheta) << Alert::NewLine
@@ -2500,7 +2502,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
         fluidState.clear();
         fluidState.setMesh(fluid, IO::XDMF::MeshPolicy::Transient);
         GridFunction chamberMotion(Vh);
-        if constexpr (AxialC3)
+        if constexpr (AxialSymmetry)
         {
           fluidState.add("AxialTranslation", uT0, IO::XDMF::Center::Node);
           fluidState.add("AxialRotation", uR0, IO::XDMF::Center::Node);
@@ -2538,7 +2540,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
           const auto rotations = std::array{&uR0, &uR1, &uR2};
           const auto translationPressures = std::array{&pT0, &pT1, &pT2};
           const auto rotationPressures = std::array{&pR0, &pR1, &pR2};
-          if constexpr (AxialC3)
+          if constexpr (AxialSymmetry)
           {
             sewedFluidOutput.setMesh(sewedFluid.getMesh(), IO::XDMF::MeshPolicy::Transient);
             const auto addVector = [&](const char* name, const auto& field) {
@@ -2881,7 +2883,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       }
     }();
     smoothReconstruction(result.mesh);
-    if constexpr (AxialC3)
+    if constexpr (AxialSymmetry)
       restoreAxialVolume(result.mesh, targetVolume, outerRadius);
     reconstruction = result.diagnostics;
     if (reconstructionXdmf)
