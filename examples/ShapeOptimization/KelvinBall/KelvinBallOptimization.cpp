@@ -957,8 +957,8 @@ namespace KelvinBall
           backgroundInfo << Alert::Raise;
           P1 sphereSpace(*swiftBackground);
           GridFunction sphereLevelSet(sphereSpace);
-          sphereLevelSet = RealFunction([](const Geometry::Point& point) {
-            return point.getPhysicalCoordinates().norm() - Real(1);
+          sphereLevelSet = RealFunction([&sphere](const Geometry::Point& point) {
+            return sphere.initialLevelSet(point.getPhysicalCoordinates());
           });
           MMG::Mesh classified =
             classifyLevelSetForSWIFT(*swiftBackground, sphereLevelSet);
@@ -988,6 +988,8 @@ namespace KelvinBall
           << "       Maximum MMG size / reference spacing h0 (default: 10)."
           << Alert::NewLine << Alert::Notation("--outer-radius=<value>")
           << "     Chamber outer radius (default: 2)." << Alert::NewLine
+          << Alert::Notation("--initial-shape=rounded-triangle")
+          << "  Untwisted threefold seed with rounded triangular sections." << Alert::NewLine
           << Alert::Notation("--alternate-sphere-mesh --initial-target-volume=<value>")
           << "  Optional axial mesh redistribution and initial chamber volume." << Alert::NewLine
           << Alert::Notation("--resume-history=<dir> --resume-after=<state> --resume-target-volume=<value>")
@@ -1276,7 +1278,7 @@ namespace KelvinBall
                       << Alert::Raise;
       }
 
-      void reportSphereGeometry(const LocalMesh& mesh)
+      void reportInitialGeometry(const LocalMesh& mesh, const Sphere& sphere)
       {
         std::set<Index> vertices;
         for (auto face = mesh.getPolytope(mesh.getDimension() - 1); face; ++face)
@@ -1288,14 +1290,14 @@ namespace KelvinBall
         Real supremum = 0;
         for (const Index vertex : vertices)
         {
-          const Real error = std::abs(mesh.getVertexCoordinates(vertex).norm() - 1.0);
+          const Real error = std::abs(sphere.initialLevelSet(mesh.getVertexCoordinates(vertex)));
           squared += error * error;
           supremum = std::max(supremum, error);
         }
         const Real rms = vertices.empty()
           ? std::numeric_limits<Real>::quiet_NaN()
           : std::sqrt(squared / static_cast<Real>(vertices.size()));
-        Alert::Info() << substageHeading("Sphere geometry") << Alert::NewLine
+        Alert::Info() << substageHeading(m_options.configuration.triangularSeed ? "Rounded triangular seed geometry" : "Sphere geometry") << Alert::NewLine
                       << diagnosticLabel("Chamber volume:")
                       << Alert::Notation::Number(mesh.getVolume(Obstacle))
                       << Alert::NewLine << diagnosticLabel("Vertex RMS error:")
@@ -1650,7 +1652,10 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   reportConfiguration(requestedWelschScale);
   const Real nan = std::numeric_limits<Real>::quiet_NaN();
   const auto stage1Start = Clock::now();
-  announce(m_options.resumeAfter ? "Restoring the SWIFT background from saved advection."
+  if (m_options.configuration.triangularSeed && !m_options.resumeAfter)
+    announce("Stage 1: Fitting the untwisted rounded triangular initial body.");
+  else
+    announce(m_options.resumeAfter ? "Restoring the SWIFT background from saved advection."
     : m_options.reconstructionMethod == "swift"
       ? "Stage 1: Preparing the background mesh and fitting the initial sphere with "
         "SWIFT."
@@ -1678,7 +1683,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   if (m_options.saveMeshDiagnostic)
     mesh.save("KelvinBallInitial.mesh", IO::FileFormat::MEDIT);
   if (!m_options.resumeAfter)
-    reportSphereGeometry(mesh);
+    reportInitialGeometry(mesh, sphere);
   const Real stage1Seconds = elapsedSeconds(stage1Start);
   reportStageTiming(1, stage1Seconds);
   if (m_options.geometryOnly)

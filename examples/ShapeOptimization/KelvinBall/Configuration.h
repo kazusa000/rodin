@@ -35,6 +35,7 @@ namespace KelvinBall
       /// and fitting. Its background size map ranges from hmin to hmax.
       bool adapt = false;
       bool alternateSphereMesh = false;
+      bool triangularSeed = false;
       Real adaptGradation = 1.3;
       /// Crossing fraction below which the MMG cut snaps the near endpoint of
       /// a crossed edge onto the level set; zero disables the snapping.

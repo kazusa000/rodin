@@ -51,6 +51,8 @@ namespace KelvinBall
     public:
       explicit Sphere(const Configuration& configuration);
 
+      Real initialLevelSet(const Math::SpatialPoint& point) const;
+
       /**
        * @brief Discretizes the initial sphere in the chamber.
        *

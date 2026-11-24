@@ -24,6 +24,25 @@ namespace KelvinBall
     : m_configuration(configuration)
   {}
 
+  Real Sphere::initialLevelSet(const Math::SpatialPoint& x) const
+  {
+    if (!m_configuration.triangularSeed)
+      return x.norm() - Real(1);
+
+    // The three transverse normals rotate into one another about (1,1,1).
+    // A positive-part 8-norm rounds their triangular intersection.
+    Real sum = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+      const Real projection = (x(i) - x((i + 1) % 3)) / std::sqrt(Real(2));
+      sum += std::pow(std::max(Real(0), projection), 8);
+    }
+    // sqrt(mean_theta(1 / q(theta)^2)) gives a unit-area-radius equator.
+    constexpr Real transverseScale = 1.2768070894946544;
+    const Real height = (x(0) + x(1) + x(2)) / std::sqrt(Real(3));
+    return std::hypot(height, transverseScale * std::pow(sum, Real(1) / 8)) - 1;
+  }
+
   // Kuhn tetrahedra on the integer lattice conform to x=y and x=z.
   // Keeping the six ordered paths inside x>=max(y,z) gives exactly one sector.
   static Mesh axialChamber(const Configuration& config)
@@ -405,8 +424,8 @@ namespace KelvinBall
     const Real hausdorff = 0.1 * h * h;
     P1 levelSetSpace(mesh);
     GridFunction sphere(levelSetSpace);
-    sphere = RealFunction([](const Geometry::Point& point) {
-      return point.getPhysicalCoordinates().norm() - Real(1);
+    sphere = RealFunction([this](const Geometry::Point& point) {
+      return initialLevelSet(point.getPhysicalCoordinates());
     });
     MMG::LevelSetDiscretizer discretizer;
     discretizer.split(Fluid, {Obstacle, Fluid})
@@ -465,7 +484,7 @@ namespace KelvinBall
       for (Index vertex = 0; vertex < mesh.getVertexCount(); ++vertex)
       {
         const Real distance =
-          std::abs(mesh.getVertexCoordinates(vertex).norm() - Real(1));
+          std::abs(initialLevelSet(mesh.getVertexCoordinates(vertex)));
         size[vertex] = farSize - (farSize - interfaceSize) * welsch.getWeight(distance);
       }
       protectFixedGeometry(mesh, false);

@@ -40,6 +40,8 @@ namespace KelvinBall
       backgroundGradation = std::stod(std::string(option.substr(23)));
     else if (AxialSymmetry && !Fourfold && option == "--alternate-sphere-mesh")
       alternateSphereMesh = true;
+    else if (AxialSymmetry && !Fourfold && option == "--initial-shape=rounded-triangle")
+      triangularSeed = true;
     else if (option == "--mmg-adapt")
       adapt = true;
     else if (option.rfind("--mmg-adapt-gradation=", 0) == 0)
