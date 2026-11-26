@@ -70,8 +70,8 @@ namespace KelvinBall
     {
       using namespace Rodin;
       namespace H5 = IO::HDF5;
-      const H5::File chamber(H5Fopen(snapshot("mesh", step).c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
-      const H5::File field(H5Fopen(snapshot("Advected", step).c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+      const auto chamber = H5::File(H5Fopen(snapshot("mesh", step).c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+      const auto field = H5::File(H5Fopen(snapshot("Advected", step).c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
       if (!chamber || !field)
         throw std::runtime_error("Missing chamber mesh or transported field.");
       const auto topology = H5::readVectorDataset<H5::U64>(chamber.get(), "/Mesh/XDMF/Topology");
