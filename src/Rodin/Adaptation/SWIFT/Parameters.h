@@ -106,6 +106,7 @@ namespace Rodin::Adaptation::SWIFT
       LinearSolver solver = LinearSolver::CG; ///< Fallback without MUMPS.
 #endif
       Index threads = 0; ///< Zero leaves the backend thread policy unchanged.
+      bool mumpsAMD = false; ///< Request AMD ordering for the MUMPS reconstruction solve.
     };
 
     /// @brief Integration and independent geometry-validation orders.
