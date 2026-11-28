@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <Rodin/IO/HDF5.h>
 #include <Rodin/MMG.h>
@@ -23,6 +24,7 @@ namespace KelvinBall
     std::filesystem::path directory;
     std::vector<double> backgroundSpacing;
     std::map<std::string, std::string> last;
+    std::optional<size_t> pendingFitCells;
 
     static std::vector<std::string> columns(const std::string& line)
     {
@@ -53,7 +55,21 @@ namespace KelvinBall
       }
       if (backgroundSpacing.empty() || !std::isfinite(value("rho")))
         throw std::runtime_error("No scored state to continue.");
+      if (std::filesystem::exists(directory / "pending-fit.txt"))
+      {
+        std::ifstream pending(directory / "pending-fit.txt");
+        size_t step, cells;
+        std::string extra;
+        if (!(pending >> step >> cells) || step != backgroundSpacing.size() ||
+            cells == 0 || (pending >> extra))
+        {
+          throw std::runtime_error("Invalid pending fit in the saved history.");
+        }
+        pendingFitCells = cells;
+      }
     }
+
+    size_t nextStep() const { return backgroundSpacing.size() + pendingFitCells.has_value(); }
 
     double value(const std::string& name) const { return std::stod(last.at(name)); }
 

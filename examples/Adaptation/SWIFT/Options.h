@@ -97,6 +97,7 @@ namespace Rodin::Examples
         {"linear-solver", {&solver, "Linear backend: cg, sparse-lu or mumps"}},
         {"linear-threads",
           {&p.linear.threads, "Backend threads; zero keeps its policy"}},
+        {"linear-mumps-amd", {&p.linear.mumpsAMD, "Use AMD ordering for MUMPS (0 or 1)"}},
         {"convergence-tolerance-geometric",
           {&p.convergence.tolerance.geometric,
             "Geometric target; zero selects h^(p+1)"}},
@@ -242,6 +243,8 @@ namespace Rodin::Examples
       }
       else
         Alert::Exception() << "Unknown SWIFT linear solver: " << solver << Alert::Raise;
+      if (p.linear.mumpsAMD && solver != "mumps")
+        Alert::Exception() << "AMD ordering requires the MUMPS backend." << Alert::Raise;
       p.model.h = Real(1) / Real(n - 1);
     }
   };

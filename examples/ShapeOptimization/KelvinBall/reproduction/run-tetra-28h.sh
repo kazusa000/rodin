@@ -8,13 +8,16 @@ test -z "$(git -C "$src" status --porcelain)"
 tmp=$root/tmp/project-03
 name=L10-n50-tetra-20261122-${sha:0:8}
 resume=()
-if [[ $# -eq 2 ]]; then
+if [[ $# -eq 2 || ( $# -eq 3 && $3 == amd ) ]]; then
   parent=$(realpath "$2")
   test -r "$parent/kelvin-ball.csv"
   name=L10-n50-tetra-continue-${sha:0:8}
   resume=("--continue-from=$parent")
+  if [[ $# -eq 3 ]]; then
+    resume+=("--swift-linear-mumps-amd=1")
+  fi
 elif [[ $# -ne 1 ]]; then
-  echo "Usage: $0 workspace-root [parent-optimization-directory]" >&2
+  echo "Usage: $0 workspace-root [parent-optimization-directory [amd]]" >&2
   exit 2
 fi
 out=$root/out/project-03/fem-domain/$name

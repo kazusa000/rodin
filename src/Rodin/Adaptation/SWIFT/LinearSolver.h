@@ -424,7 +424,9 @@ namespace Rodin::Adaptation::SWIFT
                 m_mumps =
                   std::make_unique<Solver::MUMPS<LinearSystemType>>(this->getProblem());
               }
-              m_mumps->setSymmetric(Solver::MUMPS<LinearSystemType>::Symmetry::General)
+              using Ordering = typename Solver::MUMPS<LinearSystemType>::Ordering;
+              m_mumps->setOrdering(m_parameters.linear.mumpsAMD ? Ordering::AMD : Ordering::Automatic)
+                .setSymmetric(Solver::MUMPS<LinearSystemType>::Symmetry::General)
                 .setMaxThreads(m_parameters.linear.threads);
               return solveDirect(*m_mumps, "MUMPS");
             }

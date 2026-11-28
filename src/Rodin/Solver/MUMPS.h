@@ -35,6 +35,7 @@
 #include <mpi.h>
 
 #include "Rodin/Alert/MemberFunctionException.h"
+#include "Rodin/Alert/Info.h"
 #include "Rodin/Alert/Raise.h"
 #include "Rodin/Array.h"
 #include "Rodin/Math/SparseMatrix.h"
@@ -432,6 +433,11 @@ namespace Rodin::Solver
             m_resources.destroy();
             dropConvertedState();
             return record(status, {});
+          }
+          if (m_ordering == Ordering::AMD)
+          {
+            Alert::Info() << "MUMPS requested AMD (0), analysis returned INFOG(7) = "
+                          << instance.infog[6] << Alert::Raise;
           }
           m_resources.symbolic = true;
         }

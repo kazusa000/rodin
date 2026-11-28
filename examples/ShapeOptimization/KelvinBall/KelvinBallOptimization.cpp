@@ -835,24 +835,30 @@ namespace KelvinBall
       {
         auto initial = sphere.prepareSWIFTBackground(welschScale);
         auto background = std::move(initial.mesh);
-        for (size_t step = 0; step < saved.backgroundSpacing.size(); ++step)
+        for (size_t step = 0; step < saved.nextStep(); ++step)
         {
           std::cout << "Recovering SWIFT background from saved transport at step "
                     << step << std::endl;
           prepare(background);
           background.getConnectivity().discover(0, 0);
           const Real h = meanElementSize(background);
-          if (std::abs(h - saved.backgroundSpacing[step]) > 1e-10 * h)
+          if (step < saved.backgroundSpacing.size() &&
+              std::abs(h - saved.backgroundSpacing[step]) > 1e-10 * h)
             throw std::runtime_error("Recovered background spacing differs at step " + std::to_string(step));
+          if (step == saved.backgroundSpacing.size() &&
+              background.getCellCount() != std::stoull(saved.last.at("remesh_cells_after")))
+            throw std::runtime_error("Pending transport has a different source cell count.");
           MMG::Mesh adapted;
           {
             P1<Real, Mesh> space(background);
             GridFunction transported(space);
             saved.readTarget(step, background, transported);
             adapted = adaptSWIFTBackground(background, transported, sphere, welschScale);
-            if (step + 1 == saved.backgroundSpacing.size())
+            if (step + 1 == saved.nextStep())
             {
-              if (adapted.getCellCount() != std::stoull(saved.last.at("remesh_cells_after")))
+              const size_t expected = saved.pendingFitCells.value_or(
+                std::stoull(saved.last.at("remesh_cells_after")));
+              if (adapted.getCellCount() != expected)
                 throw std::runtime_error("Last recovered adaptation has different cell count.");
               Location::AABB<MMG::Mesh> locator(background);
               auto fitted = fitAdaptedBackground(adapted, transported, locator,
@@ -1557,7 +1563,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<SavedSWIFTHistory> saved;
   if (!m_options.continueFrom.empty())
     saved.emplace(m_options.continueFrom);
-  const size_t firstStep = saved ? saved->backgroundSpacing.size() : 0;
+  const size_t firstStep = saved ? saved->nextStep() : 0;
   if (firstStep >= m_options.maxIterations)
     throw std::runtime_error("The requested iteration budget is already complete.");
   announce(saved ? "Stage 1: Recovering the adaptive background and last fitted update." :
@@ -1658,7 +1664,7 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
   Optional<Location::AABB<MMG::Mesh>> backgroundLocator;
   Optional<KelvinBall::RotatedNitscheIntegrator> backgroundCoupling;
 
-  if (saved)
+  if (saved && !saved->pendingFitCells)
   {
     const Real dt = saved->value("dt");
     previousRho = saved->value("rho");
@@ -1670,8 +1676,9 @@ int KelvinBall::KelvinBallOptimization::Implementation::run()
       previousThicknessPenalty = saved->value("thickness_penalty");
       predictedThicknessChange = dt * saved->value("d_thickness_theta");
     }
-    std::cout << "Continuing optimization at global step " << firstStep << std::endl;
   }
+  if (saved)
+    std::cout << "Continuing optimization at global step " << firstStep << std::endl;
   for (size_t iteration = firstStep; iteration < m_options.maxIterations; ++iteration)
   {
     std::array<Real, 9> stageSeconds;
